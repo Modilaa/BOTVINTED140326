@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node --check src/index.js)",
+      "Bash(node src/index.js)",
+      "Bash(echo \"EXIT_CODE=$?\")",
+      "Bash(node -e \":*)"
+    ]
+  }
+}

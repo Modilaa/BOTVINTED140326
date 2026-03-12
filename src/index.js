@@ -37,6 +37,28 @@ async function runScan() {
           chooseBestSoldListings(listing, soldListings),
           config
         );
+
+        // Skip if all matchedSales have low image confidence
+        const allHaveLowImageConfidence = matchedSales.length > 0 && matchedSales.every(
+          (sale) => sale.imageMatch && sale.imageMatch.confidence === 'low'
+        );
+        if (allHaveLowImageConfidence) {
+          const row = {
+            search: search.name,
+            title: listing.title,
+            vintedListedPrice: listing.listedPrice,
+            vintedBuyerPrice: listing.buyerPrice,
+            sourceQuery: listing.sourceQuery || '',
+            url: listing.url,
+            imageUrl: listing.imageUrl,
+            rawTitle: listing.rawTitle,
+            matchedSales,
+            profit: null
+          };
+          searchedListings.push(row);
+          continue;
+        }
+
         const profit = buildProfitAnalysis(listing, matchedSales, config);
 
         const row = {
@@ -78,7 +100,7 @@ async function runScan() {
   };
 }
 
-async function main() {
+async function runOnce() {
   await ensureOutputDir(config.outputDir);
   const result = await runScan();
   const outputPath = path.join(config.outputDir, 'latest-scan.json');
@@ -97,6 +119,39 @@ async function main() {
     } catch (error) {
       console.error(`Notification Telegram impossible: ${error.message}`);
     }
+  }
+
+  return result;
+}
+
+const loopEnabled = process.argv.includes('--loop');
+const loopIntervalMs = (function parseInterval() {
+  const flag = process.argv.find((arg) => arg.startsWith('--interval='));
+  return flag ? Number(flag.split('=')[1]) * 60 * 1000 : 30 * 60 * 1000;
+})();
+
+async function main() {
+  if (!loopEnabled) {
+    await runOnce();
+    return;
+  }
+
+  console.log(`Mode boucle active. Scan toutes les ${loopIntervalMs / 60000} minutes.`);
+  console.log('Appuie sur Ctrl+C pour arreter.\n');
+
+  while (true) {
+    const startedAt = Date.now();
+    try {
+      await runOnce();
+    } catch (error) {
+      console.error(`Erreur pendant le scan: ${error.message}`);
+    }
+
+    const elapsed = Date.now() - startedAt;
+    const waitMs = Math.max(0, loopIntervalMs - elapsed);
+    const nextScanAt = new Date(Date.now() + waitMs).toLocaleTimeString('fr-FR');
+    console.log(`\nProchain scan a ${nextScanAt} ...\n`);
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
   }
 }
 

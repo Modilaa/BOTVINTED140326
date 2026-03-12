@@ -1,0 +1,30 @@
+services:
+  bot:
+    build: .
+    container_name: botvintedcodex-bot
+    command: ["node", "src/index.js", "--loop", "--interval=30"]
+    restart: unless-stopped
+    volumes:
+      - bot-data:/app/output
+    env_file:
+      - .env
+
+  dashboard:
+    build: .
+    container_name: botvintedcodex-dashboard
+    command: ["node", "src/server.js"]
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - bot-data:/app/output
+    env_file:
+      - .env
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.dashboard.entrypoints=web"
+      - "traefik.http.services.dashboard.loadbalancer.server.port=3000"
+
+volumes:
+  bot-data:

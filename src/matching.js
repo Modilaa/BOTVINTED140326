@@ -159,7 +159,27 @@ const IDENTITY_TOKEN_STOP_WORDS = new Set([
   'aston',
   'martin',
   'bulls',
-  'racing'
+  'racing',
+  // Product/set name words — not player identity
+  'turbo',
+  'attax',
+  'attack',
+  'supernova',
+  'parallele',
+  'parallel',
+  'creators',
+  'autographs',
+  'patch',
+  'mosaic',
+  'prizm',
+  'select',
+  'donruss',
+  'panini',
+  'optic',
+  'rated',
+  'stellar',
+  'fusion',
+  'cosmic'
 ]);
 
 const VARIANT_TOKENS = new Set([
@@ -201,6 +221,15 @@ function normalizeComparableToken(token) {
 }
 
 function findCardNumberToken(rawTokens, comparableTokens, year, ignoredNumbers = []) {
+  // Handle tokens like "-#113-" from eBay titles with dashes wrapping the number
+  const dashWrappedToken = rawTokens.find((token) => /^-?#\d{1,4}-?$/i.test(token));
+  if (dashWrappedToken) {
+    const match = dashWrappedToken.match(/(\d{1,4})/);
+    if (match) {
+      return match[1];
+    }
+  }
+
   const explicitRawToken = rawTokens.find((token) => /^#\d{1,4}$/i.test(token));
   if (explicitRawToken) {
     return normalizeComparableToken(explicitRawToken);
@@ -227,10 +256,15 @@ function extractCardSignature(title) {
   const gradeMatch = normalized.match(/(?:psa|sgc|bgs|cgc|collect\s+aura)\s*(10|[1-9](?:\.\d)?)/i);
   const gradeValue = gradeMatch ? gradeMatch[1] : null;
   const cardNumber = findCardNumberToken(rawTokens, comparableTokens, year, [gradeValue]);
-  const serialNumber = comparableTokens.find((token) => /^\d{1,4}\/\d{1,4}$/.test(token)) || null;
+  // Detect season format like 2024/25 — this is NOT a serial/print run
+  const isSeasonFormat = (token) => /^20\d{2}\/\d{2}$/.test(token);
+  const serialNumber = comparableTokens.find((token) => /^\d{1,4}\/\d{1,4}$/.test(token) && !isSeasonFormat(token)) || null;
   const embeddedPrintRun = serialNumber ? serialNumber.split('/')[1] : null;
   const standalonePrintRunToken = comparableTokens.find((token) => /^\/\d{1,4}$/.test(token)) || null;
-  const printRun = embeddedPrintRun || (standalonePrintRunToken ? standalonePrintRunToken.slice(1) : null);
+  // Don't extract standalone /25 if it comes from a season like 2024/25
+  const seasonToken = comparableTokens.find(isSeasonFormat);
+  const seasonSuffix = seasonToken ? '/' + seasonToken.split('/')[1] : null;
+  const printRun = embeddedPrintRun || (standalonePrintRunToken && standalonePrintRunToken !== seasonSuffix ? standalonePrintRunToken.slice(1) : null);
   const parallelToken = printRun ? `/${printRun}` : null;
   const allComparableTokens = parallelToken && !comparableTokens.includes(parallelToken)
     ? [...comparableTokens, parallelToken]
@@ -307,13 +341,32 @@ function scoreSoldListing(vintedListing, soldListing) {
   score += sharedIdentityTokens.length * 3;
   score += specificCoverage >= 0.8 ? 3 : specificCoverage >= 0.6 ? 1 : 0;
 
+  const printRunMismatch =
+    (!left.printRun && right.printRun) ||
+    (!right.printRun && left.printRun);
+
+  const cardNumberMissing =
+    (left.cardNumber && !right.allTokens.includes(left.cardNumber)) ||
+    (right.cardNumber && !left.allTokens.includes(right.cardNumber));
+
+  // KEY FIX: require ALL identity tokens from source (Vinted) to be present in the eBay listing
+  // e.g. "Bryce Duke" must match BOTH "bryce" AND "duke", not just "bryce"
+  const sourceIdentityCount = left.identityTokens.length;
+  const identityFullCoverage = sourceIdentityCount === 0 ||
+    sharedIdentityTokens.length === sourceIdentityCount;
+  const identityPartialOnly = sourceIdentityCount >= 2 && sharedIdentityTokens.length > 0 &&
+    sharedIdentityTokens.length < sourceIdentityCount;
+
   const missingCritical =
     (left.year && right.year && left.year !== right.year) ||
     (left.cardNumber && right.cardNumber && left.cardNumber !== right.cardNumber) ||
     (left.printRun && right.printRun && left.printRun !== right.printRun) ||
     (left.gradeValue && right.gradeValue && left.gradeValue !== right.gradeValue) ||
     left.graded !== right.graded ||
-    left.autograph !== right.autograph;
+    left.autograph !== right.autograph ||
+    printRunMismatch ||
+    cardNumberMissing ||
+    identityPartialOnly;
 
   return {
     score,
@@ -321,7 +374,11 @@ function scoreSoldListing(vintedListing, soldListing) {
     sharedSpecificTokens,
     sharedIdentityTokens,
     specificCoverage,
-    missingCritical
+    missingCritical,
+    printRunMismatch,
+    cardNumberMissing,
+    identityFullCoverage,
+    identityPartialOnly
   };
 }
 
@@ -342,8 +399,28 @@ function chooseBestSoldListings(vintedListing, soldListings) {
         return false;
       }
 
-      if (sourceSignature.identityTokens.length > 0 && listing.match.sharedIdentityTokens.length === 0) {
-        return false;
+      // STRICT: if Vinted has identity tokens (player/character names), ALL must be found in eBay
+      if (sourceSignature.identityTokens.length > 0) {
+        if (!listing.match.identityFullCoverage) {
+          return false;
+        }
+      }
+
+      // If Vinted has NO identity tokens (too generic like "Carte Topps Turbo Attack 2024"),
+      // require very high specific coverage + card number match
+      if (sourceSignature.identityTokens.length === 0) {
+        if (!sourceSignature.cardNumber) {
+          // No player name AND no card number = too vague to match anything
+          return false;
+        }
+        // Must match the card number at minimum
+        if (!listing.match.sharedTokens.includes(sourceSignature.cardNumber)) {
+          return false;
+        }
+        // And need high coverage
+        if (listing.match.specificCoverage < 0.8) {
+          return false;
+        }
       }
 
       if (listing.match.sharedSpecificTokens.length >= 2) {
@@ -391,13 +468,13 @@ function chooseBestSoldListings(vintedListing, soldListings) {
     })
     .slice(0, 6);
 
+  // Try to find a consistent pair first
   for (let leftIndex = 0; leftIndex < shortlisted.length; leftIndex += 1) {
     for (let rightIndex = leftIndex + 1; rightIndex < shortlisted.length; rightIndex += 1) {
       const left = shortlisted[leftIndex];
       const right = shortlisted[rightIndex];
       const leftVariants = new Set(left.signature.variantTokens);
       const rightVariants = new Set(right.signature.variantTokens);
-      const sharedPairVariants = [...leftVariants].filter((token) => rightVariants.has(token));
       const sharedPairIdentityTokens = sourceSignature.identityTokens.filter(
         (token) => left.match.sharedIdentityTokens.includes(token) && right.match.sharedIdentityTokens.includes(token)
       );
@@ -409,6 +486,20 @@ function chooseBestSoldListings(vintedListing, soldListings) {
         ? leftMatchesSourceVariant && rightMatchesSourceVariant
         : leftVariants.size === 0 && rightVariants.size === 0;
       const pairHasStableIdentity = sourceSignature.identityTokens.length === 0 || sharedPairIdentityTokens.length > 0;
+
+      // Both sold listings must have the same print run (or both have none)
+      if (left.signature.printRun !== right.signature.printRun) {
+        continue;
+      }
+
+      // Check variant COLOR consistency - if one is "Pink RayWave" and the other is "Forest Green RayWave", those are different parallels
+      const leftColors = left.signature.variantTokens.filter((t) => !(/^\/\d/.test(t)));
+      const rightColors = right.signature.variantTokens.filter((t) => !(/^\/\d/.test(t)));
+      const colorsMatch = leftColors.length === rightColors.length &&
+        leftColors.every((c) => rightColors.includes(c));
+      if (!colorsMatch && (leftColors.length > 0 || rightColors.length > 0)) {
+        continue;
+      }
 
       if (!pairIsVariantConsistent || !pairHasStableIdentity) {
         continue;
@@ -424,6 +515,15 @@ function chooseBestSoldListings(vintedListing, soldListings) {
           return b.match.score - a.match.score;
         });
     }
+  }
+
+  // No consistent pair found, but if we have strong individual matches, return them all
+  // This handles cases where the same card sells in different variants (base vs refractor)
+  // which are all valid price references
+  if (shortlisted.length > 0 && shortlisted[0].match.score >= 10 &&
+      shortlisted[0].match.identityFullCoverage &&
+      shortlisted[0].match.specificCoverage >= 0.5) {
+    return shortlisted;
   }
 
   return [];
