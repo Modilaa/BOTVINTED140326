@@ -1,0 +1,23 @@
+{
+  "name": "botvintedcodex",
+  "version": "1.0.0",
+  "description": "Scanner Vinted -> eBay sold -> Telegram for trading card arbitrage",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "check": "node --check src/index.js",
+    "debug:ebay": "node src/debug-ebay.js"
+  },
+  "keywords": [
+    "vinted",
+    "ebay",
+    "telegram",
+    "arbitrage"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "cheerio": "^1.1.2",
+    "jimp": "^1.6.0",
+    "sharp": "^0.34.5"
+  }
+}

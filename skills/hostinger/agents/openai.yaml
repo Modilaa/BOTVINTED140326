@@ -1,0 +1,4 @@
+interface:
+  display_name: "Hostinger"
+  short_description: "Help with Hostinger hosting tasks"
+  default_prompt: "Use $hostinger to deploy, migrate, or troubleshoot a project on Hostinger."
