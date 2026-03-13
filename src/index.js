@@ -38,27 +38,6 @@ async function runScan() {
           config
         );
 
-        // Skip if all matchedSales have low image confidence
-        const allHaveLowImageConfidence = matchedSales.length > 0 && matchedSales.every(
-          (sale) => sale.imageMatch && sale.imageMatch.confidence === 'low'
-        );
-        if (allHaveLowImageConfidence) {
-          const row = {
-            search: search.name,
-            title: listing.title,
-            vintedListedPrice: listing.listedPrice,
-            vintedBuyerPrice: listing.buyerPrice,
-            sourceQuery: listing.sourceQuery || '',
-            url: listing.url,
-            imageUrl: listing.imageUrl,
-            rawTitle: listing.rawTitle,
-            matchedSales,
-            profit: null
-          };
-          searchedListings.push(row);
-          continue;
-        }
-
         const profit = buildProfitAnalysis(listing, matchedSales, config);
 
         const row = {

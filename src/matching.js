@@ -179,7 +179,19 @@ const IDENTITY_TOKEN_STOP_WORDS = new Set([
   'rated',
   'stellar',
   'fusion',
-  'cosmic'
+  'cosmic',
+  // One Piece TCG
+  'piece',
+  'game',
+  'leader',
+  'blocker',
+  'manga',
+  'anime',
+  'bandai',
+  // Panini
+  'chronicles',
+  'national',
+  'treasures'
 ]);
 
 const VARIANT_TOKENS = new Set([
@@ -517,13 +529,17 @@ function chooseBestSoldListings(vintedListing, soldListings) {
     }
   }
 
-  // No consistent pair found, but if we have strong individual matches, return them all
-  // This handles cases where the same card sells in different variants (base vs refractor)
-  // which are all valid price references
-  if (shortlisted.length > 0 && shortlisted[0].match.score >= 10 &&
+  // No consistent pair found — return best individual matches if strong enough
+  // A single high-confidence match is enough to estimate profit
+  if (shortlisted.length > 0 && shortlisted[0].match.score >= 8 &&
       shortlisted[0].match.identityFullCoverage &&
-      shortlisted[0].match.specificCoverage >= 0.5) {
+      shortlisted[0].match.specificCoverage >= 0.4) {
     return shortlisted;
+  }
+
+  // Even a single match with very high score is worth returning
+  if (shortlisted.length > 0 && shortlisted[0].match.score >= 12) {
+    return [shortlisted[0]];
   }
 
   return [];

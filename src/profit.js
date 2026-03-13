@@ -1,7 +1,7 @@
 const { average } = require('./utils');
 
 function buildProfitAnalysis(vintedListing, soldListings, config) {
-  if (soldListings.length < 2) {
+  if (soldListings.length < 1) {
     return null;
   }
 

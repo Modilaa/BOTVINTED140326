@@ -85,21 +85,49 @@ const searches = [
   },
   {
     name: 'Pokemon',
-    maxPrice: 80,
+    maxPrice: 150,
     vintedQueries: [
+      'pokemon carte rare',
+      'pokemon psa',
+      'pokemon carte illustration rare',
       'pokemon carte japonaise',
-      'pokemon psa 10 japonaise',
-      'pokemon ar japonaise'
+      'pokemon carte gold'
     ],
     requiredAnyTokens: ['pokemon'],
-    blockedTokens: []
+    blockedTokens: ['yugioh', 'one piece', 'digimon', 'peluche', 'figurine', 'classeur', 'album']
+  },
+  {
+    name: 'One Piece TCG',
+    maxPrice: 100,
+    vintedQueries: [
+      'one piece card game',
+      'one piece tcg carte',
+      'one piece manga card rare',
+      'one piece card game leader'
+    ],
+    requiredAnyTokens: ['one piece'],
+    blockedTokens: ['pokemon', 'yugioh', 'figurine', 'poster', 'manga livre']
+  },
+  {
+    name: 'Panini Football',
+    maxPrice: 120,
+    vintedQueries: [
+      'panini prizm football card',
+      'panini donruss football card',
+      'panini select football card',
+      'panini mosaic football card',
+      'panini chronicles football'
+    ],
+    requiredAllTokens: ['panini'],
+    requiredAnyTokens: ['prizm', 'donruss', 'select', 'mosaic', 'football', 'chronicles', 'optic'],
+    blockedTokens: ['topps', 'pokemon', 'album', 'sticker', 'autocollant', 'vignette']
   }
 ];
 
 module.exports = {
   searches,
-  minProfitEur: parseNumber(process.env.MIN_PROFIT_EUR, 8),
-  minProfitPercent: parseNumber(process.env.MIN_PROFIT_PERCENT, 25),
+  minProfitEur: parseNumber(process.env.MIN_PROFIT_EUR, 5),
+  minProfitPercent: parseNumber(process.env.MIN_PROFIT_PERCENT, 20),
   maxItemsPerSearch: parseNumber(process.env.MAX_ITEMS_PER_SEARCH, 18),
   requestTimeoutMs: parseNumber(process.env.REQUEST_TIMEOUT_MS, 60000),
   vintedShippingEstimate: parseNumber(process.env.VINTED_SHIPPING_ESTIMATE, 3.5),
@@ -107,11 +135,11 @@ module.exports = {
   vintedPagesPerSearch: parseNumber(process.env.VINTED_PAGES_PER_SEARCH, 5),
   vintedMaxListingsPerQuery: parseNumber(process.env.VINTED_MAX_LISTINGS_PER_QUERY, 36),
   vintedMaxListingsPerSearch: parseNumber(process.env.VINTED_MAX_LISTINGS_PER_SEARCH, 90),
-  ebayPagesPerQuery: parseNumber(process.env.EBAY_PAGES_PER_QUERY, 1),
+  ebayPagesPerQuery: parseNumber(process.env.EBAY_PAGES_PER_QUERY, 2),
   httpMinDelayMs: parseNumber(process.env.HTTP_MIN_DELAY_MS, 900),
   httpMaxDelayMs: parseNumber(process.env.HTTP_MAX_DELAY_MS, 1600),
   cacheTtlSeconds: parseNumber(process.env.CACHE_TTL_SECONDS, 3600),
-  minListingSpecificity: parseNumber(process.env.MIN_LISTING_SPECIFICITY, 5),
+  minListingSpecificity: parseNumber(process.env.MIN_LISTING_SPECIFICITY, 3),
   maxEbayQueryVariants: parseNumber(process.env.MAX_EBAY_QUERY_VARIANTS, 3),
   ebayBaseUrls: parseList(process.env.EBAY_BASE_URLS, [
     'https://www.ebay.co.uk',
