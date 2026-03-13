@@ -7,6 +7,7 @@ const { getEbaySoldListings } = require('./marketplaces/ebay');
 const { getVintedListings } = require('./marketplaces/vinted');
 const { buildTelegramMessage, sendTelegramMessage } = require('./notifier');
 const { buildProfitAnalysis, isOpportunity } = require('./profit');
+const { findUnderpricedListings } = require('./underpriced');
 
 async function ensureOutputDir(outputDir) {
   await fs.promises.mkdir(outputDir, { recursive: true });
@@ -15,6 +16,8 @@ async function ensureOutputDir(outputDir) {
 async function runScan() {
   const opportunities = [];
   const searchedListings = [];
+  const underpricedAlerts = [];
+  const minPrice = config.minListingPriceEur || 2;
 
   for (const search of config.searches) {
     console.log(`Scan Vinted: ${search.name}`);
@@ -27,16 +30,40 @@ async function runScan() {
       continue;
     }
 
-    console.log(`  ${listings.length} annonce(s) candidates.`);
+    // Filter out bait listings (< 2 EUR = auction bait)
+    const validListings = listings.filter((l) => l.buyerPrice >= minPrice);
+    const filtered = listings.length - validListings.length;
+    if (filtered > 0) {
+      console.log(`  ${listings.length} brutes -> ${validListings.length} valides (${filtered} < ${minPrice}EUR ignorees)`);
+    } else {
+      console.log(`  ${validListings.length} annonce(s) candidates.`);
+    }
 
-    for (const listing of listings) {
+    // Detect underpriced cards (same card, much cheaper than others on Vinted)
+    const searchUnderpriced = findUnderpricedListings(validListings, config);
+    for (const alert of searchUnderpriced) {
+      underpricedAlerts.push({ search: search.name, ...alert });
+      console.log(`  SOUS-EVALUE: ${alert.listing.title.slice(0, 50)} -> ${alert.listing.buyerPrice}EUR vs median ${alert.medianPrice}EUR (-${alert.discount}%)`);
+    }
+
+    for (let i = 0; i < validListings.length; i += 1) {
+      const listing = validListings[i];
       try {
+        console.log(`  [${i + 1}/${validListings.length}] ${listing.title.slice(0, 60)}...`);
         const soldListings = await getEbaySoldListings(listing.title, config);
-        const matchedSales = await attachImageSignals(
-          listing,
-          chooseBestSoldListings(listing, soldListings),
-          config
-        );
+
+        // Also filter eBay sold listings under minimum price (auction bait)
+        const validSoldListings = soldListings.filter((s) => s.totalPrice >= minPrice);
+
+        const textMatches = chooseBestSoldListings(listing, validSoldListings);
+        const matchedSales = await attachImageSignals(listing, textMatches, config);
+
+        if (textMatches.length > 0 && matchedSales.length === 0) {
+          console.log(`    ${textMatches.length} match(es) texte rejete(s) par image.`);
+        } else if (matchedSales.length > 0) {
+          const avgScore = matchedSales.reduce((s, m) => s + (m.imageMatch?.score || 0), 0) / matchedSales.length;
+          console.log(`    ${matchedSales.length} match(es) valide(s) (img: ${(avgScore * 100).toFixed(0)}%)`);
+        }
 
         const profit = buildProfitAnalysis(listing, matchedSales, config);
 
@@ -75,6 +102,7 @@ async function runScan() {
     },
     scannedCount: searchedListings.length,
     opportunities,
+    underpricedAlerts,
     searchedListings
   };
 }
@@ -88,9 +116,10 @@ async function runOnce() {
 
   console.log(`Scan termine. ${result.scannedCount} annonces analysees.`);
   console.log(`${result.opportunities.length} opportunite(s) detectee(s).`);
+  console.log(`${result.underpricedAlerts.length} carte(s) sous-evaluee(s).`);
   console.log(`Resultat: ${outputPath}`);
 
-  if (result.opportunities.length > 0) {
+  if (result.opportunities.length > 0 || result.underpricedAlerts.length > 0) {
     const message = buildTelegramMessage(result);
     try {
       await sendTelegramMessage(config.telegram, message);

@@ -594,6 +594,42 @@
     .no-data-icon { font-size: 32px; }
   }
 
+  /* Underpriced cards */
+  .card.underpriced { border-left: 4px solid var(--red); }
+  .underpriced-discount {
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--red);
+    white-space: nowrap;
+  }
+  .underpriced-vs {
+    font-size: 11px;
+    color: var(--text2);
+    margin-top: 2px;
+  }
+  .underpriced-stats {
+    display: flex;
+    gap: 16px;
+    padding: 12px 14px;
+    background: var(--surface2);
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .underpriced-stat {
+    flex: 1;
+    min-width: 80px;
+    text-align: center;
+  }
+  .underpriced-stat-label {
+    font-size: 10px;
+    color: var(--text2);
+    margin-bottom: 2px;
+  }
+  .underpriced-stat-value {
+    font-size: 14px;
+    font-weight: 700;
+  }
+
   /* Small phones */
   @media (max-width: 380px) {
     .header h1 { font-size: 14px; }
@@ -639,6 +675,7 @@
 
 <div class="tabs">
   <div class="tab active" data-view="cards">Cartes</div>
+  <div class="tab" data-view="underpriced">Sous-évalués</div>
   <div class="tab" data-view="table">Tableau</div>
   <div class="tab" data-view="config">Config</div>
 </div>
@@ -778,6 +815,7 @@ function renderStats() {
   if (!scanData) return;
   const opps = scanData.opportunities || [];
   const all = scanData.searchedListings || [];
+  const underpricedCount = (scanData.underpricedAlerts || []).length;
   const withMatches = all.filter(r => r.matchedSales && r.matchedSales.length > 0);
   const claimed = all.filter(r => claims[r.itemKey]);
   const avgProfit = opps.length > 0
@@ -792,6 +830,10 @@ function renderStats() {
     <div class="stat">
       <span class="stat-label">Opportunités</span>
       <span class="stat-value green">${opps.length}</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Sous-évalués</span>
+      <span class="stat-value red">${underpricedCount}</span>
     </div>
     <div class="stat">
       <span class="stat-label">Avec matches</span>
@@ -1028,6 +1070,65 @@ function renderTableView(listings) {
   </table></div>`;
 }
 
+function renderUnderpricedView() {
+  const alerts = scanData.underpricedAlerts || [];
+  if (alerts.length === 0) {
+    return `<div class="no-data"><div class="no-data-icon">✅</div>Aucune carte sous-évaluée détectée pour le moment.</div>`;
+  }
+
+  // Apply search filter if any
+  const filtered = searchQuery
+    ? alerts.filter(a => a.listing.title.toLowerCase().includes(searchQuery) || (a.search || '').toLowerCase().includes(searchQuery))
+    : alerts;
+
+  if (filtered.length === 0) {
+    return `<div class="no-data"><div class="no-data-icon">🔍</div>Aucun résultat pour "${searchQuery}".</div>`;
+  }
+
+  return `<div class="cards-grid">${filtered.map(alert => {
+    const listing = alert.listing;
+    return `
+      <div class="card underpriced">
+        <div class="card-top">
+          <img class="card-img" src="${listing.imageUrl || ''}" onerror="this.style.display='none'" alt="">
+          <div class="card-info">
+            <div class="card-title">${listing.title}</div>
+            <div class="card-meta">
+              <span class="badge badge-red">-${alert.discount}%</span>
+              <span class="badge badge-blue">${alert.search || ''}</span>
+              ${alert.matchedByImage ? '<span class="badge badge-purple">IMAGE MATCH</span>' : ''}
+            </div>
+            <div class="card-links">
+              <a href="${listing.url}" target="_blank" rel="noopener" class="link-btn purple">Vinted ↗</a>
+            </div>
+          </div>
+        </div>
+        <div class="underpriced-stats">
+          <div class="underpriced-stat">
+            <div class="underpriced-stat-label">Prix affiché</div>
+            <div class="underpriced-stat-value" style="color:var(--green)">${formatEur(listing.buyerPrice)}</div>
+          </div>
+          <div class="underpriced-stat">
+            <div class="underpriced-stat-label">Médiane Vinted</div>
+            <div class="underpriced-stat-value" style="color:var(--orange)">${formatEur(alert.medianPrice)}</div>
+          </div>
+          <div class="underpriced-stat">
+            <div class="underpriced-stat-label">Moyenne</div>
+            <div class="underpriced-stat-value">${formatEur(alert.avgPrice)}</div>
+          </div>
+          <div class="underpriced-stat">
+            <div class="underpriced-stat-label">Comparables</div>
+            <div class="underpriced-stat-value" style="color:var(--blue)">${alert.compCount}</div>
+          </div>
+          <div class="underpriced-stat">
+            <div class="underpriced-stat-label">Réduction</div>
+            <div class="underpriced-stat-value" style="color:var(--red)">-${alert.discount}%</div>
+          </div>
+        </div>
+      </div>`;
+  }).join('')}</div>`;
+}
+
 function renderConfigView() {
   return `<div style="max-width:800px">
     <h2 style="margin-bottom:16px;font-size:16px">Configuration active</h2>
@@ -1102,6 +1203,11 @@ function render() {
   if (currentView === 'config') {
     content.innerHTML = renderConfigView();
     loadConfig();
+    return;
+  }
+
+  if (currentView === 'underpriced') {
+    content.innerHTML = renderUnderpricedView();
     return;
   }
 

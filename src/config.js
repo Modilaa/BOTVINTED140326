@@ -65,7 +65,11 @@ const searches = [
     vintedQueries: [
       'topps chrome f1 card',
       'topps formula 1 card',
-      'topps turbo attax f1'
+      'topps turbo attax f1',
+      'topps f1 antonelli',
+      'topps f1 bearman',
+      'topps f1 refractor',
+      'topps f1 autograph'
     ],
     requiredAllTokens: ['topps'],
     requiredAnyTokens: ['f1', 'formula', 'turbo', 'attax'],
@@ -77,7 +81,11 @@ const searches = [
     vintedQueries: [
       'topps chrome ucc card',
       'topps merlin chrome card',
-      'topps finest uefa card'
+      'topps finest uefa card',
+      'topps chrome yamal',
+      'topps chrome bellingham',
+      'topps chrome musiala',
+      'topps merlin heritage'
     ],
     requiredAllTokens: ['topps'],
     requiredAnyTokens: ['chrome', 'finest', 'merlin', 'uefa', 'champions', 'premier'],
@@ -91,10 +99,15 @@ const searches = [
       'pokemon psa',
       'pokemon carte illustration rare',
       'pokemon carte japonaise',
-      'pokemon carte gold'
+      'pokemon carte gold',
+      'pokemon SIR carte',
+      'pokemon art rare carte',
+      'pokemon prismatic evolutions',
+      'pokemon 151 carte',
+      'pokemon paldean fates'
     ],
     requiredAnyTokens: ['pokemon'],
-    blockedTokens: ['yugioh', 'one piece', 'digimon', 'peluche', 'figurine', 'classeur', 'album']
+    blockedTokens: ['yugioh', 'one piece', 'digimon', 'peluche', 'figurine', 'classeur', 'album', 'tapis', 'playmat']
   },
   {
     name: 'One Piece TCG',
@@ -103,10 +116,13 @@ const searches = [
       'one piece card game',
       'one piece tcg carte',
       'one piece manga card rare',
-      'one piece card game leader'
+      'one piece card game leader',
+      'one piece manga rare',
+      'one piece alt art carte',
+      'one piece OP13 carte'
     ],
     requiredAnyTokens: ['one piece'],
-    blockedTokens: ['pokemon', 'yugioh', 'figurine', 'poster', 'manga livre']
+    blockedTokens: ['pokemon', 'yugioh', 'figurine', 'poster', 'manga livre', 'tapis', 'playmat']
   },
   {
     name: 'Panini Football',
@@ -116,16 +132,36 @@ const searches = [
       'panini donruss football card',
       'panini select football card',
       'panini mosaic football card',
-      'panini chronicles football'
+      'panini chronicles football',
+      'panini prizm premier league',
+      'panini select premier league',
+      'panini prizm silver'
     ],
     requiredAllTokens: ['panini'],
-    requiredAnyTokens: ['prizm', 'donruss', 'select', 'mosaic', 'football', 'chronicles', 'optic'],
+    requiredAnyTokens: ['prizm', 'donruss', 'select', 'mosaic', 'football', 'chronicles', 'optic', 'premier'],
     blockedTokens: ['topps', 'pokemon', 'album', 'sticker', 'autocollant', 'vignette']
+  },
+  {
+    name: 'Yu-Gi-Oh',
+    maxPrice: 100,
+    vintedQueries: [
+      'yugioh carte rare',
+      'yu-gi-oh card rare',
+      'yugioh starlight rare',
+      'yugioh quarter century secret rare',
+      'yugioh ghost rare',
+      'yugioh carte secret'
+    ],
+    requiredAnyTokens: ['yugioh', 'yu-gi-oh', 'yu gi oh'],
+    blockedTokens: ['pokemon', 'one piece', 'digimon', 'classeur', 'album', 'tapis', 'playmat', 'deck box', 'sleeves']
   }
 ];
 
 module.exports = {
   searches,
+  minListingPriceEur: parseNumber(process.env.MIN_LISTING_PRICE_EUR, 2),
+  underpricedThreshold: parseNumber(process.env.UNDERPRICED_THRESHOLD, 0.50),
+  underpricedMinComps: parseNumber(process.env.UNDERPRICED_MIN_COMPS, 3),
   minProfitEur: parseNumber(process.env.MIN_PROFIT_EUR, 5),
   minProfitPercent: parseNumber(process.env.MIN_PROFIT_PERCENT, 20),
   maxItemsPerSearch: parseNumber(process.env.MAX_ITEMS_PER_SEARCH, 18),
@@ -152,6 +188,7 @@ module.exports = {
   ebayFindingApiEnabled: parseBoolean(process.env.EBAY_FINDING_API_ENABLED, false),
   usdToEurRate: parseNumber(process.env.USD_TO_EUR_RATE, 0.865),
   gbpToEurRate: parseNumber(process.env.GBP_TO_EUR_RATE, 1.153),
+  minImageSimilarity: parseNumber(process.env.MIN_IMAGE_SIMILARITY, 0.60),
   ebayAppId: process.env.EBAY_APP_ID || '',
   outputDir: path.resolve(process.cwd(), process.env.OUTPUT_DIR || 'output'),
   telegram: {

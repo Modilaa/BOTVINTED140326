@@ -40,8 +40,15 @@ function formatSoldDate(value) {
 function buildTelegramMessage(scanResult) {
   const lines = [];
   lines.push(`Scan termine: ${scanResult.opportunities.length} opportunite(s)`);
+
+  // Underpriced alerts
+  const alerts = scanResult.underpricedAlerts || [];
+  if (alerts.length > 0) {
+    lines.push(`+ ${alerts.length} carte(s) sous-evaluee(s)`);
+  }
   lines.push('');
 
+  // eBay arbitrage opportunities
   for (const [index, opportunity] of scanResult.opportunities.slice(0, 5).entries()) {
     const soldDetails = opportunity.matchedSales
       .map((sale) => {
@@ -56,6 +63,17 @@ function buildTelegramMessage(scanResult) {
     lines.push(`Profit estime: ${opportunity.profit.profit.toFixed(2)} EUR (${opportunity.profit.profitPercent.toFixed(1)}%)`);
     lines.push(opportunity.url);
     lines.push('');
+  }
+
+  // Underpriced Vinted alerts
+  if (alerts.length > 0) {
+    lines.push('--- SOUS-EVALUES VINTED ---');
+    for (const alert of alerts.slice(0, 5)) {
+      lines.push(`${alert.listing.title.slice(0, 50)}`);
+      lines.push(`${alert.listing.buyerPrice} EUR vs median ${alert.medianPrice} EUR (-${alert.discount}%) [${alert.compCount} comparables]`);
+      lines.push(alert.listing.url);
+      lines.push('');
+    }
   }
 
   return lines.join('\n').trim();

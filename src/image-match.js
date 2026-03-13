@@ -217,13 +217,20 @@ async function attachImageSignals(vintedListing, soldListings, config) {
     return soldListings;
   }
 
+  const minImageSimilarity = config.minImageSimilarity || 0.60;
   const enrichedSales = [];
+
   for (const sale of soldListings) {
     const imageMatch = await compareListingImages(vintedListing.imageUrl, sale.imageUrl, config);
-    enrichedSales.push({
-      ...sale,
-      imageMatch
-    });
+    const enriched = { ...sale, imageMatch };
+
+    // HARD FILTER: reject matches where images clearly don't match
+    if (imageMatch && imageMatch.score !== null && imageMatch.score < minImageSimilarity) {
+      console.log(`    Image rejetee (${(imageMatch.score * 100).toFixed(0)}%): ${sale.title.slice(0, 50)}`);
+      continue;
+    }
+
+    enrichedSales.push(enriched);
   }
 
   return enrichedSales;
