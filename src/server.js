@@ -175,6 +175,9 @@ app.get('/api/events', (req, res) => {
   });
 });
 
+// Export broadcastSSE so the scanner can notify the dashboard directly
+module.exports = { broadcastSSE };
+
 app.listen(PORT, () => {
   console.log(`Dashboard: http://localhost:${PORT}`);
 });

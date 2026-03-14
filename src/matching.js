@@ -369,6 +369,13 @@ function scoreSoldListing(vintedListing, soldListing) {
   const identityPartialOnly = sourceIdentityCount >= 2 && sharedIdentityTokens.length > 0 &&
     sharedIdentityTokens.length < sourceIdentityCount;
 
+  // REVERSE COVERAGE: check how many eBay identity tokens are NOT in the Vinted listing
+  // If eBay has many extra identity tokens (e.g. "Road To Euro Spain The Man"),
+  // it's likely a different card from the same set
+  const ebayExtraIdentity = right.identityTokens.filter((token) => !leftSet.has(token));
+  const ebayExtraSpecific = right.specificTokens.filter((token) => !leftSet.has(token));
+  const reverseMismatch = ebayExtraIdentity.length >= 2;
+
   const missingCritical =
     (left.year && right.year && left.year !== right.year) ||
     (left.cardNumber && right.cardNumber && left.cardNumber !== right.cardNumber) ||
@@ -378,7 +385,8 @@ function scoreSoldListing(vintedListing, soldListing) {
     left.autograph !== right.autograph ||
     printRunMismatch ||
     cardNumberMissing ||
-    identityPartialOnly;
+    identityPartialOnly ||
+    reverseMismatch;
 
   return {
     score,
@@ -390,7 +398,9 @@ function scoreSoldListing(vintedListing, soldListing) {
     printRunMismatch,
     cardNumberMissing,
     identityFullCoverage,
-    identityPartialOnly
+    identityPartialOnly,
+    reverseMismatch,
+    ebayExtraIdentity
   };
 }
 

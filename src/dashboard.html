@@ -672,6 +672,7 @@
   <button class="filter-btn" data-filter="claimed">Prises</button>
   <input type="text" class="filter-search" id="searchInput" placeholder="Rechercher un titre...">
 </div>
+<div class="filters" id="categoryBar" style="padding-top:0"></div>
 
 <div class="tabs">
   <div class="tab active" data-view="cards">Cartes</div>
@@ -685,6 +686,7 @@
 <script>
 let scanData = null;
 let currentFilter = 'with-matches';
+let currentCategory = 'all';
 let currentView = 'cards';
 let searchQuery = '';
 let username = '';
@@ -775,8 +777,28 @@ function getListingStatus(row) {
   return 'no-match';
 }
 
+function renderCategoryButtons() {
+  if (!scanData || !scanData.searchedListings) return;
+  const categories = [...new Set(scanData.searchedListings.map(r => r.search))];
+  const bar = document.getElementById('categoryBar');
+  bar.innerHTML = `<button class="filter-btn ${currentCategory === 'all' ? 'active' : ''}" data-cat="all">Toutes</button>` +
+    categories.map(cat => {
+      const count = scanData.searchedListings.filter(r => r.search === cat).length;
+      return `<button class="filter-btn ${currentCategory === cat ? 'active' : ''}" data-cat="${cat}">${cat} (${count})</button>`;
+    }).join('');
+  bar.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      bar.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentCategory = btn.dataset.cat;
+      render();
+    });
+  });
+}
+
 function filterListings(listings) {
   return listings.filter(row => {
+    if (currentCategory !== 'all' && row.search !== currentCategory) return false;
     const status = getListingStatus(row);
     const isClaimed = claims[row.itemKey];
     const hasMatches = row.matchedSales && row.matchedSales.length > 0;
@@ -907,7 +929,7 @@ function renderCardView(listings) {
         <div class="card-prices">
           <div class="price-col">
             <div class="price-label">Vinted</div>
-            <div class="price-value" style="color:var(--blue)">${formatEur(profit.totalCost)}</div>
+            <div class="price-value" style="color:var(--blue)">${formatEur(row.vintedBuyerPrice)}</div>
           </div>
           <div class="price-col">
             <div class="price-label">eBay moy.</div>
@@ -928,12 +950,20 @@ function renderCardView(listings) {
       pricesHtml = `
         <div class="card-prices">
           <div class="price-col">
-            <div class="price-label">Prix Vinted</div>
+            <div class="price-label">Vinted</div>
             <div class="price-value" style="color:var(--blue)">${formatEur(row.vintedBuyerPrice)}</div>
           </div>
           <div class="price-col">
-            <div class="price-label">Matchs eBay</div>
-            <div class="price-value" style="color:var(--text2)">${row.matchedSales ? row.matchedSales.length : 0}</div>
+            <div class="price-label">eBay moy.</div>
+            <div class="price-value" style="color:var(--text2)">—</div>
+          </div>
+          <div class="price-col">
+            <div class="price-label">Net estimé</div>
+            <div class="price-value" style="color:var(--text2)">—</div>
+          </div>
+          <div class="price-col">
+            <div class="price-label">Profit</div>
+            <div class="price-value" style="color:var(--text2)">—</div>
           </div>
         </div>`;
     }
@@ -1005,7 +1035,9 @@ function renderCardView(listings) {
             </div>
             <div class="card-links">
               <a href="${row.url}" target="_blank" rel="noopener" class="link-btn purple">Vinted ↗</a>
-              ${hasMatches ? `<a href="${row.matchedSales[0].url || '#'}" target="_blank" rel="noopener" class="link-btn">eBay (${row.matchedSales.length}) ↗</a>` : ''}
+              ${hasMatches ? row.matchedSales.filter(s => s.url).map((s, idx) =>
+                `<a href="${s.url}" target="_blank" rel="noopener" class="link-btn">eBay ${idx + 1} ↗</a>`
+              ).join('') : ''}
             </div>
           </div>
         </div>
@@ -1197,6 +1229,7 @@ function render() {
   }
 
   renderStats();
+  renderCategoryButtons();
 
   const content = document.getElementById('mainContent');
 
@@ -1211,7 +1244,8 @@ function render() {
     return;
   }
 
-  const allListings = scanData.searchedListings || [];
+  // Reverse order: latest scanned first
+  const allListings = [...(scanData.searchedListings || [])].reverse();
   const filtered = filterListings(allListings);
 
   if (currentView === 'cards') {
@@ -1257,7 +1291,11 @@ function connectSSE() {
   eventSource.onmessage = (e) => {
     try {
       const msg = JSON.parse(e.data);
-      if (msg.type === 'claim' && msg.data) {
+      if (msg.type === 'scan-update') {
+        // New scan results available — reload immediately
+        loadData();
+        loadClaims();
+      } else if (msg.type === 'claim' && msg.data) {
         // Server sends: {type:'claim', data:{username, vintedUrl, claimedAt}}
         // We need itemKey — reload all claims to be safe
         loadClaims().then(() => render());

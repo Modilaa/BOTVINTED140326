@@ -13,6 +13,27 @@ async function ensureOutputDir(outputDir) {
   await fs.promises.mkdir(outputDir, { recursive: true });
 }
 
+// Save current scan state to disk and notify dashboard
+async function flushProgress(outputDir, opportunities, underpricedAlerts, searchedListings) {
+  const snapshot = {
+    scannedAt: new Date().toISOString(),
+    scanning: true,
+    thresholds: {
+      minProfitEur: config.minProfitEur,
+      minProfitPercent: config.minProfitPercent
+    },
+    scannedCount: searchedListings.length,
+    opportunities: [...opportunities].sort((a, b) => b.profit.profit - a.profit.profit),
+    underpricedAlerts,
+    searchedListings
+  };
+  const outputPath = path.join(outputDir, 'latest-scan.json');
+  await fs.promises.writeFile(outputPath, JSON.stringify(snapshot, null, 2));
+  if (global._broadcastSSE) {
+    global._broadcastSSE({ type: 'scan-update' });
+  }
+}
+
 async function runScan() {
   const opportunities = [];
   const searchedListings = [];
@@ -86,6 +107,9 @@ async function runScan() {
           opportunities.push(row);
           console.log(`  Opportunite: ${listing.title} -> ${profit.profit.toFixed(2)} EUR`);
         }
+
+        // Flush progress to dashboard after each listing
+        await flushProgress(config.outputDir, opportunities, underpricedAlerts, searchedListings);
       } catch (error) {
         console.error(`  Erreur sur "${listing.title}": ${error.message}`);
       }
@@ -96,6 +120,7 @@ async function runScan() {
 
   return {
     scannedAt: new Date().toISOString(),
+    scanning: false,
     thresholds: {
       minProfitEur: config.minProfitEur,
       minProfitPercent: config.minProfitPercent
@@ -113,6 +138,12 @@ async function runOnce() {
   const outputPath = path.join(config.outputDir, 'latest-scan.json');
 
   await fs.promises.writeFile(outputPath, JSON.stringify(result, null, 2));
+
+  // Notify dashboard to refresh
+  if (global._broadcastSSE) {
+    global._broadcastSSE({ type: 'scan-update' });
+    console.log('Dashboard notifie.');
+  }
 
   console.log(`Scan termine. ${result.scannedCount} annonces analysees.`);
   console.log(`${result.opportunities.length} opportunite(s) detectee(s).`);
@@ -139,6 +170,10 @@ const loopIntervalMs = (function parseInterval() {
 })();
 
 async function main() {
+  // Launch dashboard server automatically
+  const { broadcastSSE } = require('./server');
+  global._broadcastSSE = broadcastSSE;
+
   if (!loopEnabled) {
     await runOnce();
     return;
