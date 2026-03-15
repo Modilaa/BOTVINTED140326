@@ -63,8 +63,15 @@ app.get('/api/scan', (_req, res) => {
   if (!fs.existsSync(scanPath)) {
     return res.json({ error: 'Aucun scan disponible. Lance npm start d\'abord.' });
   }
-  const raw = fs.readFileSync(scanPath, 'utf8');
-  res.json(JSON.parse(raw));
+  try {
+    const raw = fs.readFileSync(scanPath, 'utf8');
+    if (!raw || !raw.trim()) {
+      return res.json({ error: 'Fichier de scan vide. Un scan est en cours...' });
+    }
+    res.json(JSON.parse(raw));
+  } catch (error) {
+    res.json({ error: `Erreur lecture scan: ${error.message}` });
+  }
 });
 
 // API: config info
@@ -145,6 +152,59 @@ app.delete('/api/claim/:itemKey', (req, res) => {
 app.get('/api/claims', (_req, res) => {
   const claims = readClaims();
   res.json(claims);
+});
+
+// API: archive a listing (remove from dashboard)
+app.delete('/api/listing/:itemKey', (req, res) => {
+  const { itemKey } = req.params;
+  const scanPath = path.join(config.outputDir, 'latest-scan.json');
+
+  if (!fs.existsSync(scanPath)) {
+    return res.status(404).json({ error: 'No scan data' });
+  }
+
+  try {
+    const raw = fs.readFileSync(scanPath, 'utf8');
+    const scan = JSON.parse(raw);
+
+    let found = false;
+    if (scan.searchedListings) {
+      scan.searchedListings = scan.searchedListings.filter((l) => {
+        const lKey = l.url.match(/\/items\/(\d+)/)?.[1] || l.url;
+        if (lKey === itemKey) {
+          found = true;
+          return false;
+        }
+        return true;
+      });
+    }
+
+    if (scan.opportunities) {
+      scan.opportunities = scan.opportunities.filter((l) => {
+        const lKey = l.url.match(/\/items\/(\d+)/)?.[1] || l.url;
+        return lKey !== itemKey;
+      });
+    }
+
+    if (scan.underpricedAlerts) {
+      scan.underpricedAlerts = scan.underpricedAlerts.filter((a) => {
+        if (!a.listing) return true;
+        const lKey = a.listing.url.match(/\/items\/(\d+)/)?.[1] || a.listing.url;
+        return lKey !== itemKey;
+      });
+    }
+
+    if (!found) {
+      return res.status(404).json({ error: 'Listing not found' });
+    }
+
+    fs.writeFileSync(scanPath, JSON.stringify(scan, null, 2), 'utf8');
+
+    broadcastSSE({ type: 'scan-update' });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // SSE: Server-Sent Events endpoint

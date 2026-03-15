@@ -594,6 +594,21 @@
     .no-data-icon { font-size: 32px; }
   }
 
+  /* Stale cards (from previous scans) */
+  .card.stale { opacity: 0.7; border-left: 4px solid var(--text2); }
+  .stale-badge { font-size: 10px; color: var(--text2); font-style: italic; }
+  .dismiss-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text2);
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    margin-left: auto;
+  }
+  .dismiss-btn:hover { border-color: var(--red); color: var(--red); }
+
   /* Underpriced cards */
   .card.underpriced { border-left: 4px solid var(--red); }
   .underpriced-discount {
@@ -692,6 +707,9 @@ let searchQuery = '';
 let username = '';
 let claims = {};
 let eventSource = null;
+
+// Auto-detect base path (works behind /dashboard/ reverse proxy or standalone)
+const BASE = window.location.pathname.replace(/\/$/, '');
 
 // Initialize username
 function initUsername() {
@@ -878,6 +896,20 @@ function extractItemKey(url) {
   return match ? match[1] : url;
 }
 
+async function dismissItem(itemKey) {
+  if (!confirm('Retirer cette carte du dashboard ?')) return;
+  try {
+    const response = await fetch(BASE + '/api/listing/' + encodeURIComponent(itemKey), { method: 'DELETE' });
+    if (response.ok) {
+      loadData();
+    } else {
+      alert('Erreur lors de la suppression.');
+    }
+  } catch (e) {
+    console.error('Dismiss error:', e);
+  }
+}
+
 async function claimItem(itemKey, vintedUrl) {
   if (!username) {
     alert('Veuillez d\'abord entrer votre pseudo.');
@@ -886,7 +918,7 @@ async function claimItem(itemKey, vintedUrl) {
   }
 
   try {
-    const response = await fetch('/api/claim', {
+    const response = await fetch(BASE + '/api/claim', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -970,22 +1002,35 @@ function renderCardView(listings) {
 
     let matchesHtml = '';
     if (hasMatches) {
+      const isApi = row.pricingSource && row.pricingSource !== 'ebay';
+      const matchLabel = isApi ? `Prix marché — ${row.pricingSource} (${row.matchedSales.length})` : `Ventes eBay matchées (${row.matchedSales.length})`;
       matchesHtml = `
         <div class="card-matches">
-          <div class="match-title">Ventes eBay matchées (${row.matchedSales.length})</div>
-          ${row.matchedSales.map(sale => `
+          <div class="match-title">${matchLabel}</div>
+          ${row.matchedSales.map(sale => {
+            const isApiSale = sale.apiData;
+            const linkLabel = isApiSale ? 'Cardmarket ↗' : 'eBay ↗';
+            const apiInfo = isApiSale ? `
+              <div style="margin-top:4px;font-size:10px">
+                ${sale.apiData.rarity ? `<span class="badge badge-purple" style="font-size:9px">${sale.apiData.rarity}</span>` : ''}
+                ${sale.apiData.setName ? `<span style="color:var(--text2)">${sale.apiData.setName}</span>` : ''}
+                ${sale.apiData.cardmarketPrice ? `<span style="color:var(--green)">CM: ${sale.apiData.cardmarketPrice.toFixed(2)}€</span>` : ''}
+                ${sale.apiData.tcgplayerPrice ? `<span style="color:var(--blue)">TCG: $${sale.apiData.tcgplayerPrice.toFixed(2)}</span>` : ''}
+              </div>` : '';
+            return `
             <div class="match-item">
               <img class="match-img" src="${sale.imageUrl || ''}" onerror="this.style.display='none'" alt="">
               <div class="match-info">
                 <div class="match-info-title">${sale.title}</div>
                 <div class="match-info-meta">
                   <span style="font-weight:700">${formatEur(sale.totalPrice)}</span>
-                  <span>${formatDate(sale.soldAt)}</span>
+                  ${!isApiSale ? `<span>${formatDate(sale.soldAt)}</span>` : ''}
                   <span>${sale.marketplace || ''}</span>
                   ${sale.imageMatch ? `<span class="confidence confidence-${sale.imageMatch.confidence}"><span class="confidence-dot"></span>${sale.imageMatch.confidence}</span>` : ''}
-                  ${sale.url ? `<a href="${sale.url}" target="_blank" rel="noopener" class="match-link-btn">eBay ↗</a>` : ''}
+                  ${sale.url ? `<a href="${sale.url}" target="_blank" rel="noopener" class="match-link-btn">${linkLabel}</a>` : ''}
                 </div>
-                ${sale.match ? `
+                ${apiInfo}
+                ${!isApiSale && sale.match ? `
                   <div style="margin-top:4px;font-size:10px">
                     <div style="display:flex;align-items:center;gap:4px">
                       <span>Score: ${sale.match.score}</span>
@@ -999,8 +1044,8 @@ function renderCardView(listings) {
                   </div>
                 ` : ''}
               </div>
-            </div>
-          `).join('')}
+            </div>`;
+          }).join('')}
         </div>`;
     }
 
@@ -1009,6 +1054,10 @@ function renderCardView(listings) {
       : status === 'rejected'
       ? '<span class="badge badge-orange">SOUS SEUIL</span>'
       : '<span class="badge badge-gray">PAS DE MATCH</span>';
+
+    const staleBadge = row.stale ? '<span class="stale-badge">Scan précédent</span>' : '';
+    const firstSeen = row.firstSeenAt ? `<span style="font-size:10px;color:var(--text2)">Vu: ${formatDateTime(row.firstSeenAt)}</span>` : '';
+    const dismissBtn = `<button class="dismiss-btn" onclick="dismissItem('${row.itemKey}')">Retirer</button>`;
 
     const claimHtml = isClaimed ? `
       <div class="card-claim">
@@ -1024,7 +1073,7 @@ function renderCardView(listings) {
     `;
 
     return `
-      <div class="card ${status}">
+      <div class="card ${status} ${row.stale ? 'stale' : ''}">
         <div class="card-top">
           <img class="card-img" src="${row.imageUrl || ''}" onerror="this.style.display='none'" alt="">
           <div class="card-info">
@@ -1032,6 +1081,10 @@ function renderCardView(listings) {
             <div class="card-meta">
               ${statusBadge}
               <span class="badge badge-blue">${row.search}</span>
+              ${row.pricingSource && row.pricingSource !== 'ebay' ? `<span class="badge badge-purple" style="font-size:9px">API</span>` : ''}
+              ${staleBadge}
+              ${firstSeen}
+              ${dismissBtn}
             </div>
             <div class="card-links">
               <a href="${row.url}" target="_blank" rel="noopener" class="link-btn purple">Vinted ↗</a>
@@ -1170,7 +1223,7 @@ function renderConfigView() {
 
 async function loadConfig() {
   try {
-    const res = await fetch('/api/config');
+    const res = await fetch(BASE + '/api/config');
     const cfg = await res.json();
     const el = document.getElementById('configContent');
     if (!el) return;
@@ -1212,7 +1265,7 @@ async function loadConfig() {
 
 async function loadClaims() {
   try {
-    const res = await fetch('/api/claims');
+    const res = await fetch(BASE + '/api/claims');
     const data = await res.json();
     // Server returns {itemKey: {username, vintedUrl, claimedAt}, ...}
     claims = data || {};
@@ -1257,7 +1310,7 @@ function render() {
 
 async function loadData() {
   try {
-    const res = await fetch('/api/scan');
+    const res = await fetch(BASE + '/api/scan');
     scanData = await res.json();
     if (scanData.error) {
       document.getElementById('mainContent').innerHTML =
@@ -1286,7 +1339,7 @@ async function loadData() {
 function connectSSE() {
   if (eventSource) eventSource.close();
 
-  eventSource = new EventSource('/api/events');
+  eventSource = new EventSource(BASE + '/api/events');
 
   eventSource.onmessage = (e) => {
     try {

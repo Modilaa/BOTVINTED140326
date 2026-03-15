@@ -61,6 +61,7 @@ loadDotEnv();
 const searches = [
   {
     name: 'Topps F1',
+    pricingSource: 'ebay',
     maxPrice: 120,
     vintedQueries: [
       'topps chrome f1 card',
@@ -77,6 +78,7 @@ const searches = [
   },
   {
     name: 'Topps Chrome Football',
+    pricingSource: 'ebay',
     maxPrice: 120,
     vintedQueries: [
       'topps chrome ucc card',
@@ -93,6 +95,7 @@ const searches = [
   },
   {
     name: 'Pokemon',
+    pricingSource: 'pokemon-tcg-api',
     maxPrice: 150,
     vintedQueries: [
       'pokemon carte rare',
@@ -104,13 +107,20 @@ const searches = [
       'pokemon art rare carte',
       'pokemon prismatic evolutions',
       'pokemon 151 carte',
-      'pokemon paldean fates'
+      'pokemon paldean fates',
+      'pokemon carte ex',
+      'pokemon full art',
+      'pokemon trainer gallery',
+      'pokemon surging sparks',
+      'pokemon stellar crown',
+      'pokemon twilight masquerade'
     ],
     requiredAnyTokens: ['pokemon'],
-    blockedTokens: ['yugioh', 'one piece', 'digimon', 'peluche', 'figurine', 'classeur', 'album', 'tapis', 'playmat']
+    blockedTokens: ['yugioh', 'one piece', 'digimon', 'peluche', 'figurine', 'classeur', 'album', 'tapis', 'playmat', 'booster', 'display', 'coffret', 'tin']
   },
   {
     name: 'One Piece TCG',
+    pricingSource: 'ebay',
     maxPrice: 100,
     vintedQueries: [
       'one piece card game',
@@ -126,6 +136,7 @@ const searches = [
   },
   {
     name: 'Panini Football',
+    pricingSource: 'ebay',
     maxPrice: 120,
     vintedQueries: [
       'panini prizm football card',
@@ -143,6 +154,7 @@ const searches = [
   },
   {
     name: 'Yu-Gi-Oh',
+    pricingSource: 'ygoprodeck',
     maxPrice: 100,
     vintedQueries: [
       'yugioh carte rare',
@@ -150,7 +162,11 @@ const searches = [
       'yugioh starlight rare',
       'yugioh quarter century secret rare',
       'yugioh ghost rare',
-      'yugioh carte secret'
+      'yugioh carte secret',
+      'yugioh ultimate rare',
+      'yugioh collector rare',
+      'yugioh prismatic',
+      'yugioh carte francaise rare'
     ],
     requiredAnyTokens: ['yugioh', 'yu-gi-oh', 'yu gi oh'],
     blockedTokens: ['pokemon', 'one piece', 'digimon', 'classeur', 'album', 'tapis', 'playmat', 'deck box', 'sleeves']
@@ -164,13 +180,13 @@ module.exports = {
   underpricedMinComps: parseNumber(process.env.UNDERPRICED_MIN_COMPS, 3),
   minProfitEur: parseNumber(process.env.MIN_PROFIT_EUR, 5),
   minProfitPercent: parseNumber(process.env.MIN_PROFIT_PERCENT, 20),
-  maxItemsPerSearch: parseNumber(process.env.MAX_ITEMS_PER_SEARCH, 18),
+  maxItemsPerSearch: parseNumber(process.env.MAX_ITEMS_PER_SEARCH, 80),
   requestTimeoutMs: parseNumber(process.env.REQUEST_TIMEOUT_MS, 60000),
   vintedShippingEstimate: parseNumber(process.env.VINTED_SHIPPING_ESTIMATE, 3.5),
   ebayOutboundShippingEstimate: parseNumber(process.env.EBAY_OUTBOUND_SHIPPING_ESTIMATE, 4.5),
-  vintedPagesPerSearch: parseNumber(process.env.VINTED_PAGES_PER_SEARCH, 5),
-  vintedMaxListingsPerQuery: parseNumber(process.env.VINTED_MAX_LISTINGS_PER_QUERY, 36),
-  vintedMaxListingsPerSearch: parseNumber(process.env.VINTED_MAX_LISTINGS_PER_SEARCH, 90),
+  vintedPagesPerSearch: parseNumber(process.env.VINTED_PAGES_PER_SEARCH, 8),
+  vintedMaxListingsPerQuery: parseNumber(process.env.VINTED_MAX_LISTINGS_PER_QUERY, 60),
+  vintedMaxListingsPerSearch: parseNumber(process.env.VINTED_MAX_LISTINGS_PER_SEARCH, 300),
   ebayPagesPerQuery: parseNumber(process.env.EBAY_PAGES_PER_QUERY, 2),
   httpMinDelayMs: parseNumber(process.env.HTTP_MIN_DELAY_MS, 900),
   httpMaxDelayMs: parseNumber(process.env.HTTP_MAX_DELAY_MS, 1600),

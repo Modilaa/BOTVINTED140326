@@ -74,6 +74,8 @@ function detectBlockedPage(body) {
   const lowerBody = body.toLowerCase();
   const markers = [
     '<title>access denied',
+    '<title>pardon our interruption',
+    '<title>ci scusiamo',
     'robot check',
     'unusual traffic',
     'please verify you are a human',
@@ -84,12 +86,32 @@ function detectBlockedPage(body) {
   return markers.some((marker) => lowerBody.includes(marker));
 }
 
+// Build ScraperAPI URL if configured and target is eBay
+function buildProxiedUrl(url) {
+  const scraperApiKey = process.env.SCRAPER_API_KEY;
+  if (!scraperApiKey) {
+    return null;
+  }
+
+  // Only proxy eBay requests
+  try {
+    const hostname = new URL(url).hostname;
+    if (!hostname.includes('ebay')) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  return `http://api.scraperapi.com?api_key=${scraperApiKey}&url=${encodeURIComponent(url)}`;
+}
+
 async function fetchText(url, options = {}) {
   await ensureCacheDir(options.cacheDir);
 
   if (!options.skipCache) {
     const cachedBody = await readFromCache(options.cacheDir, url, options.cacheTtlSeconds);
-    if (cachedBody) {
+    if (cachedBody && !detectBlockedPage(cachedBody)) {
       return cachedBody;
     }
   }
@@ -100,11 +122,15 @@ async function fetchText(url, options = {}) {
   const timeoutMs = options.timeoutMs || 60000;
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
+  // Use ScraperAPI proxy for eBay if configured
+  const proxiedUrl = buildProxiedUrl(url);
+  const fetchUrl = proxiedUrl || url;
+
   try {
-    const response = await fetch(url, {
+    const response = await fetch(fetchUrl, {
       method: 'GET',
       redirect: 'follow',
-      headers: {
+      headers: proxiedUrl ? {} : {
         'accept-language': 'fr-FR,fr;q=0.9,en;q=0.8',
         'cache-control': 'no-cache',
         'user-agent': options.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
@@ -119,9 +145,10 @@ async function fetchText(url, options = {}) {
 
     const body = await response.text();
     if (detectBlockedPage(body)) {
-      throw new Error(`Potential block page detected for ${url}`);
+      throw new Error(`Blocked page detected for ${url}`);
     }
 
+    // Cache using original URL as key (not the proxied URL)
     if (!options.skipCache) {
       await writeToCache(options.cacheDir, url, body);
     }
