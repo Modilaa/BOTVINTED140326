@@ -226,11 +226,32 @@ const PSA_PREMIUMS = {
   '7': 1.0,    // PSA 7 = ~raw value
 };
 
+// Words that are NEVER a Pokemon name
+const SKIP_WORDS = new Set([
+  'carte', 'card', 'cards', 'pokemon', 'pokmon', 'illustration', 'rare',
+  'full', 'art', 'secret', 'promo', 'holo', 'reverse', 'gold', 'silver',
+  'psa', 'bgs', 'sgc', 'cgc', 'mint', 'near', 'excellent', 'played',
+  'japonais', 'japonaise', 'japanese', 'japan', 'jap', 'francais', 'francaise',
+  'anglais', 'anglaise', 'english', 'korean', 'neuf', 'occasion', 'etat',
+  'comme', 'tres', 'bon', 'prix', 'grade', 'graded', 'slab', 'double',
+  'starter', 'deck', 'booster', 'pack', 'custom', 'proxy', 'fake', 'orica',
+  'base', 'set', 'star', 'stars', 'future', 'trainer', 'gallery', 'common',
+  'uncommon', 'rainbow', 'ultra', 'hyper', 'special', 'super', 'mega',
+  'radiant', 'shiny', 'shining', 'amazing', 'alternate', 'collection',
+  'nm', 'lp', 'mp', 'hp', 'dmg', 'tag', 'team', 'kor', 'fra', 'eng', 'jpn',
+  'sv2a', 'swsh', 'xy', 'sm', 'bw', 'dp', 'ex', 'gx', 'vmax', 'vstar'
+]);
+
 function extractPokemonSearchTerms(vintedTitle) {
   const sig = extractCardSignature(vintedTitle);
   const lower = vintedTitle.toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const tokens = toSlugTokens(vintedTitle);
+
+  // REJECT proxy/custom/fake cards immediately
+  if (/\b(custom|proxy|fake|orica|replica)\b/i.test(vintedTitle)) {
+    return { pokemonName: null, searchName: null, setId: null, cardNumber: null, cardType: null, graded: false, gradeValue: null, rarity: null, signature: sig, isProxy: true };
+  }
 
   // Detect card type suffix (GX, EX, V, VMAX, VSTAR)
   let cardType = null;
@@ -250,12 +271,14 @@ function extractPokemonSearchTerms(vintedTitle) {
     gradeValue = gradeMatch[1];
   }
 
-  // Normalize title for multi-word matching: remove parentheses, extra punctuation
+  // Normalize title for multi-word matching
   const cleanLower = lower.replace(/[()[\]{},;:!?]/g, ' ').replace(/\s+/g, ' ').trim();
 
-  // Try multi-word French names first (e.g., "mentali deoxys" → "espeon & deoxys")
+  // === POKEMON NAME EXTRACTION ===
+  // Priority: multi-word FR > first 4+ char match (FR or EN) > 3-char FR match
   let pokemonName = null;
-  // Sort by longest key first so "mentali deoxys" matches before "mentali"
+
+  // Step 1: Try multi-word French names (longest first)
   const sortedKeys = Object.keys(FR_TO_EN).sort((a, b) => b.length - a.length);
   for (const fr of sortedKeys) {
     if (fr.includes(' ') && cleanLower.includes(fr)) {
@@ -264,38 +287,36 @@ function extractPokemonSearchTerms(vintedTitle) {
     }
   }
 
-  // Try single-word French names
+  // Step 2: Find FIRST name-like token in title order
+  // This ensures "Ivysaur ... Mew" picks "Ivysaur" not "Mew"
   if (!pokemonName) {
+    let firstLongMatch = null;  // 4+ chars
+    let firstShortMatch = null; // 3 chars (ambiguous, like "mew")
+
     for (const token of tokens) {
+      if (SKIP_WORDS.has(token) || /^\d+$/.test(token) || CARD_TYPES.includes(token)) continue;
+
+      // Check FR→EN mapping
       if (FR_TO_EN[token]) {
-        pokemonName = FR_TO_EN[token];
-        break;
+        if (token.length >= 4 && !firstLongMatch) {
+          firstLongMatch = FR_TO_EN[token];
+        } else if (token.length === 3 && !firstShortMatch) {
+          firstShortMatch = FR_TO_EN[token];
+        }
       }
+      // English name candidate (4+ alpha chars, not a skip word)
+      else if (token.length >= 4 && /^[a-z-]+$/.test(token) && !firstLongMatch) {
+        firstLongMatch = token;
+      }
+
+      // Stop after finding a long match — it's almost certainly the Pokemon name
+      if (firstLongMatch) break;
     }
+
+    pokemonName = firstLongMatch || firstShortMatch;
   }
 
-  // If no French match, build from title directly
-  if (!pokemonName) {
-    const skip = new Set([
-      'carte', 'card', 'pokemon', 'illustration', 'rare', 'full', 'art',
-      'secret', 'promo', 'holo', 'reverse', 'gold', 'silver', 'psa',
-      'bgs', 'sgc', 'cgc', 'mint', 'near', 'excellent', 'played',
-      'japonais', 'japonaise', 'japanese', 'francais', 'francaise',
-      'anglais', 'anglaise', 'english', 'neuf', 'occasion', 'etat',
-      'comme', 'tres', 'bon', 'prix', 'grade', 'graded', 'slab'
-    ]);
-    // Also skip card type tokens and numbers
-    const candidates = tokens.filter(t =>
-      !skip.has(t) && t.length >= 3 && !/^\d+$/.test(t) &&
-      !CARD_TYPES.includes(t)
-    );
-    if (candidates.length > 0) {
-      // Take first 2 candidates as Pokemon name (handles multi-word names)
-      pokemonName = candidates.slice(0, 2).join(' ');
-    }
-  }
-
-  // Append card type to name for more precise search
+  // Append card type for more precise search
   let searchName = pokemonName;
   if (pokemonName && cardType && !pokemonName.toLowerCase().includes(cardType.toLowerCase())) {
     searchName = `${pokemonName} ${cardType}`;

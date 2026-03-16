@@ -167,19 +167,9 @@ async function runScan() {
 }
 
 // Load previous scan results and merge with new ones to persist cards across scans
-function mergeWithHistory(newResult, outputDir) {
-  const historyPath = path.join(outputDir, 'latest-scan.json');
-  let previousListings = [];
-
-  try {
-    if (fs.existsSync(historyPath)) {
-      const raw = fs.readFileSync(historyPath, 'utf8');
-      const previous = JSON.parse(raw);
-      previousListings = previous.searchedListings || [];
-    }
-  } catch {
-    previousListings = [];
-  }
+function mergeWithHistory(newResult, outputDir, previousData) {
+  const previousListings = (previousData && previousData.searchedListings) || [];
+  const previousAlertsList = (previousData && previousData.underpricedAlerts) || [];
 
   // Index new listings by Vinted URL for fast lookup
   const newByUrl = new Map();
@@ -226,12 +216,8 @@ function mergeWithHistory(newResult, outputDir) {
 
   // Merge underpriced alerts similarly
   const newAlertUrls = new Set((newResult.underpricedAlerts || []).map((a) => a.listing?.url));
-  const previousAlerts = (previousListings.length > 0 ? (() => {
-    try {
-      const raw = fs.readFileSync(historyPath, 'utf8');
-      return JSON.parse(raw).underpricedAlerts || [];
-    } catch { return []; }
-  })() : []).filter((a) => a.listing && !newAlertUrls.has(a.listing.url));
+  const previousAlerts = previousAlertsList
+    .filter((a) => a.listing && !newAlertUrls.has(a.listing.url));
 
   return {
     ...newResult,
@@ -243,8 +229,20 @@ function mergeWithHistory(newResult, outputDir) {
 
 async function runOnce() {
   await ensureOutputDir(config.outputDir);
+
+  // Save previous history BEFORE the scan (flushProgress will overwrite latest-scan.json)
+  const historyPath = path.join(config.outputDir, 'latest-scan.json');
+  let previousData = null;
+  try {
+    if (fs.existsSync(historyPath)) {
+      previousData = JSON.parse(fs.readFileSync(historyPath, 'utf8'));
+    }
+  } catch {
+    previousData = null;
+  }
+
   const result = await runScan();
-  const merged = mergeWithHistory(result, config.outputDir);
+  const merged = mergeWithHistory(result, config.outputDir, previousData);
   const outputPath = path.join(config.outputDir, 'latest-scan.json');
 
   await fs.promises.writeFile(outputPath, JSON.stringify(merged, null, 2));
