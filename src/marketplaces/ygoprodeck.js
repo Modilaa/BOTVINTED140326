@@ -53,17 +53,97 @@ async function cachedFetch(url) {
 
 const API_BASE = 'https://db.ygoprodeck.com/api/v7';
 
-// French → English Yu-Gi-Oh card name mappings (common ones)
+// Comprehensive French → English Yu-Gi-Oh card name mappings
 const FR_TO_EN = {
+  // Iconic monsters
   'magicien sombre': 'dark magician',
+  'magicienne des tenebres': 'dark magician girl',
+  'magicienne sombre': 'dark magician girl',
   'dragon blanc aux yeux bleus': 'blue-eyes white dragon',
+  'dragon ultime aux yeux bleus': 'blue-eyes ultimate dragon',
   'dragon noir aux yeux rouges': 'red-eyes black dragon',
+  'dragon metallique noir aux yeux rouges': 'red-eyes b. dragon',
   'exodia': 'exodia the forbidden one',
-  'chevalier noir': 'dark magician',
   'soldat du lustre noir': 'black luster soldier',
-  'invocation de dieu': 'slifer the sky dragon',
-  'obelisque': 'obelisk the tormentor',
-  'dragon aile de ra': 'the winged dragon of ra'
+  'soldat de lustre noir': 'black luster soldier',
+  'chevalier de la flamme': 'flame swordsman',
+  'dragon aile de ra': 'the winged dragon of ra',
+  'obelisque le tourmenteur': 'obelisk the tormentor',
+  'slifer le dragon du ciel': 'slifer the sky dragon',
+  // Popular modern cards
+  'ash blossom': 'ash blossom & joyous spring',
+  'fleur de cendres': 'ash blossom & joyous spring',
+  'fleur de cendre': 'ash blossom & joyous spring',
+  'fantome ogre': 'ghost ogre & snow rabbit',
+  'ogre fantome': 'ghost ogre & snow rabbit',
+  'fille fantome': 'ghost belle & haunted mansion',
+  'veiler effect': 'effect veiler',
+  'voileur deffet': 'effect veiler',
+  'belle fantome': 'ghost belle & haunted mansion',
+  'mourner fantome': 'ghost mourner & moonlit chill',
+  'dragon borrelsword': 'borrelsword dragon',
+  'dragon borrelend': 'borrelend dragon',
+  'dragon borreload': 'borreload dragon',
+  'dragon savage borreload': 'borreload savage dragon',
+  'dragon tonnerre': 'thunder dragon',
+  'baronne de fleur': 'baronne de fleur',
+  'dragon poussiere detoile': 'stardust dragon',
+  'dragon de la rose noire': 'black rose dragon',
+  'dragon rouge archdemon': 'red dragon archfiend',
+  'dragon quasar a tir groupe': 'shooting quasar dragon',
+  'numero 39 utopie': 'number 39: utopia',
+  'numero 62 dragon photon': 'number 62: galaxy-eyes prime photon dragon',
+  'dragon aux yeux galactiques': 'galaxy-eyes photon dragon',
+  'dragon xyz rebelle': 'dark rebellion xyz dragon',
+  'dragon aile cristalline': 'crystal wing synchro dragon',
+  'dragon access code talker': 'accesscode talker',
+  'dragon arc-en-ciel': 'rainbow dragon',
+  'heros elementaire neos': 'elemental hero neos',
+  'heros masque': 'masked hero',
+  'guerrier buster': 'buster blader',
+  'chasseur de dragons buster': 'buster blader',
+  'invocateur aleister': 'aleister the invoker',
+  'mecaniste aleister': 'aleister the invoker of madness',
+  // Dragon types
+  'dragon du chaos': 'chaos dragon',
+  'dragon de la destruction': 'destruction dragon',
+  'dragon a 5 tetes': 'five-headed dragon',
+  'dragon arme': 'armed dragon',
+  // Staple cards
+  'appel de letre hante': 'call of the haunted',
+  'monster reborn': 'monster reborn',
+  'renaissance du monstre': 'monster reborn',
+  'pot de dualite': 'pot of duality',
+  'pot de prosperite': 'pot of prosperity',
+  'pot de desirs': 'pot of desires',
+  'pot davarice': 'pot of avarice',
+  'trou noir': 'dark hole',
+  'raigeki': 'raigeki',
+  'sombre requin': 'dark requiem xyz dragon',
+  // Archetypes (common French archetype names)
+  'dragon du tonnerre': 'thunder dragon',
+  'serpent de la nuit': 'snake of night',
+  'chevalier gem': 'gem-knight',
+  'harpie': 'harpie lady',
+  'soeurs harpie': 'harpie lady sisters',
+  'cyber dragon': 'cyber dragon',
+  'dragon cybernétique': 'cyber dragon',
+  'dragon cybernetique': 'cyber dragon',
+  // Extra deck monsters
+  'dragon noir meteore aux yeux rouges': 'red-eyes flare metal dragon',
+  'dragon du chaos max aux yeux bleus': 'blue-eyes chaos max dragon',
+  'alternative dragon blanc aux yeux bleus': 'blue-eyes alternative white dragon',
+  'dragon esprit aux yeux bleus': 'blue-eyes spirit dragon',
+  // Number/Numero cards
+  'numero 17 dragon leviathan': 'number 17: leviathan dragon',
+  'numero 32 requin dragon': 'number 32: shark drake',
+  'numero 107 dragon tachyon': 'number 107: galaxy-eyes tachyon dragon',
+  'numero c107': 'number c107: neo galaxy-eyes tachyon dragon',
+  // Ghost/Starlight popular targets
+  'paladin de lillumination': 'paladin of the illumination',
+  'paladin de l\'illumination': 'paladin of the illumination',
+  'dragon predapouvoir': 'predaplant verte anaconda',
+  'dragon fusion predapouvoir venin affame': 'starving venom fusion dragon'
 };
 
 function extractYugiohSearchTerms(vintedTitle) {

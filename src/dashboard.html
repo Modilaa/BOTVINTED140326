@@ -1003,7 +1003,10 @@ function renderCardView(listings) {
     let matchesHtml = '';
     if (hasMatches) {
       const isApi = row.pricingSource && row.pricingSource !== 'ebay';
-      const matchLabel = isApi ? `Prix marché — ${row.pricingSource} (${row.matchedSales.length})` : `Ventes eBay matchées (${row.matchedSales.length})`;
+      const sourceLabel = row.pricingSource === 'pokemon-tcg-api' ? 'Cardmarket / TCGPlayer'
+        : row.pricingSource === 'ygoprodeck' ? 'Cardmarket / YGOPRODeck'
+        : row.pricingSource || 'eBay';
+      const matchLabel = isApi ? `Prix marché — ${sourceLabel} (${row.matchedSales.length})` : `Ventes eBay matchées (${row.matchedSales.length})`;
       matchesHtml = `
         <div class="card-matches">
           <div class="match-title">${matchLabel}</div>
