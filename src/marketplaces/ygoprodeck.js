@@ -356,12 +356,9 @@ async function getYugiohMarketPrice(vintedListing, config) {
 
     const best = scored[0];
 
-    // Only keep results with a score close to the best match (avoid polluting with wrong cards)
-    const bestScore = scored[0].score;
-    const goodMatches = scored.filter(r => r.score >= bestScore - 3 && r.score > 0);
-
-    // Build synthetic matched sales
-    const matchedSales = goodMatches.slice(0, 3).map(r => ({
+    // STRICT: Only return the SINGLE best match — never mix different cards
+    // Build synthetic matched sales — ONLY the best match
+    const matchedSales = [scored[0]].map(r => ({
       title: `${r.card.name}${r.bestSet ? ` (${r.bestSet.set_name} - ${r.bestSet.set_rarity})` : ''}`,
       price: r.bestPrice,
       totalPrice: r.bestPrice,

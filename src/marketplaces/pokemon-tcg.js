@@ -509,10 +509,25 @@ async function getPokemonMarketPrice(vintedListing, config) {
     const best = scored[0];
     const gradeLabel = terms.graded ? ` (PSA ${terms.gradeValue})` : '';
 
-    // Only keep results with score close to best
-    const goodMatches = scored.filter(r => r.score >= best.score - 5 && r.score > 0);
+    // STRICT MATCHING: we must be sure it's the EXACT same card
+    // If the Vinted listing has a card number, the API result MUST match it
+    // Otherwise it's a different printing/set = different value = REJECT
+    if (terms.cardNumber) {
+      const numberMatched = scored.some(r => r.card.number === terms.cardNumber);
+      if (!numberMatched) {
+        // Card number exists but no API result has it — not the same card
+        return null;
+      }
+      // Only keep the result that matches the card number
+      const exactMatch = scored.find(r => r.card.number === terms.cardNumber);
+      if (exactMatch) {
+        scored.length = 0;
+        scored.push(exactMatch);
+      }
+    }
 
-    const matchedSales = goodMatches.slice(0, 3).map(r => ({
+    // Only return the SINGLE best match — never average different printings
+    const matchedSales = [best].map(r => ({
       title: `${r.card.name} - ${r.card.set?.name || ''} #${r.card.number || '?'} [${r.card.rarity || '?'}]${gradeLabel}`,
       price: r.pricing.bestPrice,
       totalPrice: r.pricing.bestPrice,
@@ -556,7 +571,7 @@ async function getPokemonMarketPrice(vintedListing, config) {
       pricingSource: 'pokemon-tcg-api',
       bestMatch: `${best.card.name}${gradeLabel}`,
       marketPrice: best.pricing.bestPrice,
-      confidence: best.score >= 15 ? 'high' : best.score >= 8 ? 'medium' : 'low'
+      confidence: best.score >= 20 ? 'high' : best.score >= 12 ? 'medium' : 'low'
     };
   } catch (error) {
     console.error(`    Pokemon TCG API error: ${error.message}`);
