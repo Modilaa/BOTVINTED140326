@@ -2,13 +2,15 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const dns = require('dns');
-const { extractCardSignature } = require('../matching');
+const { extractCardSignature, chooseBestSoldListings } = require('../matching');
 const { normalizeSpaces, toSlugTokens } = require('../utils');
+const { getEbaySoldListings } = require('./ebay');
+const { attachImageSignals } = require('../image-match');
 
-// Force IPv4-first DNS resolution (pokemontcg.io IPv6 returns 404 via Cloudflare)
+// Force IPv4-first DNS resolution
 dns.setDefaultResultOrder('ipv4first');
 
-// Cache (limited size — disk cache is the real persistence layer)
+// Memory cache (disk cache is the real persistence layer)
 const memoryCache = new Map();
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const MAX_MEMORY_CACHE_SIZE = 200;
@@ -16,7 +18,7 @@ const MAX_MEMORY_CACHE_SIZE = 200;
 function clearMemoryCache() { memoryCache.clear(); }
 
 function getCacheDir() {
-  const dir = path.join(process.cwd(), 'output', 'http-cache', 'pokemon-api');
+  const dir = path.join(process.cwd(), 'output', 'http-cache', 'tcgdex-api');
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -37,16 +39,12 @@ async function cachedFetch(url) {
   } catch {}
 
   const response = await fetch(url, {
-    headers: {
-      'Accept': 'application/json',
-      ...(process.env.POKEMON_TCG_API_KEY ? { 'X-Api-Key': process.env.POKEMON_TCG_API_KEY } : {})
-    },
-    signal: AbortSignal.timeout(60000)
+    headers: { 'Accept': 'application/json' },
+    signal: AbortSignal.timeout(15000)
   });
 
   if (!response.ok) {
-    if (response.status === 429) throw new Error('rate-limit');
-    throw new Error(`HTTP ${response.status}`);
+    throw new Error(`TCGdex HTTP ${response.status} for ${url}`);
   }
 
   const data = await response.json();
@@ -57,155 +55,12 @@ async function cachedFetch(url) {
   return data;
 }
 
-const API_BASE = 'https://api.pokemontcg.io/v2';
+const TCGDEX_BASE = 'https://api.tcgdex.net/v2';
 
-// Comprehensive French → English Pokemon name mapping
-const FR_TO_EN = {
-  // Gen 1
-  bulbizarre: 'bulbasaur', herbizarre: 'ivysaur', florizarre: 'venusaur',
-  salameche: 'charmander', reptincel: 'charmeleon', dracaufeu: 'charizard',
-  carapuce: 'squirtle', carabaffe: 'wartortle', tortank: 'blastoise',
-  chenipan: 'caterpie', chrysacier: 'metapod', papilusion: 'butterfree',
-  aspicot: 'weedle', coconfort: 'kakuna', dardargnan: 'beedrill',
-  roucool: 'pidgey', roucoups: 'pidgeotto', roucarnage: 'pidgeot',
-  rattata: 'rattata', rattatac: 'raticate', piafabec: 'spearow', rapasdepic: 'fearow',
-  abo: 'ekans', arbok: 'arbok', pikachu: 'pikachu', raichu: 'raichu',
-  sabelette: 'sandshrew', sablaireau: 'sandslash',
-  nidoran: 'nidoran', nidorina: 'nidorina', nidoqueen: 'nidoqueen',
-  nidorino: 'nidorino', nidoking: 'nidoking',
-  melofee: 'clefairy', melodelfe: 'clefable',
-  goupix: 'vulpix', feunard: 'ninetales',
-  rondoudou: 'jigglypuff', grodoudou: 'wigglytuff',
-  nosferapti: 'zubat', nosferalto: 'golbat',
-  mystherbe: 'oddish', ortide: 'gloom', rafflesia: 'vileplume',
-  paras: 'paras', parasect: 'parasect',
-  mimitoss: 'venonat', aeromite: 'venomoth',
-  taupiqueur: 'diglett', triopikeur: 'dugtrio',
-  miaouss: 'meowth', persian: 'persian',
-  psykokwak: 'psyduck', akwakwak: 'golduck',
-  ferosinge: 'mankey', colossinge: 'primeape',
-  caninos: 'growlithe', arcanin: 'arcanine',
-  ptitard: 'poliwag', tetarte: 'poliwhirl', tartard: 'poliwrath',
-  abra: 'abra', kadabra: 'kadabra', alakazam: 'alakazam',
-  machoc: 'machop', machopeur: 'machoke', mackogneur: 'machamp',
-  chetiflor: 'bellsprout', boustiflor: 'weepinbell', empiflor: 'victreebel',
-  tentacool: 'tentacool', tentacruel: 'tentacruel',
-  racaillou: 'geodude', gravalanch: 'graveler', grolem: 'golem',
-  ponyta: 'ponyta', galopa: 'rapidash',
-  ramoloss: 'slowpoke', flagadoss: 'slowbro',
-  magneti: 'magnemite', magneton: 'magneton',
-  canarticho: 'farfetchd', doduo: 'doduo', dodrio: 'dodrio',
-  otaria: 'seel', lamantine: 'dewgong',
-  tadmorv: 'grimer', grotadmorv: 'muk',
-  kokiyas: 'shellder', crustabri: 'cloyster',
-  fantominus: 'gastly', spectrum: 'haunter', ectoplasma: 'gengar',
-  onix: 'onix', soporifik: 'drowzee', hypnomade: 'hypno',
-  krabby: 'krabby', krabboss: 'kingler',
-  voltorbe: 'voltorb', electrode: 'electrode',
-  noeunoeuf: 'exeggcute', noadkoko: 'exeggutor',
-  osselait: 'cubone', ossatueur: 'marowak',
-  tygnon: 'hitmonchan', kicklee: 'hitmonlee',
-  excelangue: 'lickitung', smogo: 'koffing', smogogo: 'weezing',
-  rhinocorne: 'rhyhorn', rhinoferos: 'rhydon',
-  leveinard: 'chansey', saquedeneu: 'tangela',
-  kangourex: 'kangaskhan', hypotrempe: 'horsea', hypocean: 'seadra',
-  poissirene: 'goldeen', poissoroy: 'seaking',
-  stari: 'staryu', staross: 'starmie',
-  'mr. mime': 'mr. mime', insecateur: 'scyther',
-  lippoutou: 'jynx', elektek: 'electabuzz', magmar: 'magmar',
-  scarabrute: 'pinsir', tauros: 'tauros',
-  magicarpe: 'magikarp', leviator: 'gyarados',
-  lokhlass: 'lapras', metamorph: 'ditto',
-  evoli: 'eevee', aquali: 'vaporeon', voltali: 'jolteon', pyroli: 'flareon',
-  porygon: 'porygon', amonita: 'omanyte', amonistar: 'omastar',
-  kabuto: 'kabuto', kabutops: 'kabutops',
-  ptera: 'aerodactyl', ronflex: 'snorlax',
-  artikodin: 'articuno', electhor: 'zapdos', sulfura: 'moltres',
-  minidraco: 'dratini', draco: 'dragonair', dracolosse: 'dragonite',
-  mewtwo: 'mewtwo', mew: 'mew',
-  // Gen 2
-  germignon: 'chikorita', macronium: 'bayleef', meganium: 'meganium',
-  hericendre: 'cyndaquil', feurisson: 'quilava', typhlosion: 'typhlosion',
-  kaiminus: 'totodile', crocrodil: 'croconaw', aligatueur: 'feraligatr',
-  fouinette: 'sentret', fouinar: 'furret',
-  hoothoot: 'hoothoot', noarfang: 'noctowl',
-  coxy: 'ledyba', coxyclaque: 'ledian',
-  mentali: 'espeon', noctali: 'umbreon',
-  roigada: 'slowking', insolourdo: 'dunsparce',
-  steelix: 'steelix', snubbull: 'snubbull', granbull: 'granbull',
-  qwilfish: 'qwilfish', cizayox: 'scizor',
-  heracross: 'heracross', farfuret: 'sneasel',
-  teddiursa: 'teddiursa', ursaring: 'ursaring',
-  delibird: 'delibird', cerfrousse: 'stantler',
-  porygon2: 'porygon2', elekid: 'elekid', magby: 'magby',
-  ecremeuh: 'miltank', leuphorie: 'blissey',
-  raikou: 'raikou', entei: 'entei', suicune: 'suicune',
-  embrylex: 'larvitar', ymphect: 'pupitar', tyranocif: 'tyranitar',
-  lugia: 'lugia', 'ho-oh': 'ho-oh', celebi: 'celebi',
-  // Gen 3+
-  poussifeu: 'torchic', galifeu: 'combusken', brasegali: 'blaziken',
-  gobou: 'mudkip', flobio: 'marshtomp', laggron: 'swampert',
-  arcko: 'treecko', massko: 'grovyle', jungko: 'sceptile',
-  gardevoir: 'gardevoir', gallame: 'gallade',
-  hariyama: 'hariyama', makuhita: 'makuhita',
-  absol: 'absol', metagross: 'metagross',
-  latias: 'latias', latios: 'latios',
-  kyogre: 'kyogre', groudon: 'groudon', rayquaza: 'rayquaza',
-  deoxys: 'deoxys', jirachi: 'jirachi',
-  // Gen 4
-  tortipouss: 'turtwig', boskara: 'grotle', torterra: 'torterra',
-  ouisticram: 'chimchar', chimpenfeu: 'monferno', simiabraz: 'infernape',
-  tiplouf: 'piplup', prinplouf: 'prinplup', pingoleon: 'empoleon',
-  lucario: 'lucario', riolu: 'riolu',
-  carchacrok: 'garchomp', griknot: 'gible',
-  togekiss: 'togekiss', togepi: 'togepi',
-  dialga: 'dialga', palkia: 'palkia', giratina: 'giratina',
-  darkrai: 'darkrai', cresselia: 'cresselia',
-  heatran: 'heatran', regigigas: 'regigigas',
-  arceus: 'arceus', phione: 'phione', manaphy: 'manaphy',
-  // Gen 5
-  victini: 'victini', zoroark: 'zoroark', zorua: 'zorua',
-  reshiram: 'reshiram', zekrom: 'zekrom', kyurem: 'kyurem',
-  genesect: 'genesect', keldeo: 'keldeo', meloetta: 'meloetta',
-  // Gen 6
-  marisson: 'chespin', blindepique: 'quilladin', blindepic: 'chesnaught',
-  feunnec: 'fennekin', roussil: 'braixen', goupelin: 'delphox',
-  grenousse: 'froakie', croasser: 'frogadier', amphinobi: 'greninja',
-  xerneas: 'xerneas', yveltal: 'yveltal', zygarde: 'zygarde',
-  diancie: 'diancie', hoopa: 'hoopa', volcanion: 'volcanion',
-  // Gen 7
-  brindibou: 'rowlet', efflèche: 'dartrix', archéduc: 'decidueye',
-  flamiaou: 'litten', matoufeu: 'torracat', félinferno: 'incineroar',
-  otaquin: 'popplio', otarlette: 'brionne', oratoria: 'primarina',
-  solgaleo: 'solgaleo', lunala: 'lunala', necrozma: 'necrozma',
-  cosmog: 'cosmog', cosmovum: 'cosmoem',
-  tokorico: 'tapu koko', tokopiyon: 'tapu lele',
-  tokotoro: 'tapu bulu', tokopisco: 'tapu fini',
-  marshadow: 'marshadow', zeraora: 'zeraora', melmetal: 'melmetal',
-  // Gen 8
-  ouistempo: 'grookey', badabouin: 'thwackey', gorythmic: 'rillaboom',
-  flambino: 'scorbunny', lapyro: 'raboot', pyrobut: 'cinderace',
-  larmeleon: 'sobble', arrozard: 'drizzile', lezardon: 'inteleon',
-  zacian: 'zacian', zamazenta: 'zamazenta', eternatus: 'eternatus',
-  urshifu: 'urshifu', calyrex: 'calyrex',
-  // Gen 9
-  poussacha: 'sprigatito', floragato: 'floragato', miascarade: 'meowscarada',
-  chochodile: 'fuecoco', crocogril: 'crocalor', flâmigator: 'skeledirge',
-  coiffeton: 'quaxly', canarbello: 'quaxwell', palmaval: 'quaquaval',
-  miraidon: 'miraidon', koraidon: 'koraidon',
-  terapagos: 'terapagos', pecharunt: 'pecharunt',
-  // Multi-word French names (Tag Team, etc.)
-  'mentali deoxys': 'espeon & deoxys',
-  'dracaufeu reshiram': 'charizard & reshiram',
-  'mewtwo mew': 'mewtwo & mew',
-  'pikachu zekrom': 'pikachu & zekrom',
-  'leviator dracaufeu': 'gyarados & charizard'
-};
-
-// Card type suffixes
+// Card type suffixes (used for search query building)
 const CARD_TYPES = ['gx', 'ex', 'vmax', 'vstar', 'v', 'tag team', 'break', 'lv.x', 'prime', 'legend'];
 
-// Set name mappings
+// Set name aliases (kept for title context extraction only - TCGdex handles set identification)
 const SET_ALIASES = {
   '151': 'sv3pt5', 'prismatic': 'sv8pt5', 'prismatic evolutions': 'sv8pt5',
   'paldean fates': 'sv4pt5', 'obsidian flames': 'sv3', 'paradox rift': 'sv4',
@@ -226,12 +81,12 @@ const SET_ALIASES = {
   'xy base': 'xy1'
 };
 
-// PSA grade premium multipliers (approximate market data)
+// PSA grade premium multipliers
 const PSA_PREMIUMS = {
-  '10': 5.0,   // PSA 10 = ~5x raw card value
-  '9': 2.0,    // PSA 9 = ~2x
-  '8': 1.3,    // PSA 8 = ~1.3x
-  '7': 1.0,    // PSA 7 = ~raw value
+  '10': 5.0,
+  '9':  2.0,
+  '8':  1.3,
+  '7':  1.0,
 };
 
 // Words that are NEVER a Pokemon name
@@ -247,9 +102,40 @@ const SKIP_WORDS = new Set([
   'uncommon', 'rainbow', 'ultra', 'hyper', 'special', 'super', 'mega',
   'radiant', 'shiny', 'shining', 'amazing', 'alternate', 'collection',
   'nm', 'lp', 'mp', 'hp', 'dmg', 'tag', 'team', 'kor', 'fra', 'eng', 'jpn',
-  'sv2a', 'swsh', 'xy', 'sm', 'bw', 'dp', 'ex', 'gx', 'vmax', 'vstar'
+  'sv2a', 'swsh', 'xy', 'sm', 'bw', 'dp', 'ex', 'gx', 'vmax', 'vstar',
+  'francais', 'francaise', 'coreen', 'coreenne', 'coréen', 'coréenne',
+  'langue', 'language', 'version', 'edition'
 ]);
 
+// ─── Language Detection ───────────────────────────────────────────────────────
+
+/**
+ * Detects the card language from the listing title.
+ * Returns one of: 'fr', 'en', 'jap', 'kor', or null (unknown).
+ */
+function detectCardLanguage(title) {
+  const lower = title.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  // French
+  if (/\b(francais|francaise|fra|vf|version\s*fran[c]?aise|langue\s*fr[a]?n[c]?aise)\b/.test(lower)) return 'fr';
+  // English
+  if (/\b(english|anglais|anglaise|eng|version\s*anglaise|langue\s*anglaise)\b/.test(lower)) return 'en';
+  // Japanese
+  if (/\b(japonais|japonaise|japanese|japan|jap|jpn)\b/.test(lower)) return 'jap';
+  // Korean
+  if (/\b(korean|kor|coreen|coreenne)\b/.test(lower)) return 'kor';
+
+  return null; // unknown / not specified
+}
+
+// ─── Card Term Extraction ─────────────────────────────────────────────────────
+
+/**
+ * Extracts the Pokemon name (as-written in title), card number, card type,
+ * grading info, rarity hint, and card language from a Vinted listing title.
+ * No FR→EN mapping needed here — TCGdex handles French names natively.
+ */
 function extractPokemonSearchTerms(vintedTitle) {
   const sig = extractCardSignature(vintedTitle);
   const lower = vintedTitle.toLowerCase()
@@ -258,10 +144,18 @@ function extractPokemonSearchTerms(vintedTitle) {
 
   // REJECT proxy/custom/fake cards immediately
   if (/\b(custom|proxy|fake|orica|replica)\b/i.test(vintedTitle)) {
-    return { pokemonName: null, searchName: null, setId: null, cardNumber: null, cardType: null, graded: false, gradeValue: null, rarity: null, signature: sig, isProxy: true };
+    return {
+      pokemonName: null, searchName: null, setId: null,
+      cardNumber: null, cardType: null, graded: false,
+      gradeValue: null, rarity: null, signature: sig,
+      language: null, isProxy: true
+    };
   }
 
-  // Detect card type suffix (GX, EX, V, VMAX, VSTAR)
+  // Detect card language
+  const language = detectCardLanguage(vintedTitle);
+
+  // Detect card type suffix (GX, EX, V, VMAX, VSTAR, etc.)
   let cardType = null;
   for (const ct of CARD_TYPES) {
     if (lower.includes(ct)) {
@@ -279,58 +173,55 @@ function extractPokemonSearchTerms(vintedTitle) {
     gradeValue = gradeMatch[1];
   }
 
-  // Normalize title for multi-word matching
-  const cleanLower = lower.replace(/[()[\]{},;:!?]/g, ' ').replace(/\s+/g, ' ').trim();
-
   // === POKEMON NAME EXTRACTION ===
-  // Priority: multi-word FR > first 4+ char match (FR or EN) > 3-char FR match
+  // We extract the raw name token(s) from the title as-is (may be French or English).
+  // TCGdex will accept the French name directly.
   let pokemonName = null;
 
-  // Step 1: Try multi-word French names (longest first)
-  const sortedKeys = Object.keys(FR_TO_EN).sort((a, b) => b.length - a.length);
-  for (const fr of sortedKeys) {
-    if (fr.includes(' ') && cleanLower.includes(fr)) {
-      pokemonName = FR_TO_EN[fr];
-      break;
+  // Clean title for matching
+  const cleanLower = lower.replace(/[()[\]{},;:!?]/g, ' ').replace(/\s+/g, ' ').trim();
+
+  // Try to find a multi-word Pokemon name pattern first (Tag Team, &, etc.)
+  // e.g. "Mentali & Deoxys", "Dracaufeu & Reshiram"
+  const tagTeamMatch = cleanLower.match(
+    /([a-z\u00e0-\u00ff]{3,})\s*[&]\s*([a-z\u00e0-\u00ff]{3,})/
+  );
+  if (tagTeamMatch) {
+    const part1 = tagTeamMatch[1].trim();
+    const part2 = tagTeamMatch[2].trim();
+    if (!SKIP_WORDS.has(part1) && !SKIP_WORDS.has(part2)) {
+      pokemonName = `${part1} & ${part2}`;
     }
   }
 
-  // Step 2: Find FIRST name-like token in title order
-  // This ensures "Ivysaur ... Mew" picks "Ivysaur" not "Mew"
+  // Fallback: find first name-like token in title order
   if (!pokemonName) {
     let firstLongMatch = null;  // 4+ chars
-    let firstShortMatch = null; // 3 chars (ambiguous, like "mew")
+    let firstShortMatch = null; // 3 chars (e.g. "mew")
 
     for (const token of tokens) {
       if (SKIP_WORDS.has(token) || /^\d+$/.test(token) || CARD_TYPES.includes(token)) continue;
+      // Skip pure language/grade tokens
+      if (/^(psa|bgs|sgc|cgc|fra|eng|jpn|kor|vf|va)$/.test(token)) continue;
 
-      // Check FR→EN mapping
-      if (FR_TO_EN[token]) {
-        if (token.length >= 4 && !firstLongMatch) {
-          firstLongMatch = FR_TO_EN[token];
-        } else if (token.length === 3 && !firstShortMatch) {
-          firstShortMatch = FR_TO_EN[token];
-        }
-      }
-      // English name candidate (4+ alpha chars, not a skip word)
-      else if (token.length >= 4 && /^[a-z-]+$/.test(token) && !firstLongMatch) {
+      if (token.length >= 4 && /^[a-z\u00e0-\u00ff-]+$/.test(token) && !firstLongMatch) {
         firstLongMatch = token;
+        break; // First long token is almost certainly the Pokemon name
+      } else if (token.length === 3 && /^[a-z]+$/.test(token) && !firstShortMatch) {
+        firstShortMatch = token;
       }
-
-      // Stop after finding a long match — it's almost certainly the Pokemon name
-      if (firstLongMatch) break;
     }
 
     pokemonName = firstLongMatch || firstShortMatch;
   }
 
-  // Append card type for more precise search
+  // Build searchName (append card type if needed)
   let searchName = pokemonName;
   if (pokemonName && cardType && !pokemonName.toLowerCase().includes(cardType.toLowerCase())) {
     searchName = `${pokemonName} ${cardType}`;
   }
 
-  // Extract set info
+  // Extract set hint from title (for logging/context only)
   let setId = null;
   for (const [alias, id] of Object.entries(SET_ALIASES)) {
     if (lower.includes(alias)) {
@@ -339,23 +230,21 @@ function extractPokemonSearchTerms(vintedTitle) {
     }
   }
 
-  // Extract card number - also check for "176/173" format (card number / set total)
+  // Extract card number from signature
   let rawCardNumber = sig.cardNumber;
   if (!rawCardNumber && sig.serialNumber) {
-    // In Pokemon, "176/173" means card #176 out of 173 in the set (secret rare)
     const parts = sig.serialNumber.split('/');
     if (parts.length === 2) {
       const num = parseInt(parts[0], 10);
       const total = parseInt(parts[1], 10);
-      // If first number > 50 and close to total, it's a card number not a print run
-      if (num > 50 && total > 50 && num <= total * 2) {
+      if (num > 10 && total > 10 && num <= total * 2) {
         rawCardNumber = parts[0];
       }
     }
   }
   const cardNumber = rawCardNumber ? rawCardNumber.replace(/^0+/, '') || rawCardNumber : null;
 
-  // Detect rarity from title
+  // Detect rarity hints from title
   let rarity = null;
   if (lower.includes('illustration rare') || lower.includes('illustration speciale')) rarity = 'Illustration Rare';
   else if (lower.includes('art rare') || lower.includes('special art')) rarity = 'Special Art Rare';
@@ -363,274 +252,286 @@ function extractPokemonSearchTerms(vintedTitle) {
   else if (lower.includes('gold') || lower.includes('secret')) rarity = 'Hyper Rare';
   else if (lower.includes('rainbow')) rarity = 'Rare Rainbow';
 
-  return { pokemonName, searchName, setId, cardNumber, cardType, graded, gradeValue, rarity, signature: sig };
-}
-
-function extractBestPrice(card, terms) {
-  const cm = card.cardmarket?.prices;
-  const tcg = card.tcgplayer?.prices;
-
-  let cardmarketPrice = null;
-  let tcgplayerPrice = null;
-
-  if (cm) {
-    cardmarketPrice = cm.trendPrice || cm.averageSellPrice || cm.avg7 || cm.avg30 || cm.lowPrice;
-  }
-
-  if (tcg) {
-    // Match the right variant based on rarity
-    const variantPriority = terms?.rarity === 'Illustration Rare' || terms?.rarity === 'Special Art Rare'
-      ? ['holofoil', 'reverseHolofoil', 'normal']
-      : ['holofoil', 'normal', 'reverseHolofoil', '1stEditionHolofoil', 'unlimitedHolofoil'];
-
-    for (const variant of variantPriority) {
-      if (tcg[variant]?.market > 0) {
-        tcgplayerPrice = tcg[variant].market;
-        break;
-      }
-      if (tcg[variant]?.mid > 0) {
-        tcgplayerPrice = tcg[variant].mid;
-        break;
-      }
-    }
-    // Fallback: any variant with a price
-    if (!tcgplayerPrice) {
-      for (const variant of Object.values(tcg)) {
-        if (variant?.market > 0) { tcgplayerPrice = variant.market; break; }
-      }
-    }
-  }
-
-  let bestPrice = cardmarketPrice > 0 ? cardmarketPrice : (tcgplayerPrice ? tcgplayerPrice * 0.865 : null);
-
-  // Apply PSA premium if graded
-  if (bestPrice && terms?.graded && terms?.gradeValue) {
-    const premium = PSA_PREMIUMS[terms.gradeValue] || 1.5;
-    bestPrice = bestPrice * premium;
-  }
-
   return {
-    cardmarketPrice,
-    tcgplayerPrice,
-    bestPrice,
-    source: cardmarketPrice > 0 ? 'cardmarket' : (tcgplayerPrice ? 'tcgplayer' : null),
-    allPrices: { cardmarket: cm || null, tcgplayer: tcg || null }
+    pokemonName,
+    searchName,
+    setId,
+    cardNumber,
+    cardType,
+    graded,
+    gradeValue,
+    rarity,
+    signature: sig,
+    language
   };
 }
 
-function scoreCardMatch(card, terms) {
-  let score = 0;
-  const cardNameLower = (card.name || '').toLowerCase();
-  const searchName = (terms.searchName || terms.pokemonName || '').toLowerCase();
-  const baseName = (terms.pokemonName || '').toLowerCase();
+// ─── TCGdex API ───────────────────────────────────────────────────────────────
 
-  // Card number match (strongest signal)
-  if (terms.cardNumber && card.number === terms.cardNumber) {
-    score += 15;
-  }
+/**
+ * Search TCGdex for a card by French name, optionally filtering by card number.
+ * Returns the best matched card object, or null.
+ *
+ * Card object shape: { id, localId, name, set: { id, name, cardCount: { total } }, rarity, image }
+ */
+async function tcgdexSearchCard(pokemonName, cardNumber) {
+  if (!pokemonName) return null;
 
-  // Set match
-  if (terms.setId && card.set?.id === terms.setId) {
-    score += 8;
-  }
+  try {
+    // Search by French name in the FR endpoint
+    const searchUrl = `${TCGDEX_BASE}/fr/cards?name=${encodeURIComponent(pokemonName)}`;
+    const results = await cachedFetch(searchUrl);
 
-  // Name match
-  if (searchName) {
-    if (cardNameLower === searchName || cardNameLower === baseName) {
-      score += 10;
-    } else if (cardNameLower.includes(baseName)) {
-      score += 6;
-    } else if (baseName.includes(cardNameLower)) {
-      score += 4;
+    if (!Array.isArray(results) || results.length === 0) return null;
+
+    let candidates = results;
+
+    // If we have a card number, try to filter by it
+    if (cardNumber) {
+      // localId is the card number within the set (e.g. "143" or "143/188")
+      const filtered = candidates.filter(c => {
+        const local = String(c.localId || '').replace(/^0+/, '');
+        const localBase = local.split('/')[0];
+        const target = String(cardNumber).replace(/^0+/, '');
+        return localBase === target || local === target;
+      });
+      if (filtered.length > 0) candidates = filtered;
     }
-  }
 
-  // Card type match (GX, EX, V, etc.)
-  if (terms.cardType) {
-    const cardSubtypes = (card.subtypes || []).map(s => s.toLowerCase());
-    const cardNameHasType = cardNameLower.includes(terms.cardType.toLowerCase());
-    if (cardNameHasType || cardSubtypes.includes(terms.cardType.toLowerCase())) {
-      score += 5;
-    } else {
-      score -= 5; // Wrong card type = big penalty
-    }
-  }
+    // Fetch full detail for the first (best) candidate
+    const best = candidates[0];
+    if (!best || !best.id) return null;
 
-  // Rarity match
-  if (terms.rarity && card.rarity) {
-    if (card.rarity.toLowerCase().includes(terms.rarity.toLowerCase().split(' ')[0])) {
-      score += 3;
-    }
-  }
+    const detailUrl = `${TCGDEX_BASE}/fr/cards/${encodeURIComponent(best.id)}`;
+    const detail = await cachedFetch(detailUrl);
+    return detail || null;
 
-  // Prefer cards with prices
-  const pricing = extractBestPrice(card, terms);
-  if (pricing.bestPrice && pricing.bestPrice > 0) {
-    score += 2;
+  } catch (err) {
+    console.log(`    TCGdex search error for "${pokemonName}": ${err.message}`);
+    return null;
   }
-
-  return score;
 }
 
-const { compareListingImages } = require('../image-match');
+/**
+ * Given a TCGdex card id (e.g. "me01-143"), fetch the English name.
+ * Returns the English name string, or null.
+ */
+async function tcgdexGetEnglishName(cardId) {
+  if (!cardId) return null;
+  try {
+    const enUrl = `${TCGDEX_BASE}/en/cards/${encodeURIComponent(cardId)}`;
+    const enCard = await cachedFetch(enUrl);
+    return (enCard && enCard.name) ? enCard.name : null;
+  } catch {
+    return null;
+  }
+}
+
+// ─── eBay Query Building ──────────────────────────────────────────────────────
+
+/**
+ * Builds eBay search query string from extracted card info.
+ * Includes the card language label so eBay results are language-accurate.
+ *
+ * Priority: English name (from TCGdex EN endpoint) if available,
+ * else the original name from the title (FR name).
+ */
+function buildEbayQuery(terms, englishName, tcgdexCard) {
+  const parts = [];
+
+  // Prefer English name for eBay (broader international market)
+  const primaryName = englishName || terms.pokemonName;
+
+  if (primaryName) {
+    parts.push(primaryName);
+  }
+
+  // Append card type if present (GX, V, VMAX, etc.)
+  if (terms.cardType) {
+    const nameHasType = primaryName && primaryName.toUpperCase().includes(terms.cardType);
+    if (!nameHasType) {
+      parts.push(terms.cardType);
+    }
+  }
+
+  // Append card number (localId or extracted number)
+  const cardNum = terms.cardNumber || (tcgdexCard && tcgdexCard.localId ? tcgdexCard.localId : null);
+  if (cardNum) {
+    parts.push(cardNum);
+  }
+
+  // Append language label for eBay search accuracy
+  if (terms.language) {
+    const langLabels = {
+      fr: 'french',
+      en: 'english',
+      jap: 'japanese',
+      kor: 'korean'
+    };
+    const label = langLabels[terms.language];
+    if (label) parts.push(label);
+  }
+
+  // For graded cards, include grade info
+  if (terms.graded && terms.gradeValue) {
+    parts.push(`psa ${terms.gradeValue}`);
+  }
+
+  return parts.join(' ').trim();
+}
+
+// ─── Main Pricing Function ────────────────────────────────────────────────────
 
 async function getPokemonMarketPrice(vintedListing, config) {
   const terms = extractPokemonSearchTerms(vintedListing.title);
 
+  // Nothing useful to search on
   if (!terms.pokemonName && !terms.cardNumber) {
     return null;
   }
 
-  // Build query strategies from most specific to broadest
-  const queries = [];
-
-  // Strategy 1: set + number (most precise, identifies exact card)
-  if (terms.setId && terms.cardNumber) {
-    queries.push(`set.id:${terms.setId} number:${terms.cardNumber}`);
-  }
-
-  // Strategy 2: name with type + set
-  if (terms.searchName && terms.setId) {
-    queries.push(`name:"${terms.searchName}" set.id:${terms.setId}`);
-  }
-
-  // Strategy 3: name with type + number
-  if (terms.searchName && terms.cardNumber) {
-    queries.push(`name:"${terms.searchName}" number:${terms.cardNumber}`);
-  }
-
-  // Strategy 4: exact name with type
-  if (terms.searchName) {
-    queries.push(`name:"${terms.searchName}"`);
-  }
-
-  // Strategy 5: base name (without type suffix)
-  if (terms.pokemonName && terms.pokemonName !== terms.searchName) {
-    queries.push(`name:"${terms.pokemonName}*"`);
-  }
-
-  try {
-    let cards = [];
-
-    for (const q of queries) {
-      if (cards.length > 0) break;
-      const apiUrl = `${API_BASE}/cards?q=${encodeURIComponent(q)}&pageSize=10&orderBy=-set.releaseDate`;
-      try {
-        const data = await cachedFetch(apiUrl);
-        cards = data.data || [];
-      } catch (err) {
-        if (err.message === 'rate-limit') {
-          console.log('    Pokemon TCG API rate limit, skipping...');
-          return null;
-        }
-        continue;
-      }
-    }
-
-    if (cards.length === 0) return null;
-
-    // Score and rank
-    const scored = cards
-      .map(card => ({ card, score: scoreCardMatch(card, terms), pricing: extractBestPrice(card, terms) }))
-      .filter(r => r.pricing.bestPrice && r.pricing.bestPrice > 0 && r.score > 0)
-      .sort((a, b) => b.score - a.score);
-
-    if (scored.length === 0) return null;
-
-    const best = scored[0];
-    const gradeLabel = terms.graded ? ` (PSA ${terms.gradeValue})` : '';
-
-    // STRICT MATCHING: we must be sure it's the EXACT same card
-    // If the Vinted listing has a card number, the API result MUST match it
-    // Otherwise it's a different printing/set = different value = REJECT
-    if (terms.cardNumber) {
-      const numberMatched = scored.some(r => r.card.number === terms.cardNumber);
-      if (!numberMatched) {
-        // Card number exists but no API result has it — not the same card
-        return null;
-      }
-      // Only keep the result that matches the card number
-      const exactMatch = scored.find(r => r.card.number === terms.cardNumber);
-      if (exactMatch) {
-        scored.length = 0;
-        scored.push(exactMatch);
-      }
-    }
-
-    // Compare images: Vinted photo vs API card image to verify same edition
-    const vintedImageUrl = vintedListing.imageUrl;
-    const minImageSimilarity = config.minImageSimilarity || 0.60;
-
-    // Try top scored candidates (not just the best) in case the best text match is wrong edition
-    const candidates = scored.slice(0, Math.min(5, scored.length));
-    let matchedSale = null;
-
-    for (const r of candidates) {
-      const apiImageUrl = r.card.images?.small || r.card.images?.large || '';
-      let imageMatch = null;
-
-      if (vintedImageUrl && apiImageUrl) {
-        imageMatch = await compareListingImages(vintedImageUrl, apiImageUrl, config);
-      }
-
-      if (imageMatch && imageMatch.score !== null && imageMatch.score < minImageSimilarity) {
-        console.log(`    Image rejetee (${(imageMatch.score * 100).toFixed(0)}%): ${r.card.name} - ${r.card.set?.name || ''} #${r.card.number || '?'}`);
-        continue;
-      }
-
-      matchedSale = {
-        title: `${r.card.name} - ${r.card.set?.name || ''} #${r.card.number || '?'} [${r.card.rarity || '?'}]${gradeLabel}`,
-        price: r.pricing.bestPrice,
-        totalPrice: r.pricing.bestPrice,
-        shippingPrice: 0,
-        soldAt: null,
-        soldAtTs: Date.now(),
-        url: r.card.cardmarket?.url || `https://www.cardmarket.com/en/Pokemon/Products/Singles?searchString=${encodeURIComponent(r.card.name)}`,
-        itemKey: `ptcg-${r.card.id}`,
-        imageUrl: apiImageUrl,
-        marketplace: 'cardmarket',
-        queryUsed: `Pokemon TCG API: ${r.card.name}`,
-        match: {
-          score: r.score,
-          sharedTokens: [],
-          sharedSpecificTokens: [r.card.name],
-          sharedIdentityTokens: [r.card.name],
-          specificCoverage: r.score >= 15 ? 1.0 : r.score >= 8 ? 0.7 : 0.4,
-          missingCritical: false,
-          identityFullCoverage: true
-        },
-        imageMatch: imageMatch || { score: null, confidence: 'unknown' },
-        apiData: {
-          source: 'pokemon-tcg-api',
-          cardId: r.card.id,
-          cardName: r.card.name,
-          setName: r.card.set?.name,
-          number: r.card.number,
-          rarity: r.card.rarity,
-          graded: terms.graded,
-          gradeValue: terms.gradeValue,
-          cardmarketPrices: r.pricing.allPrices.cardmarket,
-          tcgplayerPrices: r.pricing.allPrices.tcgplayer
-        }
-      };
-      break; // Found a valid image match
-    }
-
-    if (!matchedSale) return null;
-
-    return {
-      matchedSales: [matchedSale],
-      pricingSource: 'pokemon-tcg-api',
-      bestMatch: `${matchedSale.apiData.cardName}${gradeLabel}`,
-      marketPrice: matchedSale.price,
-      confidence: matchedSale.match.score >= 20 ? 'high' : matchedSale.match.score >= 12 ? 'medium' : 'low',
-      pokemonName: terms.pokemonName,
-      searchName: terms.searchName
-    };
-  } catch (error) {
-    console.error(`    Pokemon TCG API error: ${error.message}`);
+  // Reject proxies/customs immediately
+  if (terms.isProxy) {
     return null;
   }
+
+  let tcgdexCard = null;
+  let englishName = null;
+
+  // ── Step 1: Identify the card via TCGdex FR API ──────────────────────────
+  if (terms.pokemonName) {
+    tcgdexCard = await tcgdexSearchCard(terms.pokemonName, terms.cardNumber);
+
+    if (tcgdexCard) {
+      // Step 2: Get English name from TCGdex EN endpoint
+      englishName = await tcgdexGetEnglishName(tcgdexCard.id);
+      if (englishName) {
+        console.log(`    TCGdex: "${terms.pokemonName}" → EN: "${englishName}" (${tcgdexCard.id})`);
+      } else {
+        console.log(`    TCGdex: "${terms.pokemonName}" trouvé (${tcgdexCard.id}), pas de nom EN`);
+      }
+    } else {
+      console.log(`    TCGdex: "${terms.pokemonName}" non trouvé, recherche eBay avec nom original`);
+    }
+  }
+
+  // ── Step 3: Build eBay search query ──────────────────────────────────────
+  const ebayQuery = buildEbayQuery(terms, englishName, tcgdexCard);
+
+  if (!ebayQuery) {
+    return null;
+  }
+
+  console.log(`    eBay query: "${ebayQuery}"`);
+
+  // ── Step 4: Fetch eBay sold listings ──────────────────────────────────────
+  let soldListings = [];
+  try {
+    soldListings = await getEbaySoldListings(ebayQuery, config);
+  } catch (err) {
+    console.error(`    eBay sold listings error: ${err.message}`);
+    return null;
+  }
+
+  if (!soldListings || soldListings.length === 0) {
+    console.log(`    Aucune vente eBay trouvée pour "${ebayQuery}"`);
+    return null;
+  }
+
+  // ── Step 5: Find best matching eBay listings ──────────────────────────────
+  // We run chooseBestSoldListings against a synthetic listing that uses the
+  // eBay-style title (English name + card number) so matching tokens align.
+  const syntheticListing = {
+    title: ebayQuery,
+    rawTitle: vintedListing.rawTitle || vintedListing.title,
+    buyerPrice: vintedListing.buyerPrice,
+    imageUrl: vintedListing.imageUrl,
+    url: vintedListing.url
+  };
+
+  let matchedSales = chooseBestSoldListings(syntheticListing, soldListings);
+
+  if (!matchedSales || matchedSales.length === 0) {
+    console.log(`    chooseBestSoldListings: aucune vente qualifiée pour "${ebayQuery}"`);
+    return null;
+  }
+
+  // ── Step 6: Image comparison (Vinted vs eBay sold listings) ──────────────
+  // Also use TCGdex card image as secondary validation reference
+  const tcgdexImageUrl = tcgdexCard
+    ? (tcgdexCard.image ? `${tcgdexCard.image}/high.webp` : null)
+    : null;
+
+  try {
+    // attachImageSignals compares Vinted image vs each eBay sold listing image
+    matchedSales = await attachImageSignals(vintedListing, matchedSales, config);
+  } catch (err) {
+    console.log(`    Image signal warning: ${err.message}`);
+    // Non-fatal: continue without image filtering
+  }
+
+  // Filter out listings where image comparison strongly rejects the match
+  const minImageSimilarity = config.minImageSimilarity || 0.55;
+  const imagePassed = matchedSales.filter(sale => {
+    const imgScore = sale.imageMatch && sale.imageMatch.score !== null
+      ? sale.imageMatch.score
+      : null;
+    return imgScore === null || imgScore >= minImageSimilarity;
+  });
+
+  if (imagePassed.length === 0) {
+    console.log(`    Toutes les ventes eBay rejetées par image similarity`);
+    return null;
+  }
+
+  matchedSales = imagePassed;
+
+  // ── Step 7: Apply PSA premium if graded ──────────────────────────────────
+  if (terms.graded && terms.gradeValue) {
+    const premium = PSA_PREMIUMS[terms.gradeValue] || 1.5;
+    matchedSales = matchedSales.map(sale => ({
+      ...sale,
+      price: sale.price * premium,
+      totalPrice: (sale.totalPrice || sale.price) * premium
+    }));
+  }
+
+  // ── Step 8: Compute market price (median of top matched sales) ────────────
+  const prices = matchedSales.map(s => s.price).filter(p => p > 0).sort((a, b) => a - b);
+  if (prices.length === 0) return null;
+
+  const medianIdx = Math.floor(prices.length / 2);
+  const marketPrice = prices.length % 2 === 0
+    ? (prices[medianIdx - 1] + prices[medianIdx]) / 2
+    : prices[medianIdx];
+
+  const gradeLabel = terms.graded ? ` (PSA ${terms.gradeValue})` : '';
+  const displayName = englishName || terms.pokemonName || terms.searchName;
+  const cardNumLabel = terms.cardNumber ? ` #${terms.cardNumber}` : '';
+  const langLabel = terms.language ? ` [${terms.language.toUpperCase()}]` : '';
+
+  // Confidence based on number of matched sales and match quality
+  let confidence = 'low';
+  if (matchedSales.length >= 5 && matchedSales[0].match && matchedSales[0].match.score >= 15) {
+    confidence = 'high';
+  } else if (matchedSales.length >= 2 || (matchedSales[0] && matchedSales[0].match && matchedSales[0].match.score >= 10)) {
+    confidence = 'medium';
+  }
+
+  return {
+    matchedSales,
+    pricingSource: 'ebay-sold',
+    bestMatch: `${displayName}${cardNumLabel}${gradeLabel}${langLabel}`,
+    marketPrice,
+    confidence,
+    pokemonName: terms.pokemonName,
+    searchName: terms.searchName,
+    englishName,
+    language: terms.language,
+    tcgdexCardId: tcgdexCard ? tcgdexCard.id : null,
+    tcgdexImageUrl,
+    ebayQuery
+  };
 }
 
 module.exports = {

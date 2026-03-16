@@ -1003,8 +1003,9 @@ function renderCardView(listings) {
     let matchesHtml = '';
     if (hasMatches) {
       const isApi = row.pricingSource && row.pricingSource !== 'ebay';
-      const sourceLabel = row.pricingSource === 'pokemon-tcg-api' ? 'Cardmarket / TCGPlayer'
-        : row.pricingSource === 'ygoprodeck' ? 'Cardmarket / YGOPRODeck'
+      const sourceLabel = row.pricingSource === 'pokemon-tcg-api' ? 'TCGdex + eBay'
+        : row.pricingSource === 'ebay-sold' ? 'TCGdex + eBay'
+        : row.pricingSource === 'ygoprodeck' ? 'YGOPRODeck + eBay'
         : row.pricingSource || 'eBay';
       const matchLabel = isApi ? `Prix marché — ${sourceLabel} (${row.matchedSales.length})` : `Ventes eBay matchées (${row.matchedSales.length})`;
       matchesHtml = `
