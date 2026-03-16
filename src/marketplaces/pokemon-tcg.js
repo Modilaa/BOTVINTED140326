@@ -250,11 +250,16 @@ function extractPokemonSearchTerms(vintedTitle) {
     gradeValue = gradeMatch[1];
   }
 
+  // Normalize title for multi-word matching: remove parentheses, extra punctuation
+  const cleanLower = lower.replace(/[()[\]{},;:!?]/g, ' ').replace(/\s+/g, ' ').trim();
+
   // Try multi-word French names first (e.g., "mentali deoxys" → "espeon & deoxys")
   let pokemonName = null;
-  for (const [fr, en] of Object.entries(FR_TO_EN)) {
-    if (fr.includes(' ') && lower.includes(fr)) {
-      pokemonName = en;
+  // Sort by longest key first so "mentali deoxys" matches before "mentali"
+  const sortedKeys = Object.keys(FR_TO_EN).sort((a, b) => b.length - a.length);
+  for (const fr of sortedKeys) {
+    if (fr.includes(' ') && cleanLower.includes(fr)) {
+      pokemonName = FR_TO_EN[fr];
       break;
     }
   }
@@ -305,8 +310,20 @@ function extractPokemonSearchTerms(vintedTitle) {
     }
   }
 
-  // Extract card number (strip leading zeros)
-  const rawCardNumber = sig.cardNumber;
+  // Extract card number - also check for "176/173" format (card number / set total)
+  let rawCardNumber = sig.cardNumber;
+  if (!rawCardNumber && sig.serialNumber) {
+    // In Pokemon, "176/173" means card #176 out of 173 in the set (secret rare)
+    const parts = sig.serialNumber.split('/');
+    if (parts.length === 2) {
+      const num = parseInt(parts[0], 10);
+      const total = parseInt(parts[1], 10);
+      // If first number > 50 and close to total, it's a card number not a print run
+      if (num > 50 && total > 50 && num <= total * 2) {
+        rawCardNumber = parts[0];
+      }
+    }
+  }
   const cardNumber = rawCardNumber ? rawCardNumber.replace(/^0+/, '') || rawCardNumber : null;
 
   // Detect rarity from title
