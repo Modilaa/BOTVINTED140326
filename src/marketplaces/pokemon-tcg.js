@@ -158,7 +158,9 @@ function extractPokemonSearchTerms(vintedTitle) {
   // Detect card type suffix (GX, EX, V, VMAX, VSTAR, etc.)
   let cardType = null;
   for (const ct of CARD_TYPES) {
-    if (lower.includes(ct)) {
+    // Use word boundary to avoid false positives (e.g. "evolution" matching "v")
+    const regex = new RegExp(`\\b${ct.replace('.', '\\.')}\\b`, 'i');
+    if (regex.test(lower)) {
       cardType = ct.toUpperCase();
       break;
     }
@@ -230,8 +232,9 @@ function extractPokemonSearchTerms(vintedTitle) {
     }
   }
 
-  // Extract card number from signature
+  // Extract card number from signature (must be numeric for Pokemon)
   let rawCardNumber = sig.cardNumber;
+  if (rawCardNumber && !/^\d+$/.test(rawCardNumber)) rawCardNumber = null;
   if (!rawCardNumber && sig.serialNumber) {
     const parts = sig.serialNumber.split('/');
     if (parts.length === 2) {
