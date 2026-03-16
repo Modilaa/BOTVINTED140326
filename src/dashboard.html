@@ -1027,7 +1027,7 @@ function renderCardView(listings) {
               <div class="match-info">
                 <div class="match-info-title">${sale.title}</div>
                 <div class="match-info-meta">
-                  <span style="font-weight:700">${formatEur(sale.totalPrice)}</span>
+                  <span style="font-weight:700">${formatEur(sale.price || sale.totalPrice)}</span>
                   ${!isApiSale ? `<span>${formatDate(sale.soldAt)}</span>` : ''}
                   <span>${sale.marketplace || ''}</span>
                   ${sale.imageMatch ? `<span class="confidence confidence-${sale.imageMatch.confidence}"><span class="confidence-dot"></span>${sale.imageMatch.confidence}</span>` : ''}
