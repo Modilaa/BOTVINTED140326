@@ -489,17 +489,10 @@ async function getPokemonMarketPrice(vintedListing, config) {
 
   matchedSales = imagePassed;
 
-  // ── Step 7: Apply PSA premium if graded ──────────────────────────────────
-  if (terms.graded && terms.gradeValue) {
-    const premium = PSA_PREMIUMS[terms.gradeValue] || 1.5;
-    matchedSales = matchedSales.map(sale => ({
-      ...sale,
-      price: sale.price * premium,
-      totalPrice: (sale.totalPrice || sale.price) * premium
-    }));
-  }
+  // PSA premium NOT applied here — eBay search already includes "psa X" in the query,
+  // so the sold prices already reflect the graded card value.
 
-  // ── Step 8: Compute market price (median of top matched sales) ────────────
+  // ── Step 7: Compute market price (median of top matched sales) ─────────────
   const prices = matchedSales.map(s => s.price).filter(p => p > 0).sort((a, b) => a - b);
   if (prices.length === 0) return null;
 
