@@ -1,3 +1,25 @@
+const fs = require('fs');
+const path = require('path');
+
+// Parse .env file manually (no dotenv dependency needed)
+function loadEnvFile() {
+  const envPath = path.join(__dirname, '.env');
+  const vars = {};
+  try {
+    const lines = fs.readFileSync(envPath, 'utf8').split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIndex = trimmed.indexOf('=');
+      if (eqIndex === -1) continue;
+      vars[trimmed.slice(0, eqIndex).trim()] = trimmed.slice(eqIndex + 1).trim();
+    }
+  } catch {}
+  return vars;
+}
+
+const envVars = loadEnvFile();
+
 module.exports = {
   apps: [
     {
@@ -6,7 +28,8 @@ module.exports = {
       args: '--loop',
       cwd: __dirname,
       env: {
-        NODE_ENV: 'production'
+        NODE_ENV: 'production',
+        ...envVars
       },
       // Auto-restart on crash
       autorestart: true,
