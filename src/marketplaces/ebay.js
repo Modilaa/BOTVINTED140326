@@ -522,13 +522,19 @@ async function getEbaySoldListings(title, config) {
 
     for (const query of queries) {
       for (let pageNumber = 1; pageNumber <= config.ebayPagesPerQuery; pageNumber += 1) {
-        const html = await fetchText(buildSoldUrl(baseUrl, query, pageNumber), {
-          timeoutMs: config.requestTimeoutMs,
-          cacheDir,
-          cacheTtlSeconds: config.cacheTtlSeconds,
-          minDelayMs: config.httpMinDelayMs,
-          maxDelayMs: config.httpMaxDelayMs
-        });
+        let html;
+        try {
+          html = await fetchText(buildSoldUrl(baseUrl, query, pageNumber), {
+            timeoutMs: config.requestTimeoutMs,
+            cacheDir,
+            cacheTtlSeconds: config.cacheTtlSeconds,
+            minDelayMs: config.httpMinDelayMs,
+            maxDelayMs: config.httpMaxDelayMs
+          });
+        } catch (err) {
+          // Blocked or timeout on this domain — skip to next domain
+          break;
+        }
 
         const pageListings = parseSoldPage(html, query, siteConfig);
         if (!pageListings.length) {
