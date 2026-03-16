@@ -672,7 +672,7 @@
   <h1><span>Dils</span> le Scraper</h1>
   <div class="header-right">
     <span class="last-scan" id="lastScan"></span>
-    <button class="refresh-btn" onclick="loadData()">Actualiser</button>
+    <button class="refresh-btn" id="refreshBtn" onclick="doRefresh()">Actualiser</button>
   </div>
 </div>
 
@@ -1309,6 +1309,15 @@ function render() {
   } else {
     content.innerHTML = renderTableView(filtered);
   }
+}
+
+async function doRefresh() {
+  const btn = document.getElementById('refreshBtn');
+  btn.textContent = 'Chargement...';
+  btn.disabled = true;
+  await loadData();
+  btn.textContent = 'Actualiser';
+  btn.disabled = false;
 }
 
 async function loadData() {

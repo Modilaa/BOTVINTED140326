@@ -25,7 +25,7 @@ module.exports = {
     {
       name: 'botvintedcodex',
       script: 'src/index.js',
-      args: '--loop',
+      args: '--loop --interval=10',
       cwd: __dirname,
       env: {
         NODE_ENV: 'production',
