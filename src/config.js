@@ -116,7 +116,15 @@ const searches = [
       'pokemon twilight masquerade'
     ],
     requiredAnyTokens: ['pokemon'],
-    blockedTokens: ['yugioh', 'one piece', 'digimon', 'peluche', 'figurine', 'classeur', 'album', 'tapis', 'playmat', 'booster', 'display', 'coffret', 'tin']
+    blockedTokens: ['yugioh', 'one piece', 'digimon', 'peluche', 'figurine', 'classeur', 'album', 'tapis', 'playmat', 'booster', 'display', 'coffret', 'tin'],
+    facebookEnabled: true,
+    facebookQueries: [
+      'carte pokemon rare',
+      'pokemon carte illustration rare',
+      'pokemon psa',
+      'pokemon carte ex'
+    ],
+    facebookLocation: 'paris'
   },
   {
     name: 'One Piece TCG',
@@ -132,7 +140,10 @@ const searches = [
       'one piece OP13 carte'
     ],
     requiredAnyTokens: ['one piece'],
-    blockedTokens: ['pokemon', 'yugioh', 'figurine', 'poster', 'manga livre', 'tapis', 'playmat']
+    blockedTokens: ['pokemon', 'yugioh', 'figurine', 'poster', 'manga livre', 'tapis', 'playmat'],
+    facebookEnabled: true,
+    facebookQueries: ['one piece card game rare', 'one piece tcg carte'],
+    facebookLocation: 'paris'
   },
   {
     name: 'Panini Football',
@@ -169,7 +180,10 @@ const searches = [
       'yugioh carte francaise rare'
     ],
     requiredAnyTokens: ['yugioh', 'yu-gi-oh', 'yu gi oh'],
-    blockedTokens: ['pokemon', 'one piece', 'digimon', 'classeur', 'album', 'tapis', 'playmat', 'deck box', 'sleeves']
+    blockedTokens: ['pokemon', 'one piece', 'digimon', 'classeur', 'album', 'tapis', 'playmat', 'deck box', 'sleeves'],
+    facebookEnabled: true,
+    facebookQueries: ['yugioh carte rare', 'yu-gi-oh carte secret rare'],
+    facebookLocation: 'paris'
   }
 ];
 

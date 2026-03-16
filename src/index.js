@@ -10,6 +10,7 @@ const { getEbaySoldListings } = require('./marketplaces/ebay');
 const { getPokemonMarketPrice, clearMemoryCache: clearPokemonCache } = require('./marketplaces/pokemon-tcg');
 const { getYugiohMarketPrice, clearMemoryCache: clearYugiohCache } = require('./marketplaces/ygoprodeck');
 const { getVintedListings } = require('./marketplaces/vinted');
+const { getFacebookMarketplaceListings } = require('./marketplaces/facebook');
 const { buildTelegramMessage, sendTelegramMessage } = require('./notifier');
 const { buildProfitAnalysis, isOpportunity } = require('./profit');
 const { findUnderpricedListings } = require('./underpriced');
@@ -66,6 +67,20 @@ async function runScan(previousListings) {
     } catch (error) {
       console.error(`Impossible de lire Vinted pour ${search.name}: ${error.message}`);
       continue;
+    }
+
+    // Also scan Facebook Marketplace if enabled for this search
+    if (search.facebookEnabled && process.env.APIFY_API_KEY) {
+      try {
+        console.log(`  Scan Facebook Marketplace: ${search.name}`);
+        const fbListings = await getFacebookMarketplaceListings(search, config);
+        if (fbListings.length > 0) {
+          console.log(`  Facebook: ${fbListings.length} annonce(s) ajoutees`);
+          listings = listings.concat(fbListings);
+        }
+      } catch (error) {
+        console.error(`  Facebook Marketplace erreur pour ${search.name}: ${error.message}`);
+      }
     }
 
     // Filter out bait listings (< 2 EUR = auction bait)
