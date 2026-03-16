@@ -1,8 +1,12 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const dns = require('dns');
 const { extractCardSignature } = require('../matching');
 const { normalizeSpaces, toSlugTokens } = require('../utils');
+
+// Force IPv4-first DNS resolution (pokemontcg.io IPv6 returns 404 via Cloudflare)
+dns.setDefaultResultOrder('ipv4first');
 
 // Cache
 const memoryCache = new Map();
