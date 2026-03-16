@@ -5,9 +5,12 @@ const { extractCardSignature } = require('../matching');
 const { toSlugTokens } = require('../utils');
 const { compareListingImages } = require('../image-match');
 
-// Cache for API results
+// Cache for API results (limited size — disk cache is the real persistence layer)
 const memoryCache = new Map();
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const MAX_MEMORY_CACHE_SIZE = 200;
+
+function clearMemoryCache() { memoryCache.clear(); }
 
 function getCacheDir() {
   const dir = path.join(process.cwd(), 'output', 'http-cache', 'ygoprodeck');
@@ -43,6 +46,7 @@ async function cachedFetch(url) {
 
   const data = await response.json();
   const payload = { ts: Date.now(), data };
+  if (memoryCache.size >= MAX_MEMORY_CACHE_SIZE) memoryCache.clear();
   memoryCache.set(url, payload);
   try { fs.writeFileSync(cachePath, JSON.stringify(payload)); } catch {}
   return data;
@@ -429,5 +433,6 @@ async function getYugiohMarketPrice(vintedListing, config) {
 
 module.exports = {
   getYugiohMarketPrice,
-  extractYugiohSearchTerms
+  extractYugiohSearchTerms,
+  clearMemoryCache
 };

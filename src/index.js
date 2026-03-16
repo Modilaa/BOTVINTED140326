@@ -7,8 +7,8 @@ const config = require('./config');
 const { attachImageSignals } = require('./image-match');
 const { chooseBestSoldListings } = require('./matching');
 const { getEbaySoldListings } = require('./marketplaces/ebay');
-const { getPokemonMarketPrice } = require('./marketplaces/pokemon-tcg');
-const { getYugiohMarketPrice } = require('./marketplaces/ygoprodeck');
+const { getPokemonMarketPrice, clearMemoryCache: clearPokemonCache } = require('./marketplaces/pokemon-tcg');
+const { getYugiohMarketPrice, clearMemoryCache: clearYugiohCache } = require('./marketplaces/ygoprodeck');
 const { getVintedListings } = require('./marketplaces/vinted');
 const { buildTelegramMessage, sendTelegramMessage } = require('./notifier');
 const { buildProfitAnalysis, isOpportunity } = require('./profit');
@@ -268,6 +268,10 @@ async function runOnce() {
     global._broadcastSSE({ type: 'scan-update' });
     console.log('Dashboard notifie.');
   }
+
+  // Free memory after scan — disk cache persists for next scan
+  clearPokemonCache();
+  clearYugiohCache();
 
   console.log(`Scan termine. ${result.scannedCount} annonces analysees (${merged.searchedListings.length} total avec historique).`);
   console.log(`${merged.opportunities.length} opportunite(s) detectee(s).`);

@@ -8,9 +8,12 @@ const { normalizeSpaces, toSlugTokens } = require('../utils');
 // Force IPv4-first DNS resolution (pokemontcg.io IPv6 returns 404 via Cloudflare)
 dns.setDefaultResultOrder('ipv4first');
 
-// Cache
+// Cache (limited size — disk cache is the real persistence layer)
 const memoryCache = new Map();
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const MAX_MEMORY_CACHE_SIZE = 200;
+
+function clearMemoryCache() { memoryCache.clear(); }
 
 function getCacheDir() {
   const dir = path.join(process.cwd(), 'output', 'http-cache', 'pokemon-api');
@@ -48,6 +51,7 @@ async function cachedFetch(url) {
 
   const data = await response.json();
   const payload = { ts: Date.now(), data };
+  if (memoryCache.size >= MAX_MEMORY_CACHE_SIZE) memoryCache.clear();
   memoryCache.set(url, payload);
   try { fs.writeFileSync(cachePath, JSON.stringify(payload)); } catch {}
   return data;
@@ -631,5 +635,6 @@ async function getPokemonMarketPrice(vintedListing, config) {
 
 module.exports = {
   getPokemonMarketPrice,
-  extractPokemonSearchTerms
+  extractPokemonSearchTerms,
+  clearMemoryCache
 };
