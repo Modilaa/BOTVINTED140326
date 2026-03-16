@@ -468,6 +468,8 @@ function scoreCardMatch(card, terms) {
   return score;
 }
 
+const { compareListingImages } = require('../image-match');
+
 async function getPokemonMarketPrice(vintedListing, config) {
   const terms = extractPokemonSearchTerms(vintedListing.title);
 
@@ -551,52 +553,75 @@ async function getPokemonMarketPrice(vintedListing, config) {
       }
     }
 
-    // Only return the SINGLE best match — never average different printings
-    const matchedSales = [best].map(r => ({
-      title: `${r.card.name} - ${r.card.set?.name || ''} #${r.card.number || '?'} [${r.card.rarity || '?'}]${gradeLabel}`,
-      price: r.pricing.bestPrice,
-      totalPrice: r.pricing.bestPrice,
-      shippingPrice: 0,
-      soldAt: null,
-      soldAtTs: Date.now(),
-      url: r.card.cardmarket?.url || `https://www.cardmarket.com/en/Pokemon/Products/Singles?searchString=${encodeURIComponent(r.card.name)}`,
-      itemKey: `ptcg-${r.card.id}`,
-      imageUrl: r.card.images?.small || r.card.images?.large || '',
-      marketplace: 'cardmarket',
-      queryUsed: `Pokemon TCG API: ${r.card.name}`,
-      match: {
-        score: r.score,
-        sharedTokens: [],
-        sharedSpecificTokens: [r.card.name],
-        sharedIdentityTokens: [r.card.name],
-        specificCoverage: r.score >= 15 ? 1.0 : r.score >= 8 ? 0.7 : 0.4,
-        missingCritical: false,
-        identityFullCoverage: true
-      },
-      imageMatch: {
-        score: r.score >= 15 ? 0.95 : r.score >= 8 ? 0.80 : 0.60,
-        confidence: r.score >= 15 ? 'high' : r.score >= 8 ? 'medium' : 'low'
-      },
-      apiData: {
-        source: 'pokemon-tcg-api',
-        cardId: r.card.id,
-        cardName: r.card.name,
-        setName: r.card.set?.name,
-        number: r.card.number,
-        rarity: r.card.rarity,
-        graded: terms.graded,
-        gradeValue: terms.gradeValue,
-        cardmarketPrices: r.pricing.allPrices.cardmarket,
-        tcgplayerPrices: r.pricing.allPrices.tcgplayer
+    // Compare images: Vinted photo vs API card image to verify same edition
+    const vintedImageUrl = vintedListing.imageUrl;
+    const minImageSimilarity = config.minImageSimilarity || 0.60;
+
+    // Try top scored candidates (not just the best) in case the best text match is wrong edition
+    const candidates = scored.slice(0, Math.min(5, scored.length));
+    let matchedSale = null;
+
+    for (const r of candidates) {
+      const apiImageUrl = r.card.images?.small || r.card.images?.large || '';
+      let imageMatch = null;
+
+      if (vintedImageUrl && apiImageUrl) {
+        imageMatch = await compareListingImages(vintedImageUrl, apiImageUrl, config);
       }
-    }));
+
+      if (imageMatch && imageMatch.score !== null && imageMatch.score < minImageSimilarity) {
+        console.log(`    Image rejetee (${(imageMatch.score * 100).toFixed(0)}%): ${r.card.name} - ${r.card.set?.name || ''} #${r.card.number || '?'}`);
+        continue;
+      }
+
+      matchedSale = {
+        title: `${r.card.name} - ${r.card.set?.name || ''} #${r.card.number || '?'} [${r.card.rarity || '?'}]${gradeLabel}`,
+        price: r.pricing.bestPrice,
+        totalPrice: r.pricing.bestPrice,
+        shippingPrice: 0,
+        soldAt: null,
+        soldAtTs: Date.now(),
+        url: r.card.cardmarket?.url || `https://www.cardmarket.com/en/Pokemon/Products/Singles?searchString=${encodeURIComponent(r.card.name)}`,
+        itemKey: `ptcg-${r.card.id}`,
+        imageUrl: apiImageUrl,
+        marketplace: 'cardmarket',
+        queryUsed: `Pokemon TCG API: ${r.card.name}`,
+        match: {
+          score: r.score,
+          sharedTokens: [],
+          sharedSpecificTokens: [r.card.name],
+          sharedIdentityTokens: [r.card.name],
+          specificCoverage: r.score >= 15 ? 1.0 : r.score >= 8 ? 0.7 : 0.4,
+          missingCritical: false,
+          identityFullCoverage: true
+        },
+        imageMatch: imageMatch || { score: null, confidence: 'unknown' },
+        apiData: {
+          source: 'pokemon-tcg-api',
+          cardId: r.card.id,
+          cardName: r.card.name,
+          setName: r.card.set?.name,
+          number: r.card.number,
+          rarity: r.card.rarity,
+          graded: terms.graded,
+          gradeValue: terms.gradeValue,
+          cardmarketPrices: r.pricing.allPrices.cardmarket,
+          tcgplayerPrices: r.pricing.allPrices.tcgplayer
+        }
+      };
+      break; // Found a valid image match
+    }
+
+    if (!matchedSale) return null;
 
     return {
-      matchedSales,
+      matchedSales: [matchedSale],
       pricingSource: 'pokemon-tcg-api',
-      bestMatch: `${best.card.name}${gradeLabel}`,
-      marketPrice: best.pricing.bestPrice,
-      confidence: best.score >= 20 ? 'high' : best.score >= 12 ? 'medium' : 'low'
+      bestMatch: `${matchedSale.apiData.cardName}${gradeLabel}`,
+      marketPrice: matchedSale.price,
+      confidence: matchedSale.match.score >= 20 ? 'high' : matchedSale.match.score >= 12 ? 'medium' : 'low',
+      pokemonName: terms.pokemonName,
+      searchName: terms.searchName
     };
   } catch (error) {
     console.error(`    Pokemon TCG API error: ${error.message}`);

@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { extractCardSignature } = require('../matching');
 const { toSlugTokens } = require('../utils');
+const { compareListingImages } = require('../image-match');
 
 // Cache for API results
 const memoryCache = new Map();
@@ -354,55 +355,71 @@ async function getYugiohMarketPrice(vintedListing, config) {
       return null;
     }
 
-    const best = scored[0];
+    // Compare images: Vinted photo vs API card image to verify same edition
+    const vintedImageUrl = vintedListing.imageUrl;
+    const minImageSimilarity = config.minImageSimilarity || 0.60;
+    const candidates = scored.slice(0, Math.min(5, scored.length));
+    let matchedSale = null;
 
-    // STRICT: Only return the SINGLE best match — never mix different cards
-    // Build synthetic matched sales — ONLY the best match
-    const matchedSales = [scored[0]].map(r => ({
-      title: `${r.card.name}${r.bestSet ? ` (${r.bestSet.set_name} - ${r.bestSet.set_rarity})` : ''}`,
-      price: r.bestPrice,
-      totalPrice: r.bestPrice,
-      shippingPrice: 0,
-      soldAt: new Date().toISOString(),
-      soldAtTs: Date.now(),
-      url: `https://www.cardmarket.com/en/YuGiOh/Products/Singles?searchString=${encodeURIComponent(r.card.name)}`,
-      itemKey: `ygo-${r.card.id}`,
-      imageUrl: r.card.card_images?.[0]?.image_url_small || r.card.card_images?.[0]?.image_url || '',
-      marketplace: r.source || 'cardmarket',
-      queryUsed: `YGOPRODeck API: ${r.card.name}`,
-      match: {
-        score: r.score,
-        sharedTokens: [],
-        sharedSpecificTokens: [r.card.name],
-        sharedIdentityTokens: [r.card.name],
-        specificCoverage: r.score >= 8 ? 1.0 : r.score >= 4 ? 0.7 : 0.4,
-        missingCritical: false,
-        identityFullCoverage: true
-      },
-      imageMatch: {
-        score: r.score >= 8 ? 0.95 : 0.75,
-        confidence: r.score >= 8 ? 'high' : 'medium'
-      },
-      apiData: {
-        source: 'ygoprodeck',
-        cardId: r.card.id,
-        cardName: r.card.name,
-        setName: r.bestSet?.set_name,
-        setCode: r.bestSet?.set_code,
-        rarity: r.bestSet?.set_rarity,
-        cardmarketPrice: r.cardmarketPrice,
-        tcgplayerPrice: r.tcgplayerPrice,
-        ebayPrice: r.ebayPrice,
-        setPrice: r.setPrice
+    for (const r of candidates) {
+      const apiImageUrl = r.card.card_images?.[0]?.image_url_small || r.card.card_images?.[0]?.image_url || '';
+      let imageMatch = null;
+
+      if (vintedImageUrl && apiImageUrl) {
+        imageMatch = await compareListingImages(vintedImageUrl, apiImageUrl, config);
       }
-    }));
+
+      if (imageMatch && imageMatch.score !== null && imageMatch.score < minImageSimilarity) {
+        console.log(`    Image rejetee (${(imageMatch.score * 100).toFixed(0)}%): ${r.card.name}${r.bestSet ? ` (${r.bestSet.set_name})` : ''}`);
+        continue;
+      }
+
+      matchedSale = {
+        title: `${r.card.name}${r.bestSet ? ` (${r.bestSet.set_name} - ${r.bestSet.set_rarity})` : ''}`,
+        price: r.bestPrice,
+        totalPrice: r.bestPrice,
+        shippingPrice: 0,
+        soldAt: new Date().toISOString(),
+        soldAtTs: Date.now(),
+        url: `https://www.cardmarket.com/en/YuGiOh/Products/Singles?searchString=${encodeURIComponent(r.card.name)}`,
+        itemKey: `ygo-${r.card.id}`,
+        imageUrl: apiImageUrl,
+        marketplace: r.source || 'cardmarket',
+        queryUsed: `YGOPRODeck API: ${r.card.name}`,
+        match: {
+          score: r.score,
+          sharedTokens: [],
+          sharedSpecificTokens: [r.card.name],
+          sharedIdentityTokens: [r.card.name],
+          specificCoverage: r.score >= 8 ? 1.0 : r.score >= 4 ? 0.7 : 0.4,
+          missingCritical: false,
+          identityFullCoverage: true
+        },
+        imageMatch: imageMatch || { score: null, confidence: 'unknown' },
+        apiData: {
+          source: 'ygoprodeck',
+          cardId: r.card.id,
+          cardName: r.card.name,
+          setName: r.bestSet?.set_name,
+          setCode: r.bestSet?.set_code,
+          rarity: r.bestSet?.set_rarity,
+          cardmarketPrice: r.cardmarketPrice,
+          tcgplayerPrice: r.tcgplayerPrice,
+          ebayPrice: r.ebayPrice,
+          setPrice: r.setPrice
+        }
+      };
+      break;
+    }
+
+    if (!matchedSale) return null;
 
     return {
-      matchedSales,
+      matchedSales: [matchedSale],
       pricingSource: 'ygoprodeck',
-      bestMatch: best.card.name,
-      marketPrice: best.bestPrice,
-      confidence: best.score >= 8 ? 'high' : best.score >= 4 ? 'medium' : 'low'
+      bestMatch: matchedSale.apiData.cardName,
+      marketPrice: matchedSale.price,
+      confidence: matchedSale.match.score >= 8 ? 'high' : matchedSale.match.score >= 4 ? 'medium' : 'low'
     };
   } catch (error) {
     console.error(`    YGOPRODeck API error: ${error.message}`);
