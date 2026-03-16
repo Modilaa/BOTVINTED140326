@@ -16,7 +16,19 @@ async function ensureOutputDir(outputDir) {
 }
 
 // Save current scan state to disk and notify dashboard
-async function flushProgress(outputDir, opportunities, underpricedAlerts, searchedListings) {
+// previousListings = cards from previous scans (history) to keep visible during scan
+async function flushProgress(outputDir, opportunities, underpricedAlerts, searchedListings, previousListings) {
+  // Combine current scan progress with previous history
+  const previousByUrl = new Map();
+  for (const prev of previousListings) {
+    previousByUrl.set(prev.url, prev);
+  }
+  // Current scan items override previous ones with same URL
+  for (const item of searchedListings) {
+    previousByUrl.set(item.url, item);
+  }
+  const allListings = [...previousByUrl.values()];
+
   const snapshot = {
     scannedAt: new Date().toISOString(),
     scanning: true,
@@ -27,7 +39,7 @@ async function flushProgress(outputDir, opportunities, underpricedAlerts, search
     scannedCount: searchedListings.length,
     opportunities: [...opportunities].sort((a, b) => b.profit.profit - a.profit.profit),
     underpricedAlerts,
-    searchedListings
+    searchedListings: allListings
   };
   const outputPath = path.join(outputDir, 'latest-scan.json');
   await fs.promises.writeFile(outputPath, JSON.stringify(snapshot, null, 2));
@@ -36,7 +48,7 @@ async function flushProgress(outputDir, opportunities, underpricedAlerts, search
   }
 }
 
-async function runScan() {
+async function runScan(previousListings) {
   const opportunities = [];
   const searchedListings = [];
   const underpricedAlerts = [];
@@ -142,8 +154,8 @@ async function runScan() {
           console.log(`  Opportunite: ${listing.title} -> ${profit.profit.toFixed(2)} EUR`);
         }
 
-        // Flush progress to dashboard after each listing
-        await flushProgress(config.outputDir, opportunities, underpricedAlerts, searchedListings);
+        // Flush progress to dashboard after each listing (include history so count doesn't reset)
+        await flushProgress(config.outputDir, opportunities, underpricedAlerts, searchedListings, previousListings);
       } catch (error) {
         console.error(`  Erreur sur "${listing.title}": ${error.message}`);
       }
@@ -241,7 +253,8 @@ async function runOnce() {
     previousData = null;
   }
 
-  const result = await runScan();
+  const previousListings = (previousData && previousData.searchedListings) || [];
+  const result = await runScan(previousListings);
   const merged = mergeWithHistory(result, config.outputDir, previousData);
   const outputPath = path.join(config.outputDir, 'latest-scan.json');
 
