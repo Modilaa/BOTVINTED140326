@@ -1,3 +1,6 @@
+// Force IPv4-first DNS: pokemontcg.io IPv6 returns 404 via Cloudflare
+require('dns').setDefaultResultOrder('ipv4first');
+
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
