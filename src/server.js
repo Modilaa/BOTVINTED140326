@@ -500,9 +500,10 @@ app.get('/api/stats', (_req, res) => {
   const today = new Date().toISOString().slice(0, 10);
   const scansToday = history.filter((h) => h.scannedAt && h.scannedAt.startsWith(today)).length;
 
-  // Success rate
-  const successRate = allListings.length > 0
-    ? Math.round((opportunities.length / allListings.length) * 10000) / 100
+  // Success rate: from history (stable data) — active opps with confidence >= 50 / total active opps
+  const activeHistory = deduplicateHistoryById(getOpportunitiesHistory()).filter((h) => h.status === 'active');
+  const successRate = activeHistory.length > 0
+    ? Math.round((activeHistory.filter((h) => (h.confidence || 0) >= 50).length / activeHistory.length) * 10000) / 100
     : 0;
 
   // Per-niche stats

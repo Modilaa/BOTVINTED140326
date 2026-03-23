@@ -1389,15 +1389,13 @@ async function updateStatus() {
 async function updateStats() {
   var data = await fetchJson('/api/stats');
   if (!data) return;
-  // Freeze profit/niche/rate stats during scan — scan data is partial and would show wrong values
-  if (lastScanningState !== 'scanning') {
-    currentTotalProfit = data.totalEstimatedProfit;
-    document.getElementById('statProfit').textContent = euro(data.totalEstimatedProfit);
-    document.getElementById('statProfitSub').textContent = data.topNiche ? 'Meilleure niche: ' + data.topNiche : '';
-    document.getElementById('statRate').textContent = pct(data.successRate);
-    document.getElementById('statRateSub').textContent = data.nicheStats && data.nicheStats.length > 0 ? data.nicheStats.length + ' niche(s) actives' : '';
-    renderNiches(data.nicheStats || []);
-  }
+  // KPIs are computed from stable history on the server, safe to always update
+  currentTotalProfit = data.totalEstimatedProfit;
+  document.getElementById('statProfit').textContent = euro(data.totalEstimatedProfit);
+  document.getElementById('statProfitSub').textContent = data.topNiche ? 'Meilleure niche: ' + data.topNiche : '';
+  document.getElementById('statRate').textContent = pct(data.successRate);
+  document.getElementById('statRateSub').textContent = data.nicheStats && data.nicheStats.length > 0 ? data.nicheStats.length + ' niche(s) actives' : '';
+  renderNiches(data.nicheStats || []);
   // statOpps is managed by updateOpportunities() to stay in sync with history
   document.getElementById('statScanned').textContent = data.totalScanned || 0;
   // Afficher la repartition par plateforme si disponible
