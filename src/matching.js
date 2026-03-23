@@ -307,7 +307,15 @@ const VARIANT_TOKENS = new Set([
 ]);
 
 function normalizeComparableToken(token) {
-  return String(token || '').replace(/^#/, '');
+  const t = String(token || '').replace(/^#/, '');
+  // Strip leading zeros from pure numeric tokens: "044" → "44"
+  if (/^\d+$/.test(t)) return String(parseInt(t, 10));
+  // Strip leading zeros from serial-number format: "044/185" → "44/185"
+  if (/^\d+\/\d+$/.test(t)) {
+    const parts = t.split('/');
+    return `${parseInt(parts[0], 10)}/${parseInt(parts[1], 10)}`;
+  }
+  return t;
 }
 
 function findCardNumberToken(rawTokens, comparableTokens, year, ignoredNumbers = []) {
@@ -346,7 +354,13 @@ function findCardNumberToken(rawTokens, comparableTokens, year, ignoredNumbers =
 
 function extractCardSignature(title) {
   const normalized = normalizeSpaces(title || '');
-  const rawTokens = toSlugTokens(normalized).filter((token) => token && token !== '-');
+  // Normalize hyphenated/spaced Pokémon card type variants before tokenizing:
+  // "V-Max" / "V Max" → "vmax",  "V-Star" → "vstar",  "V-Union" → "vunion"
+  const preprocessed = normalized
+    .replace(/\bv[\s\-]max\b/gi, 'vmax')
+    .replace(/\bv[\s\-]star\b/gi, 'vstar')
+    .replace(/\bv[\s\-]union\b/gi, 'vunion');
+  const rawTokens = toSlugTokens(preprocessed).filter((token) => token && token !== '-');
   const comparableTokens = [...new Set(rawTokens.map(normalizeComparableToken))];
   const year = comparableTokens.find((token) => /^20\d{2}$/.test(token)) || null;
   const graded = comparableTokens.includes('psa') || comparableTokens.includes('sgc') || comparableTokens.includes('bgs') || comparableTokens.includes('cgc') || normalized.toLowerCase().includes('collect aura');

@@ -136,8 +136,38 @@ function computeConfidence(opp) {
     // Pas d'image du tout + pas local-db → visionScore = 0
   }
 
+  // === CHEMIN B : Prix très en dessous de la moyenne Vinted en base ===
+  // Si le prix actuel est significativement plus bas que la moyenne des prix Vinted observés,
+  // c'est un fort signal de bonne affaire — même sans comparaison eBay ni GPT Vision.
+  let belowAvgBoost = 0;
+  try {
+    const db = getPriceDb();
+    if (db && db.getProductInfo) {
+      const productInfo = db.getProductInfo(opp.title || '', opp.search || '');
+      if (productInfo && (productInfo.vintedObservations || 0) >= 3 && productInfo.avgVintedPrice > 0) {
+        const currentPrice = opp.vintedBuyerPrice || opp.vintedListedPrice || 0;
+        if (currentPrice > 0) {
+          const ratio = currentPrice / productInfo.avgVintedPrice;
+          if (ratio <= 0.6) {
+            // 40%+ en dessous de la moyenne → quasi-certitude de bonne affaire → score plancher 95
+            belowAvgBoost = 95;
+          } else if (ratio <= 0.7) {
+            // 30%+ en dessous → très bon signal → score plancher 90
+            belowAvgBoost = 90;
+          } else if (ratio <= 0.8) {
+            // 20%+ en dessous → signal positif → score plancher 75
+            belowAvgBoost = 75;
+          }
+        }
+      }
+    }
+  } catch(e) {}
+
   // === SCORE FINAL ===
   let total = Math.min(100, textScore + sourceScore + visionScore);
+
+  // Chemin B peut hausser le score indépendamment des autres tiers
+  if (belowAvgBoost > total) total = belowAvgBoost;
 
   // === PÉNALITÉS ===
   // Règles apprises via feedback
@@ -148,15 +178,17 @@ function computeConfidence(opp) {
     if (penalty < 0) total = Math.max(0, total + penalty);
   } catch(e) {}
 
-  // Vendeur suspect → plafond à 40
+  // Vendeur suspect → plafond à 40 (sauf si Chemin B très fort)
   const sellerScore = opp.sellerScore;
   if (sellerScore && typeof sellerScore === 'object' && sellerScore.score < 20) {
-    total = Math.min(total, 40);
+    total = Math.min(total, belowAvgBoost >= 90 ? 60 : 40);
   }
 
-  // Hard gate : GPT Vision doit confirmer pour atteindre le seuil d'opportunité (≥ 50)
-  // Sans confirmation GPT, l'item reste sous le seuil actif — évite tout faux positif
-  if (!(opp.visionVerified && opp.visionResult && opp.visionResult.sameCard === true)) {
+  // Hard gate assoupli : sans GPT Vision ET sans signal Chemin B fort, on plafonne à 49
+  // Mais si match texte + source fiable + image hash suffisants, on laisse passer
+  const gptConfirmed = opp.visionVerified && opp.visionResult && opp.visionResult.sameCard === true;
+  const hasStrongSignal = belowAvgBoost >= 75 || (textScore >= 30 && sourceScore >= 15 && visionScore >= 15);
+  if (!gptConfirmed && !hasStrongSignal) {
     total = Math.min(total, 49);
   }
 
