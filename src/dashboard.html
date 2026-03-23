@@ -1837,7 +1837,7 @@ function renderAgents(statusData) {
       resultHtml = '<div class="agent-result visible">' + resultText + '</div>';
     }
 
-    html += '<div class="agent-card"><div class="agent-card-header"><div><span class="agent-status-dot ' + dotClass + '"></span><span class="agent-name">' + def.icon + ' ' + def.name + '</span></div><button class="' + btnClass + '" onclick="launchAgent(\'' + def.key + '\')" ' + (isRunning ? 'disabled' : '') + '>' + (isRunning ? '<span class="spinner"></span> En cours' : 'Lancer') + '</button></div><div class="agent-meta">' + esc(def.desc) + (s.lastRun ? ' \u00b7 Dernier: ' + timeAgo(s.lastRun) : '') + '</div><div style="font-size:11px;color:' + (isError ? 'var(--red)' : 'var(--text3)') + '">' + statusLabel + (s.error ? ': ' + esc(s.error).slice(0, 80) : '') + '</div>' + resultHtml + '</div>';
+    html += '<div class="agent-card"><div class="agent-card-header"><div><span class="agent-status-dot ' + dotClass + '"></span><span class="agent-name">' + def.icon + ' ' + def.name + '</span></div><button id="agent-launch-btn-' + def.key + '" class="' + btnClass + '" onclick="launchAgent(\'' + def.key + '\')" ' + (isRunning ? 'disabled' : '') + '>' + (isRunning ? '<span class="spinner"></span> En cours' : 'Lancer') + '</button></div><div class="agent-meta">' + esc(def.desc) + (s.lastRun ? ' \u00b7 Dernier: ' + timeAgo(s.lastRun) : '') + '</div><div style="font-size:11px;color:' + (isError ? 'var(--red)' : 'var(--text3)') + '">' + statusLabel + (s.error ? ': ' + esc(s.error).slice(0, 80) : '') + '</div>' + resultHtml + '</div>';
   }
   container.innerHTML = html;
 }
@@ -1848,21 +1848,35 @@ async function updateAgents() {
 }
 
 async function launchAgent(agentKey) {
-  try {
-    await fetch(API_BASE + '/api/agents/' + agentKey, { method: 'POST' });
-  } catch (e) {
-    console.error('Agent launch error:', e);
+  // Feedback visuel immédiat — avant même l'appel API
+  var launchBtn = document.getElementById('agent-launch-btn-' + agentKey);
+  if (launchBtn) {
+    launchBtn.disabled = true;
+    launchBtn.innerHTML = '<span class="spinner"></span> Lancement\u2026';
   }
-  // Immediately update UI
+  try {
+    var res = await fetch(API_BASE + '/api/agents/' + agentKey, { method: 'POST' });
+    var data = await res.json();
+    if (!res.ok || (data && data.error)) {
+      showVerifyToast('\u26A0\uFE0F Agent ' + agentKey + '\u00a0: ' + esc((data && data.error) || 'Erreur serveur'), 'toast-warn');
+      // Réactiver le bouton si l'agent n'a pas pu démarrer
+      if (launchBtn) { launchBtn.disabled = false; launchBtn.textContent = 'Lancer'; }
+      return;
+    }
+  } catch (e) {
+    showVerifyToast('\u26A0\uFE0F Impossible de lancer l\u2019agent\u00a0: ' + esc(e.message), 'toast-warn');
+    if (launchBtn) { launchBtn.disabled = false; launchBtn.textContent = 'Lancer'; }
+    return;
+  }
+  // Mettre à jour la grille (le bouton passe en "En cours" via renderAgents)
   updateAgents();
-  // Poll for completion
+  // Poll jusqu'à fin d'exécution (SSE fait aussi la mise à jour)
   var pollCount = 0;
   var pollInterval = setInterval(function() {
     updateAgents();
     pollCount++;
-    if (pollCount > 120) clearInterval(pollInterval); // Max 2min poll
+    if (pollCount > 120) clearInterval(pollInterval);
   }, 1000);
-  // Also stop polling when agent finishes (checked via SSE)
   setTimeout(function() { clearInterval(pollInterval); }, 120000);
 }
 
@@ -2448,11 +2462,14 @@ async function archiveOpportunity(id) {
 // ─── Verify image (GPT Vision auto-dismiss) ────────────────
 var verifyImageInFlight = new Set();
 
+// Retourne le bouton vérifié en cours ou null (lookup frais, pas de ref. périmée)
+function getVerifyBtn(id) { return document.getElementById('verifybtn-' + id); }
+
 async function verifyImage(id) {
   if (verifyImageInFlight.has(id)) return;
   verifyImageInFlight.add(id);
-  oppInteracting = true; // Prevent table re-render while GPT Vision is running
-  var btn = document.getElementById('verifybtn-' + id);
+  // NE PAS toucher oppInteracting : laisser le SSE refresher normalement
+  var btn = getVerifyBtn(id);
   if (btn) {
     btn.disabled = true;
     btn.classList.add('verifying');
@@ -2466,6 +2483,8 @@ async function verifyImage(id) {
       body: JSON.stringify({ id: id })
     });
     var data = await res.json();
+    // Re-lookup bouton après le await (la table a pu être rafraîchie)
+    btn = getVerifyBtn(id);
     if (!data.success) {
       if (btn) { btn.classList.remove('verifying'); btn.textContent = '\uD83D\uDD0D'; btn.disabled = false; }
       showVerifyToast('\u26A0\uFE0F Erreur v\u00e9rification\u00a0: ' + esc(data.error || 'Inconnu'), 'toast-warn');
@@ -2476,8 +2495,9 @@ async function verifyImage(id) {
       showVerifyToast('\u26A0\uFE0F ' + esc(data.reason || 'Images non disponibles'), 'toast-warn');
       return;
     }
+    var confidence = (data.vision && data.vision.confidence) || data.confidence || '?';
     if (!data.match) {
-      // Masquer la ligne immédiatement (le SSE fait le refresh complet)
+      // Masquer la ligne immédiatement (le SSE supprimera au prochain refresh)
       var row = document.querySelector('tr[data-opp-id="' + id + '"]');
       if (row) {
         row.style.transition = 'opacity 0.4s';
@@ -2496,22 +2516,18 @@ async function verifyImage(id) {
         btn.classList.add('confirmed');
         btn.textContent = '\u2713';
         btn.disabled = false;
-        btn.title = 'Confirm\u00e9e par GPT (' + (data.confidence || '?') + '%)';
+        btn.title = 'Confirm\u00e9e par GPT (' + confidence + '%)';
         btn.setAttribute('onclick', 'verifyOpportunity(\'' + id + '\')');
       }
-      showVerifyToast('\u2705 <b>Confirm\u00e9e par GPT</b> (' + (data.confidence || '?') + '%)', 'toast-ok');
+      showVerifyToast('\u2705 <b>Confirm\u00e9e par GPT</b> (' + confidence + '%)', 'toast-ok');
     }
   } catch (e) {
+    btn = getVerifyBtn(id);
     if (btn) { btn.classList.remove('verifying'); btn.textContent = '\uD83D\uDD0D'; btn.disabled = false; btn.title = 'Erreur: ' + e.message; }
     showVerifyToast('\u26A0\uFE0F Erreur v\u00e9rification\u00a0: ' + esc(e.message), 'toast-warn');
   } finally {
     verifyImageInFlight.delete(id);
-    oppInteracting = false;
-    if (pendingOppsData) {
-      var c = document.getElementById('oppTableContainer');
-      if (c) { c.innerHTML = pendingOppsData; applyFeedbackStates(); }
-      pendingOppsData = null;
-    }
+    // Pas de manipulation oppInteracting ici — évite les conflits avec hover/modal
   }
 }
 
