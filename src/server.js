@@ -240,8 +240,8 @@ function appendOpportunitiesToHistory(scanOpportunities, scannedAt) {
     }
   }
 
-  // Auto-expire opportunities older than 48h
-  const EXPIRY_MS = 48 * 60 * 60 * 1000;
+  // Auto-expire opportunities older than 7 days
+  const EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
   const now = Date.now();
   for (const h of history) {
     if (h.status === 'active') {
@@ -982,6 +982,7 @@ app.post('/api/agents/:agentName', async (req, res) => {
 
       case 'discovery':
         result = await discover(config, { sendTelegram: false });
+        if (!result) result = { summary: { status: 'désactivé' }, suggestions: [] };
         await saveAgentResult('discovery', result);
         agentStatus[agentName].lastResult = result.summary || { totalSuggestions: (result.suggestions || []).length };
         break;
@@ -1002,7 +1003,13 @@ app.post('/api/agents/:agentName', async (req, res) => {
 
       case 'strategy': {
         const opps = scanData ? (scanData.opportunities || []) : [];
-        result = await strategize(opps, { sendTelegram: false });
+        try {
+          result = await strategize(opps, { sendTelegram: false });
+        } catch (stratErr) {
+          console.error('[Agent strategy] erreur:', stratErr.message);
+          result = null;
+        }
+        if (!result) result = { summary: { status: 'erreur', tier: '-', tierName: 'Inconnu', availableBalance: 0, acheter: 0, total: 0 } };
         await saveAgentResult('strategist', result);
         // Normalise les champs pour le dashboard
         agentStatus[agentName].lastResult = result.summary
@@ -1058,8 +1065,8 @@ app.delete('/api/opportunities/:id', (req, res) => {
   const opp = history.find((h) => h.id === id);
   if (!opp) return res.status(404).json({ error: 'Opportunité non trouvée' });
 
-  opp.status = 'dismissed';
-  opp.dismissedAt = new Date().toISOString();
+  opp.status = 'archived';
+  opp.archivedAt = new Date().toISOString();
   saveOpportunitiesHistory(history);
   broadcastSSE({ type: 'opportunities-update' });
   res.json({ success: true });
@@ -1381,7 +1388,7 @@ app.post('/api/verify-opportunity', async (req, res) => {
 
 // ─── API: Verify image (GPT Vision + auto-dismiss si mismatch) ────────
 app.post('/api/verify-image', async (req, res) => {
-  const { id } = req.body;
+  const { id, manual } = req.body;
   if (!id) return res.status(400).json({ error: 'id requis' });
 
   const history = getOpportunitiesHistory();
@@ -1442,7 +1449,9 @@ app.post('/api/verify-image', async (req, res) => {
     };
 
     if (vision.verdict === 'no_match') {
-      opp.status = 'dismissed';
+      // Manual verification (dashboard button) → archived so user can still see it
+      // Auto-verify (during scan) → dismissed to filter it out
+      opp.status = manual ? 'archived' : 'dismissed';
       opp.dismissedAt = new Date().toISOString();
       opp.dismissReason = 'gpt-vision-mismatch';
       opp.gptVerdict = vision.reason || 'Cartes différentes';

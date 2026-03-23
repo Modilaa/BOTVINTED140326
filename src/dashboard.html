@@ -993,7 +993,7 @@ tr:hover td { background: rgba(108,92,231,0.04); }
         </span>
         <span style="margin-left:8px;display:inline-flex;align-items:center;gap:4px;">
           <label for="minConfidence" style="font-size:11px;color:var(--text2);">Conf. min</label>
-          <input id="minConfidence" type="number" min="0" max="100" value="50" oninput="updateOpportunities()" style="width:44px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12px;" title="Score de confiance minimum">
+          <input id="minConfidence" type="number" min="0" max="100" value="0" oninput="updateOpportunities()" style="width:44px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12px;" title="Score de confiance minimum">
         </span>
         <span style="margin-left:8px;display:inline-flex;align-items:center;gap:4px;">
           <label for="minLiquidity" style="font-size:11px;color:var(--text2);">Liq. min</label>
@@ -1088,7 +1088,7 @@ tr:hover td { background: rgba(108,92,231,0.04); }
         <div class="empty-state"><div class="empty-state-text">Pas de donn&eacute;es de niches disponibles.</div></div>
       </div>
     </div>
-    <div class="panel">
+    <div class="panel" style="display:none">
       <div class="panel-header">
         <div class="panel-title">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg>
@@ -1103,7 +1103,7 @@ tr:hover td { background: rgba(108,92,231,0.04); }
   </div>
 
   <!-- Objectif 5000€ + Classement catégories -->
-  <div class="two-col">
+  <div class="two-col" style="display:none">
     <div class="panel">
       <div class="panel-header">
         <div class="panel-title">
@@ -1129,7 +1129,7 @@ tr:hover td { background: rgba(108,92,231,0.04); }
   </div>
 
   <!-- Tendances de prix -->
-  <div class="panel">
+  <div class="panel" style="display:none">
     <div class="panel-header">
       <div class="panel-title">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
@@ -1979,10 +1979,13 @@ async function updateHistory() {
 }
 
 // ─── Trigger Scan ─────────────────────────────────────────
+var scanPendingToast = false;
+
 async function triggerScan() {
   var btn = document.getElementById('scanBtn');
   btn.disabled = true;
   btn.textContent = 'Lancement...';
+  scanPendingToast = true;
   try {
     var res = await fetch(API_BASE + '/api/scan', { method: 'POST' });
     var data = await res.json();
@@ -2401,6 +2404,16 @@ function connectSSE() {
           lastScanningState = null; // Force re-check on next updateStatus call
           var progressEl2 = document.getElementById('scanProgress');
           if (progressEl2) progressEl2.style.display = 'none';
+          if (scanPendingToast) {
+            scanPendingToast = false;
+            fetchJson('/api/stats').then(function(s) {
+              var opps = (s && s.totalOpportunities) || 0;
+              var scanned = (s && s.totalScanned) || 0;
+              showVerifyToast('\u2705 Scan termin\u00e9 \u2014 ' + scanned + ' annonces, <b>' + opps + '</b> opportunit\u00e9' + (opps !== 1 ? 's' : ''), 'toast-ok');
+            }).catch(function() {
+              showVerifyToast('\u2705 Scan termin\u00e9', 'toast-ok');
+            });
+          }
         }
         refreshAll();
       }
@@ -2480,7 +2493,7 @@ async function verifyImage(id) {
     var res = await fetch(API_BASE + '/api/verify-image', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: id })
+      body: JSON.stringify({ id: id, manual: true })
     });
     var data = await res.json();
     // Re-lookup bouton après le await (la table a pu être rafraîchie)
@@ -2509,7 +2522,7 @@ async function verifyImage(id) {
           setTimeout(function() { if (banner.parentNode) banner.parentNode.removeChild(banner); }, 400);
         }
       }
-      showVerifyToast('\u274C <b>Rejet\u00e9e</b> \u2014 ' + esc(data.reason || 'Cartes diff\u00e9rentes'), 'toast-err');
+      showVerifyToast('\uD83D\uDDC4 <b>Archiv\u00e9e</b> \u2014 ' + esc(data.reason || 'Cartes diff\u00e9rentes'), 'toast-warn');
     } else {
       if (btn) {
         btn.classList.remove('verifying');
