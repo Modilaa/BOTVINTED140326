@@ -725,6 +725,109 @@ tr:hover td { background: rgba(108,92,231,0.04); }
   .opp-title { max-width: 150px; }
 }
 
+/* ─── Mobile ≤ 768px (iPhone) ──────────────────────── */
+@media (max-width: 768px) {
+  /* Layout général */
+  body { font-size: 14px; }
+  .container { padding: 10px; }
+  .panel { margin-bottom: 14px; }
+
+  /* Header : compact, bouton Scanner toujours visible */
+  .header { padding: 10px 12px; gap: 8px; }
+  .logo { font-size: 16px; }
+  .header-right {
+    display: flex; /* override du display:none de 600px */
+    gap: 8px;
+  }
+  .scan-info { display: none; }
+  #ebayQuotaBadge,
+  #priceDbBadge,
+  #seenListingsBadge,
+  #scanProgress { display: none !important; }
+  /* Bouton Scanner : taille tactile minimum */
+  #scanBtn { min-height: 44px; padding: 8px 14px; }
+
+  /* KPI : 2 par ligne */
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .stat-card { padding: 12px 14px; }
+  .stat-value { font-size: 22px; }
+  .stat-label { font-size: 11px; }
+  .stat-sub { font-size: 11px; }
+
+  /* Charts : empilés, hauteur réduite */
+  .charts-section { flex-direction: column; gap: 12px; margin-bottom: 14px; }
+  .chart-panel { padding: 14px; }
+  .chart-container { height: 200px; }
+
+  /* Panels */
+  .panel-header { padding: 10px 12px; }
+  .panel-body { padding: 12px; }
+
+  /* Filter tabs des opportunités : scrollable en horizontal */
+  .filter-tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+  .filter-tabs::-webkit-scrollbar { display: none; }
+  .filter-tab { flex-shrink: 0; min-height: 36px; padding: 6px 10px; }
+
+  /* Zone filtres des opps : wrap sur 2+ lignes */
+  #oppFilterTabs {
+    display: flex;
+    flex-wrap: wrap;
+    overflow-x: visible;
+    width: 100%;
+    gap: 6px;
+  }
+  #oppFilterTabs .filter-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+  /* Selects et inputs de filtre */
+  #platformFilter,
+  #routeFilter,
+  #sortSelect,
+  #minConfidence,
+  #minLiquidity {
+    font-size: 12px;
+    padding: 4px 6px;
+  }
+
+  /* Tableau des opportunités : scroll horizontal */
+  .table-container { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Titre opportunité */
+  .opp-title { max-width: 120px; }
+
+  /* Boutons d'action : taille tactile ≥ 44px */
+  .btn-action { width: 40px; height: 40px; font-size: 16px; }
+  .opp-action-btns { gap: 6px; }
+
+  /* Boutons généraux */
+  .btn { min-height: 44px; }
+  .btn-sm { min-height: 36px; }
+
+  /* Agents : déjà 1 col à 900px, juste réduire padding */
+  .agent-card { padding: 12px; }
+
+  /* Niche bars : colonnes plus étroites */
+  .niche-name { width: 80px; font-size: 12px; }
+  .niche-stats { width: 70px; font-size: 11px; }
+
+  /* Formulaires modaux */
+  .form-modal { width: 96%; padding: 16px; }
+
+  /* Toast : ajusté pour ne pas dépasser l'écran */
+  #verify-toast-container { max-width: calc(100vw - 24px); right: 12px; }
+}
+
 /* ─── Loading shimmer ───────────────────── */
 .shimmer {
   background: linear-gradient(90deg, var(--surface) 25%, var(--surface2) 50%, var(--surface) 75%);
