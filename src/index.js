@@ -367,6 +367,7 @@ async function runScan(previousListings) {
             if (visionResult) {
               row.visionVerified = true;
               row.visionResult = visionResult;
+              row.visionSameCard = visionResult.sameCard;
               if (visionResult.sameCard === false) {
                 console.log(`[vision-auto] ❌ REJET: "${row.title.slice(0, 50)}" — ${visionResult.summary}`);
               } else {
@@ -376,6 +377,10 @@ async function runScan(previousListings) {
           } catch (err) {
             console.log(`[vision-auto] Erreur: ${err.message} — on continue sans vision`);
           }
+        } else if (!row.ebayMatchImageUrl) {
+          console.log(`[vision-auto] ⏭ SKIP: "${row.title.slice(0, 50)}" — pas d'image eBay (bloqué par hard gate)`);
+        } else if (!process.env.OPENAI_API_KEY) {
+          console.log(`[vision-auto] ⏭ SKIP: OPENAI_API_KEY manquante (toutes les opportunités bloquées par hard gate)`);
         }
 
         // Scores — confidence now incorporates vision result (returns 0 if GPT rejected)

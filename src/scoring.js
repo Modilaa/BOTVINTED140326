@@ -154,6 +154,12 @@ function computeConfidence(opp) {
     total = Math.min(total, 40);
   }
 
+  // Hard gate : GPT Vision doit confirmer pour atteindre le seuil d'opportunité (≥ 50)
+  // Sans confirmation GPT, l'item reste sous le seuil actif — évite tout faux positif
+  if (!(opp.visionVerified && opp.visionResult && opp.visionResult.sameCard === true)) {
+    total = Math.min(total, 49);
+  }
+
   return total;
 }
 

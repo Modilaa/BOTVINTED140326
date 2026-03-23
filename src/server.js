@@ -206,6 +206,8 @@ function appendOpportunitiesToHistory(scanOpportunities, scannedAt) {
       if (opp.confidence != null) existing.confidence = opp.confidence;
       if (opp.liquidity != null) existing.liquidity = opp.liquidity;
       if (opp.sellerScore != null) existing.sellerScore = opp.sellerScore;
+      if (opp.visionVerified != null) existing.visionVerified = opp.visionVerified;
+      if (opp.visionSameCard != null) existing.visionSameCard = opp.visionSameCard;
       if (existing.status === 'expired') existing.status = 'active'; // Re-activate if re-found
     } else {
       // New opportunity
@@ -233,6 +235,8 @@ function appendOpportunitiesToHistory(scanOpportunities, scannedAt) {
         confidence: opp.confidence != null ? opp.confidence : null,
         liquidity: opp.liquidity != null ? opp.liquidity : null,
         sellerScore: opp.sellerScore != null ? opp.sellerScore : null,
+        visionVerified: opp.visionVerified || false,
+        visionSameCard: opp.visionSameCard != null ? opp.visionSameCard : null,
         status: 'active', // active, sold, expired, archived
         firstSeenAt: scannedAt,
         lastSeenAt: scannedAt
@@ -249,6 +253,14 @@ function appendOpportunitiesToHistory(scanOpportunities, scannedAt) {
       if (now - lastSeen > EXPIRY_MS) {
         h.status = 'expired';
       }
+    }
+  }
+
+  // Expire stale items created by older code versions with sub-threshold confidence
+  // (current pipeline requires GPT Vision confirmation → confidence always ≥ 50 for active opps)
+  for (const h of history) {
+    if (h.status === 'active' && h.confidence != null && h.confidence < 50) {
+      h.status = 'expired';
     }
   }
 
