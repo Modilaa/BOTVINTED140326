@@ -828,6 +828,73 @@ tr:hover td { background: rgba(108,92,231,0.04); }
   #verify-toast-container { max-width: calc(100vw - 24px); right: 12px; }
 }
 
+/* ─── Mobile ≤ 480px (iPhone SE, petit écran) ────────────────── */
+@media (max-width: 480px) {
+  /* Layout */
+  .container { padding: 8px; }
+  .panel { margin-bottom: 10px; border-radius: 10px; }
+
+  /* Header : logo + bouton scanner seulement */
+  .header { padding: 8px 10px; gap: 6px; }
+  .logo { font-size: 14px; }
+  .status-badge { font-size: 11px; padding: 3px 8px; }
+  #scanBtn { font-size: 12px; padding: 8px 12px; min-height: 40px; }
+
+  /* KPI : 1 seule colonne */
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .stat-card { padding: 12px; border-radius: 10px; }
+  .stat-value { font-size: 24px; }
+  .stat-label { font-size: 10px; }
+
+  /* Charts : plus petits */
+  .charts-section { gap: 10px; }
+  .chart-panel { padding: 10px; border-radius: 10px; }
+  .chart-container { height: 160px; }
+  .chart-panel-title { font-size: 12px; margin-bottom: 10px; }
+
+  /* Panels */
+  .panel-header { padding: 8px 10px; }
+  .panel-title { font-size: 13px; }
+  .panel-body { padding: 8px; }
+
+  /* Tableau : scroll horizontal forcé + colonnes compactes */
+  .table-container table { min-width: 700px; }
+  td, th { padding: 8px 8px; font-size: 11px; }
+  .opp-title { max-width: 90px; font-size: 11px; }
+  .opp-img { width: 34px; height: 34px; }
+  .opp-img-placeholder { width: 34px; height: 34px; font-size: 14px; }
+
+  /* Boutons d'action : taille tactile garantie */
+  .btn-action { width: 36px; height: 36px; font-size: 15px; }
+  .opp-action-btns { gap: 4px; }
+
+  /* Tabs : scrollable sans barre */
+  .filter-tabs { gap: 4px; }
+  .filter-tab { font-size: 11px; padding: 5px 8px; min-height: 34px; }
+
+  /* Selects */
+  #platformFilter,
+  #routeFilter,
+  #sortSelect,
+  #minConfidence,
+  #minLiquidity { font-size: 11px; padding: 3px 4px; max-width: 100px; }
+
+  /* Niche bars */
+  .niche-name { width: 70px; font-size: 11px; }
+  .niche-stats { width: 60px; font-size: 10px; }
+
+  /* Toast */
+  #verify-toast-container { right: 8px; max-width: calc(100vw - 16px); }
+  .verify-toast { font-size: 12px; padding: 8px 10px; }
+
+  /* Feedback modal */
+  .feedback-modal-box { padding: 16px; }
+}
+
 /* ─── Loading shimmer ───────────────────── */
 .shimmer {
   background: linear-gradient(90deg, var(--surface) 25%, var(--surface2) 50%, var(--surface) 75%);
