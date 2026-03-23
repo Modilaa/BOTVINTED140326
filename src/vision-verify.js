@@ -3,18 +3,20 @@
 const OpenAI = require('openai');
 const { checkAndAlert } = require('./api-monitor');
 
-const VISION_PROMPT = `You are a strict trading card authentication expert. Compare these two trading card images.
+const VISION_PROMPT = `You are a strict product authentication expert. Compare these two product images.
 
-Image 1 = Vinted listing (card being sold).
+Image 1 = Vinted listing (item being sold).
 Image 2 = eBay reference (price benchmark).
+
+The items may be trading cards (Pokémon, Yu-Gi-Oh, Topps, sports cards), LEGO sets, or other collectibles.
 
 Your task: verify 3 things STRICTLY:
 
-1. SAME PRODUCT: exact same player/character, same card number, same set/year. Even minor differences (wrong year, wrong team) = NOT same product.
+1. SAME PRODUCT: exact same item — for cards: same player/character, card number, set/year; for LEGO: same set number and name; for other items: same model/edition. Even minor differences (wrong year, wrong set, wrong model) = NOT same product.
 
-2. SAME VARIANT/RARITY: base card ≠ holo ≠ refractor ≠ cracked ice ≠ silver ≠ gold ≠ prizm ≠ optic. Different border color or finish = different variant. If you cannot confirm they are the SAME variant, mark false.
+2. SAME VARIANT/EDITION: for cards: base ≠ holo ≠ refractor ≠ prizm ≠ gold; for LEGO: sealed ≠ opened ≠ incomplete; for other items: same size/color/edition. If you cannot confirm they are the SAME variant, mark false.
 
-3. COMPARABLE CONDITION: mint/PSA ≠ damaged, sealed ≠ opened, bent corners (played) ≠ near-mint. If condition difference affects value significantly, mark false.
+3. COMPARABLE CONDITION: mint/sealed ≠ damaged/opened, significant wear ≠ near-mint. If condition difference affects value significantly, mark false.
 
 verdict = "match" ONLY if ALL THREE are true. Otherwise "no_match".
 
@@ -34,7 +36,8 @@ Respond ONLY with valid JSON, no markdown, no extra text:
 }`;
 
 /**
- * Compare two card images using GPT-4o mini Vision.
+ * Compare two product images using GPT-4o mini Vision.
+ * Works for trading cards, LEGO sets, or any other collectible.
  * Returns structured verdict with sameProduct/sameVariant/conditionComparable + detailed report.
  * @param {string} vintedImageUrl - Image URL from Vinted listing
  * @param {string} ebayImageUrl   - Image URL from eBay reference

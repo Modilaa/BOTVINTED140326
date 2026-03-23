@@ -61,6 +61,9 @@ function computeConfidence(opp) {
   const matchedSales = opp.matchedSales || [];
 
   // === TIER 1 : Qualité du matching texte (0-40) ===
+  // Bonus si la source est eBay réel (ventes confirmées, pas estimation)
+  const isEbaySource = ['ebay-browse-api', 'ebay-html', 'apify-ebay'].includes(src);
+
   let textScore = 0;
   if (matchedSales.length > 0) {
     const bestMatch = matchedSales.reduce((best, s) => {
@@ -70,10 +73,11 @@ function computeConfidence(opp) {
     }, matchedSales[0]);
     const ms = (bestMatch.match && typeof bestMatch.match.score === 'number') ? bestMatch.match.score : 0;
 
-    if (ms >= 12)      textScore = 40; // Excellent match
-    else if (ms >= 8)  textScore = 30; // Bon match
-    else if (ms >= 4)  textScore = 20; // Match correct
-    else               textScore = 10; // Match faible
+    if (ms >= 12)                     textScore = 40; // Excellent match
+    else if (ms >= 8 && isEbaySource) textScore = 40; // Bon match + ventes eBay confirmées
+    else if (ms >= 8)                 textScore = 30; // Bon match (source non-eBay)
+    else if (ms >= 4)                 textScore = 20; // Match correct
+    else                              textScore = 10; // Match faible
   } else if (src === 'local-database' || src === 'pokemon-tcg-api' || src === 'ygoprodeck') {
     // API niche ou base locale — matching texte déjà fait lors de l'indexation
     textScore = 30;
@@ -92,10 +96,10 @@ function computeConfidence(opp) {
       break;
     }
     case 'ebay-browse-api':
-      sourceScore = matchedSales.length >= 3 ? 15 : 10;
+      sourceScore = matchedSales.length >= 3 ? 20 : 10; // 3+ ventes = source fiable
       break;
     case 'apify-ebay':
-      sourceScore = 10;
+      sourceScore = matchedSales.length >= 3 ? 15 : 10;
       break;
     default:
       sourceScore = 5;

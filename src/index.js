@@ -393,6 +393,9 @@ async function runScan(previousListings) {
         } else if (routerResult.isKeywordEstimate) {
           _seenResult = 'no-match'; // Estimation ignorée, pas fiable
           console.log(`  Estimation mots-clés ignorée (pas assez fiable): ${listing.title.slice(0, 50)}`);
+        } else if (actualPricingSource === 'rebrickable' && routerResult.confidence === 'low') {
+          _seenResult = 'no-match'; // Estimation Rebrickable 0.12€/pièce = prix inventé, pas de vente eBay confirmée
+          console.log(`  Estimation Rebrickable ignorée (aucune vente eBay): ${listing.title.slice(0, 50)}`);
         } else {
           // ── Seuils d'opportunité stricts ──────────────────────────────────
           const _minProfitEur = Math.max(5, (search && search.minProfitEur != null) ? search.minProfitEur : config.minProfitEur);
