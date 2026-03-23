@@ -197,6 +197,73 @@ const paniniSearches = parseBoolean(process.env.SEARCH_PANINI, false) ? [
   }
 ] : [];
 
+const toppsUfcSearches = parseBoolean(process.env.SEARCH_TOPPS_UFC, false) ? [
+  {
+    name: 'Topps UFC',
+    pricingSource: 'ebay',
+    maxPrice: 120,
+    vintedQueries: [
+      'topps ufc',
+      'topps chrome ufc',
+      'topps finest ufc',
+      'ufc prizm',
+      'ufc card',
+      'topps ufc numbered',
+      'topps ufc auto',
+      'topps ufc gold',
+      'topps ufc refractor',
+      'ufc panini'
+    ],
+    requiredAllTokens: ['topps'],
+    requiredAnyTokens: ['ufc', 'mma'],
+    blockedTokens: ['pokemon', 'yugioh', 'football', 'f1', 'tennis', 'album', 'sticker']
+  }
+] : [];
+
+const toppsTennisSearches = parseBoolean(process.env.SEARCH_TOPPS_TENNIS, false) ? [
+  {
+    name: 'Topps Tennis',
+    pricingSource: 'ebay',
+    maxPrice: 120,
+    vintedQueries: [
+      'topps tennis',
+      'topps chrome tennis',
+      'topps tennis gold',
+      'topps tennis refractor',
+      'topps tennis auto',
+      'topps tennis numbered',
+      'tennis card topps',
+      'topps finest tennis'
+    ],
+    requiredAllTokens: ['topps'],
+    requiredAnyTokens: ['tennis'],
+    blockedTokens: ['pokemon', 'yugioh', 'football', 'f1', 'ufc', 'album', 'sticker']
+  }
+] : [];
+
+const toppsSportGeneralSearches = parseBoolean(process.env.SEARCH_TOPPS_SPORT_GENERAL, false) ? [
+  {
+    name: 'Topps Sport General',
+    pricingSource: 'ebay',
+    maxPrice: 120,
+    vintedQueries: [
+      'topps sapphire',
+      'topps gold refractor',
+      'bowman chrome',
+      'topps chrome hobby',
+      'topps finest',
+      'topps sterling',
+      'topps tribute',
+      'topps tier one',
+      'topps museum',
+      'topps inception'
+    ],
+    requiredAllTokens: ['topps'],
+    requiredAnyTokens: ['sapphire', 'sterling', 'tribute', 'tier one', 'museum', 'inception', 'chrome', 'finest'],
+    blockedTokens: ['pokemon', 'yugioh', 'album', 'sticker', 'autocollant', 'vignette']
+  }
+] : [];
+
 // ─── Catégories multi-produits (Discovery v2) ────────────────────────────
 // Chaque catégorie est activable/désactivable via le .env
 
@@ -409,6 +476,9 @@ const searches = [
   ...tcgSearches,
   ...toppsFootballSearches,
   ...paniniSearches,
+  ...toppsUfcSearches,
+  ...toppsTennisSearches,
+  ...toppsSportGeneralSearches,
   ...sneakersSearches,
   ...legoSearches,
   ...vintageSearches,
