@@ -3,1391 +3,2985 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dils le Scraper</title>
+<title>CODEX Dashboard — Arbitrage TCG</title>
 <style>
-  :root {
-    --bg: #0f1117;
-    --surface: #1a1d27;
-    --surface2: #232733;
-    --border: #2e3345;
-    --text: #e4e6ed;
-    --text2: #8b90a0;
-    --accent: #6c5ce7;
-    --green: #00b894;
-    --red: #e17055;
-    --orange: #fdcb6e;
-    --blue: #74b9ff;
-    --purple: #a29bfe;
-  }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: var(--bg);
-    color: var(--text);
-    min-height: 100vh;
-  }
+:root {
+  --bg: #0b0d14;
+  --surface: #141722;
+  --surface2: #1c2030;
+  --surface3: #252a3a;
+  --border: #2a2f42;
+  --text: #e8eaf0;
+  --text2: #8890a8;
+  --text3: #5a6080;
+  --accent: #6c5ce7;
+  --accent2: #a29bfe;
+  --green: #00d2a0;
+  --green-bg: rgba(0,210,160,0.1);
+  --red: #ff6b6b;
+  --red-bg: rgba(255,107,107,0.1);
+  --orange: #ffa94d;
+  --orange-bg: rgba(255,169,77,0.1);
+  --blue: #74b9ff;
+  --blue-bg: rgba(116,185,255,0.1);
+  --purple: #a29bfe;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow: 0 4px 24px rgba(0,0,0,0.3);
+}
 
-  /* Username banner */
-  .username-banner {
-    background: linear-gradient(135deg, rgba(108, 92, 231, 0.15) 0%, rgba(162, 155, 254, 0.1) 100%);
-    border-bottom: 1px solid var(--border);
-    padding: 12px 24px;
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .username-banner.hidden {
-    display: none;
-  }
-  .username-input-group {
-    display: flex;
-    gap: 8px;
-    flex: 1;
-    max-width: 400px;
-  }
-  .username-input-group input {
-    flex: 1;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    color: var(--text);
-    padding: 8px 12px;
-    border-radius: 6px;
-    font-size: 13px;
-  }
-  .username-input-group input:focus {
-    outline: none;
-    border-color: var(--accent);
-  }
-  .username-input-group button {
-    background: var(--accent);
-    color: white;
-    border: none;
-    padding: 8px 16px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 600;
-  }
-  .username-input-group button:hover {
-    opacity: 0.9;
-  }
-  .username-display {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 13px;
-    color: var(--accent);
-    font-weight: 600;
-  }
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  line-height: 1.5;
+}
 
-  .header {
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    padding: 16px 24px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    position: sticky;
-    top: 0;
-    z-index: 100;
-  }
-  .header h1 { font-size: 18px; font-weight: 600; }
-  .header h1 span { color: var(--accent); }
-  .header-right { display: flex; align-items: center; gap: 16px; }
-  .last-scan { font-size: 12px; color: var(--text2); }
-  .refresh-btn {
-    background: var(--accent);
-    color: #fff;
-    border: none;
-    padding: 8px 16px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 500;
-    transition: opacity 0.15s;
-  }
-  .refresh-btn:hover { opacity: 0.9; }
+/* ─── Scrollbar ─────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text3); }
 
-  .stats-bar {
-    display: flex;
-    gap: 24px;
-    padding: 16px 24px;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    flex-wrap: wrap;
-  }
-  .stat {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .stat-label { font-size: 11px; text-transform: uppercase; color: var(--text2); letter-spacing: 0.5px; }
-  .stat-value { font-size: 20px; font-weight: 700; }
-  .stat-value.green { color: var(--green); }
-  .stat-value.red { color: var(--red); }
-  .stat-value.orange { color: var(--orange); }
-  .stat-value.blue { color: var(--blue); }
+/* ─── Header ────────────────────────────── */
+.header {
+  background: linear-gradient(135deg, var(--surface) 0%, var(--surface2) 100%);
+  border-bottom: 1px solid var(--border);
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  backdrop-filter: blur(12px);
+}
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.logo {
+  font-size: 20px;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: -0.5px;
+}
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.status-badge.online {
+  background: var(--green-bg);
+  color: var(--green);
+  border: 1px solid rgba(0,210,160,0.2);
+}
+.status-badge.scanning {
+  background: var(--orange-bg);
+  color: var(--orange);
+  border: 1px solid rgba(255,169,77,0.2);
+  animation: pulse 2s infinite;
+}
+.status-badge.offline {
+  background: var(--red-bg);
+  color: var(--red);
+  border: 1px solid rgba(255,107,107,0.2);
+}
 
-  .filters {
-    padding: 12px 24px;
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    align-items: center;
-    border-bottom: 1px solid var(--border);
-  }
-  .filter-btn {
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    color: var(--text2);
-    padding: 6px 14px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 13px;
-    transition: all 0.15s;
-  }
-  .filter-btn:hover { border-color: var(--accent); color: var(--text); }
-  .filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .filter-search {
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    color: var(--text);
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-size: 13px;
-    width: 220px;
-    margin-left: auto;
-  }
-  .filter-search::placeholder { color: var(--text2); }
+.quota-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.quota-badge.green { background: var(--green-bg); color: var(--green); border: 1px solid rgba(0,210,160,0.2); }
+.quota-badge.orange { background: var(--orange-bg); color: var(--orange); border: 1px solid rgba(255,169,77,0.2); }
+.quota-badge.red { background: var(--red-bg); color: var(--red); border: 1px solid rgba(255,107,107,0.2); }
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
 
-  .tabs {
-    display: flex;
-    padding: 0 24px;
-    border-bottom: 1px solid var(--border);
-  }
-  .tab {
-    padding: 12px 20px;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--text2);
-    cursor: pointer;
-    border-bottom: 2px solid transparent;
-    transition: all 0.15s;
-  }
-  .tab:hover { color: var(--text); }
-  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--text2);
+}
+.scan-info { opacity: 0.8; }
 
-  .content { padding: 16px 24px; }
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), #8b5cf6);
+  color: white;
+}
+.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(108,92,231,0.4); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
 
-  /* Cards grid */
-  .cards-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
-    gap: 16px;
-  }
-  .card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    overflow: hidden;
-    transition: border-color 0.15s, box-shadow 0.15s;
-    display: flex;
-    flex-direction: column;
-  }
-  .card:hover { border-color: var(--accent); box-shadow: 0 8px 16px rgba(108, 92, 231, 0.1); }
-  .card.opportunity { border-left: 4px solid var(--green); }
-  .card.rejected { border-left: 4px solid var(--orange); }
-  .card.no-match { border-left: 4px solid var(--text2); }
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+.btn-green { background: var(--green-bg); color: var(--green); border: 1px solid rgba(0,210,160,0.3); }
+.btn-green:hover { background: var(--green); color: white; }
+.btn-green:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-orange { background: var(--orange-bg); color: var(--orange); border: 1px solid rgba(255,169,77,0.3); }
+.btn-orange:hover { background: var(--orange); color: white; }
+.btn-orange:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-blue { background: var(--blue-bg); color: var(--blue); border: 1px solid rgba(116,185,255,0.3); }
+.btn-blue:hover { background: var(--blue); color: white; }
+.btn-blue:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-red { background: var(--red-bg); color: var(--red); border: 1px solid rgba(255,107,107,0.3); }
+.btn-red:hover { background: var(--red); color: white; }
+.btn-purple { background: rgba(162,155,254,0.1); color: var(--purple); border: 1px solid rgba(162,155,254,0.3); }
+.btn-purple:hover { background: var(--purple); color: white; }
+.btn-purple:disabled { opacity: 0.4; cursor: not-allowed; }
 
-  .card-top {
-    display: flex;
-    gap: 12px;
-    padding: 14px;
-  }
-  .card-img {
-    width: 90px;
-    height: 90px;
-    border-radius: 6px;
-    object-fit: cover;
-    background: var(--surface2);
-    flex-shrink: 0;
-  }
-  .card-info { flex: 1; min-width: 0; }
-  .card-title {
-    font-size: 13px;
-    font-weight: 600;
-    margin-bottom: 6px;
-    line-height: 1.3;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-  .card-meta {
-    font-size: 11px;
-    color: var(--text2);
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    margin-bottom: 8px;
-  }
-  .badge {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-  }
-  .badge-green { background: rgba(0,184,148,0.15); color: var(--green); }
-  .badge-red { background: rgba(225,112,85,0.15); color: var(--red); }
-  .badge-orange { background: rgba(253,203,110,0.15); color: var(--orange); }
-  .badge-blue { background: rgba(116,185,255,0.15); color: var(--blue); }
-  .badge-gray { background: rgba(139,144,160,0.15); color: var(--text2); }
-  .badge-purple { background: rgba(162,155,254,0.15); color: var(--purple); }
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  vertical-align: middle;
+}
 
-  .card-links {
-    display: flex;
-    gap: 8px;
-    margin-top: 8px;
-  }
-  .link-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    background: rgba(116, 185, 255, 0.1);
-    color: var(--blue);
-    border: none;
-    padding: 5px 10px;
-    border-radius: 4px;
-    font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
-    text-decoration: none;
-    transition: all 0.15s;
-  }
-  .link-btn:hover { background: rgba(116, 185, 255, 0.2); }
-  .link-btn.purple {
-    background: rgba(162, 155, 254, 0.1);
-    color: var(--purple);
-  }
-  .link-btn.purple:hover {
-    background: rgba(162, 155, 254, 0.2);
-  }
+/* ─── Main layout ───────────────────────── */
+.container {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 24px;
+}
 
-  .card-prices {
-    display: flex;
-    justify-content: space-between;
-    padding: 12px 14px;
-    background: var(--surface2);
-    font-size: 12px;
-    flex-wrap: wrap;
-    gap: 8px;
-    border-top: 1px solid var(--border);
-  }
-  .price-col { flex: 1; min-width: 90px; text-align: center; }
-  .price-label { color: var(--text2); font-size: 10px; margin-bottom: 2px; }
-  .price-value { font-weight: 700; font-size: 14px; }
+/* ─── Stats cards ───────────────────────── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  transition: all 0.2s ease;
+}
+.stat-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+.stat-label {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text2);
+  margin-bottom: 8px;
+}
+.stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+}
+.stat-value.green { color: var(--green); }
+.stat-value.orange { color: var(--orange); }
+.stat-value.blue { color: var(--blue); }
+.stat-value.purple { color: var(--purple); }
+.stat-sub {
+  font-size: 12px;
+  color: var(--text3);
+  margin-top: 6px;
+}
 
-  /* Match details */
-  .card-matches {
-    padding: 12px 14px;
-    border-top: 1px solid var(--border);
-    max-height: 200px;
-    overflow-y: auto;
-  }
-  .match-title { font-size: 11px; font-weight: 600; color: var(--text2); margin-bottom: 8px; text-transform: uppercase; }
-  .match-item {
-    display: flex;
-    gap: 8px;
-    padding: 8px 0;
-    border-bottom: 1px solid rgba(46,51,69,0.5);
-    align-items: flex-start;
-  }
-  .match-item:last-child { border-bottom: none; }
-  .match-img {
-    width: 45px;
-    height: 45px;
-    border-radius: 4px;
-    object-fit: cover;
-    background: var(--surface2);
-    flex-shrink: 0;
-  }
-  .match-info { flex: 1; min-width: 0; }
-  .match-info-title {
-    font-size: 11px;
-    font-weight: 500;
-    line-height: 1.3;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    margin-bottom: 3px;
-  }
-  .match-info-meta {
-    font-size: 10px;
-    color: var(--text2);
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-  }
-  .match-link-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
-    background: rgba(116, 185, 255, 0.1);
-    color: var(--blue);
-    border: none;
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-size: 9px;
-    font-weight: 600;
-    cursor: pointer;
-    text-decoration: none;
-    transition: all 0.15s;
-  }
-  .match-link-btn:hover {
-    background: rgba(116, 185, 255, 0.2);
-  }
+/* ─── Section panels ────────────────────── */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.panel-title {
+  font-size: 15px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.panel-badge {
+  background: var(--accent);
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.panel-body {
+  padding: 20px;
+}
 
-  .score-bar {
-    height: 4px;
-    background: var(--surface2);
-    border-radius: 2px;
-    overflow: hidden;
-    margin-top: 4px;
-  }
-  .score-fill {
-    height: 100%;
-    border-radius: 2px;
-    transition: width 0.3s;
-  }
+/* ─── Filter tabs ──────────────────────── */
+.filter-tabs {
+  display: flex;
+  gap: 4px;
+}
+.filter-tab {
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text2);
+  transition: all 0.2s;
+}
+.filter-tab.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+.filter-tab:hover:not(.active) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.filter-tab .count {
+  font-size: 10px;
+  opacity: 0.7;
+  margin-left: 4px;
+}
 
-  .confidence {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    font-size: 9px;
-    font-weight: 600;
-  }
-  .confidence-dot {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-  }
-  .confidence-high .confidence-dot { background: var(--green); }
-  .confidence-medium .confidence-dot { background: var(--orange); }
-  .confidence-low .confidence-dot { background: var(--red); }
-  .confidence-unknown .confidence-dot { background: var(--text2); }
+/* ─── Opportunities table ───────────────── */
+.table-container { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th {
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text2);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(42,47,66,0.5);
+  vertical-align: middle;
+}
+tr:hover td { background: rgba(108,92,231,0.04); }
+.opp-img {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  border: 1px solid var(--border);
+  display: block;
+}
+.opp-img-pair {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.opp-img-row {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+.opp-img-sep {
+  font-size: 9px;
+  color: var(--text3);
+  line-height: 1;
+}
+.img-sim-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+.img-sim-high { background: rgba(0,184,148,0.18); color: var(--green); }
+.img-sim-med  { background: rgba(253,203,110,0.18); color: var(--orange); }
+.img-sim-low  { background: rgba(255,118,117,0.12); color: var(--red); }
+.img-sim-none { background: rgba(90,96,128,0.15); color: var(--text3); }
+.opp-img-placeholder {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-sm);
+  background: var(--surface3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text3);
+  font-size: 18px;
+}
+.opp-title {
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.profit-positive { color: var(--green); font-weight: 700; }
+.profit-negative { color: var(--red); font-weight: 700; }
+.profit-neutral { color: var(--orange); font-weight: 600; }
 
-  /* Claim button and state */
-  .card-claim {
-    padding: 12px 14px;
-    border-top: 1px solid var(--border);
-    margin-top: auto;
-  }
-  .claim-btn {
-    width: 100%;
-    background: linear-gradient(135deg, var(--green) 0%, #00a86b 100%);
-    color: white;
-    border: none;
-    padding: 10px 16px;
-    border-radius: 6px;
-    font-size: 13px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: all 0.15s;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-  .claim-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0, 184, 148, 0.3); }
-  .claim-btn:active { transform: translateY(0); }
+.confidence-bar {
+  width: 60px;
+  height: 6px;
+  background: var(--surface3);
+  border-radius: 3px;
+  overflow: hidden;
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+.confidence-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
 
-  .claimed-badge {
-    width: 100%;
-    background: linear-gradient(135deg, var(--red) 0%, #d24141 100%);
-    color: white;
-    border: none;
-    padding: 10px 16px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 700;
-    cursor: default;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    text-align: center;
-  }
-  .claimed-by {
-    display: block;
-    margin-bottom: 4px;
-  }
-  .claimed-user { font-weight: 700; color: #fff; }
-  .claimed-time { font-size: 10px; opacity: 0.9; }
+.tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.tag-confirmed { background: var(--green-bg); color: var(--green); }
+.tag-rejected { background: var(--red-bg); color: var(--red); }
+.tag-pending { background: var(--orange-bg); color: var(--orange); }
+.tag-expired { background: rgba(90,96,128,0.2); color: var(--text3); }
+.tag-active { background: var(--green-bg); color: var(--green); }
+.tag-sold { background: var(--blue-bg); color: var(--blue); }
+.tag-archived { background: rgba(90,96,128,0.2); color: var(--text3); }
 
-  /* Table view */
-  .table-wrap { overflow-x: auto; }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-  }
-  th {
-    text-align: left;
-    padding: 10px 12px;
-    background: var(--surface2);
-    color: var(--text2);
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    white-space: nowrap;
-    position: sticky;
-    top: 0;
-  }
-  td {
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--border);
-    vertical-align: top;
-  }
-  tr:hover td { background: rgba(108,92,231,0.05); }
+.link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: var(--surface3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--accent2);
+  text-decoration: none;
+  font-size: 11px;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+.link-btn:hover {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+.source-links { display: flex; flex-wrap: wrap; gap: 4px; }
+.source-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.source-btn:hover { opacity: 1; transform: translateY(-1px); }
+.source-btn[title]:hover::after {
+  content: attr(title);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface);
+  color: var(--text);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  z-index: 99;
+}
+.source-btn.src-pokemontcg { background: rgba(238,75,43,0.15); color: #EE4B2B; border-color: rgba(238,75,43,0.3); }
+.source-btn.src-pokemontcg:hover { background: #EE4B2B; color: #fff; }
+.source-btn.src-tcgplayer { background: rgba(0,122,204,0.15); color: #007ACC; border-color: rgba(0,122,204,0.3); }
+.source-btn.src-tcgplayer:hover { background: #007ACC; color: #fff; }
+.source-btn.src-ygoprodeck { background: rgba(148,103,189,0.15); color: #9467BD; border-color: rgba(148,103,189,0.3); }
+.source-btn.src-ygoprodeck:hover { background: #9467BD; color: #fff; }
+.source-btn.src-cardmarket { background: rgba(29,52,97,0.25); color: #5B8DEF; border-color: rgba(91,141,239,0.3); }
+.source-btn.src-cardmarket:hover { background: #1D3461; color: #fff; }
+.source-btn.src-ebay { background: rgba(226,37,40,0.15); color: #E22528; border-color: rgba(226,37,40,0.3); }
+.source-btn.src-ebay:hover { background: #E22528; color: #fff; }
 
-  .no-data {
-    text-align: center;
-    padding: 60px 20px;
-    color: var(--text2);
-    font-size: 14px;
-  }
-  .no-data-icon { font-size: 40px; margin-bottom: 12px; }
+/* ─── Agent control cards ──────────────── */
+.agents-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+.agent-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  transition: border-color 0.2s;
+}
+.agent-card:hover { border-color: var(--accent); }
+.agent-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.agent-name {
+  font-size: 14px;
+  font-weight: 700;
+}
+.agent-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 6px;
+}
+.agent-status-dot.idle { background: var(--text3); }
+.agent-status-dot.running { background: var(--orange); animation: pulse 1s infinite; }
+.agent-status-dot.error { background: var(--red); }
+.agent-meta {
+  font-size: 11px;
+  color: var(--text3);
+  margin-bottom: 8px;
+  min-height: 16px;
+}
+.agent-result {
+  font-size: 12px;
+  color: var(--text2);
+  background: var(--surface3);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-top: 8px;
+  max-height: 80px;
+  overflow-y: auto;
+  display: none;
+}
+.agent-result.visible { display: block; }
 
-  /* ===== MOBILE RESPONSIVE ===== */
-  @media (max-width: 768px) {
-    /* Username banner compact */
-    .username-banner { padding: 8px 12px; }
-    .username-input-group { max-width: 100%; }
-    .username-input-group input { font-size: 14px; padding: 10px 12px; }
-    .username-input-group button { padding: 10px 14px; font-size: 13px; }
+/* ─── Niche bars ────────────────────────── */
+.niche-list { display: flex; flex-direction: column; gap: 12px; }
+.niche-item { display: flex; align-items: center; gap: 12px; }
+.niche-name {
+  width: 160px;
+  font-size: 13px;
+  font-weight: 600;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.niche-bar-container {
+  flex: 1;
+  height: 24px;
+  background: var(--surface3);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+.niche-bar {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.8s ease;
+  min-width: 2px;
+}
+.niche-bar-label {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+}
+.niche-stats {
+  width: 140px;
+  text-align: right;
+  font-size: 12px;
+  color: var(--text2);
+  flex-shrink: 0;
+}
 
-    /* Header stacked */
-    .header {
-      padding: 10px 14px;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-    .header h1 { font-size: 16px; }
-    .header-right {
-      gap: 8px;
-      width: 100%;
-      justify-content: space-between;
-    }
-    .refresh-btn {
-      padding: 8px 14px;
-      font-size: 12px;
-      min-height: 36px;
-    }
+/* ─── Discovery section ─────────────────── */
+.suggestion-card {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  transition: border-color 0.2s;
+}
+.suggestion-card:hover { border-color: var(--accent); }
+.suggestion-card.high { border-left: 3px solid var(--green); }
+.suggestion-card.medium { border-left: 3px solid var(--orange); }
+.suggestion-card.low { border-left: 3px solid var(--text3); }
+.suggestion-card.info { border-left: 3px solid var(--blue); }
+.suggestion-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.suggestion-type {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--accent2);
+}
+.suggestion-priority {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.suggestion-reason { font-size: 13px; color: var(--text); margin-bottom: 6px; }
+.suggestion-queries { font-size: 12px; color: var(--text2); }
+.suggestion-queries code {
+  background: var(--surface3);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: var(--accent2);
+}
 
-    /* Stats bar as 3-col grid */
-    .stats-bar {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-      padding: 10px 14px;
-    }
-    .stat { align-items: center; text-align: center; }
-    .stat-label { font-size: 9px; }
-    .stat-value { font-size: 16px; }
+/* ─── Timeline ──────────────────────────── */
+.timeline { position: relative; padding-left: 20px; }
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--border);
+}
+.timeline-item { position: relative; padding: 8px 0 8px 20px; font-size: 13px; }
+.timeline-item::before {
+  content: '';
+  position: absolute;
+  left: -16px;
+  top: 14px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+}
+.timeline-time { font-size: 11px; color: var(--text3); margin-bottom: 2px; }
+.timeline-detail { color: var(--text2); }
+.timeline-detail strong { color: var(--text); }
 
-    /* Filters: horizontal scroll */
-    .filters {
-      padding: 8px 14px;
-      flex-wrap: nowrap;
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-      gap: 6px;
-      scrollbar-width: none;
-    }
-    .filters::-webkit-scrollbar { display: none; }
-    .filter-btn {
-      flex-shrink: 0;
-      padding: 8px 12px;
-      font-size: 12px;
-      white-space: nowrap;
-      min-height: 36px;
-    }
-    .filter-search {
-      width: 100%;
-      min-width: 140px;
-      margin-left: 0;
-      flex-shrink: 0;
-      font-size: 14px;
-      padding: 8px 12px;
-      min-height: 36px;
-    }
+/* ─── Forms / Modals ────────────────────── */
+.form-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+}
+.form-overlay.active { display: flex; }
+.form-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  width: 90%;
+  max-width: 480px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.form-modal h3 {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 16px;
+  color: var(--text);
+}
+.form-group {
+  margin-bottom: 12px;
+}
+.form-group label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.form-group input, .form-group select {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.form-group input:focus, .form-group select:focus {
+  border-color: var(--accent);
+}
+.form-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
 
-    /* Tabs compact */
-    .tabs {
-      padding: 0 10px;
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-      scrollbar-width: none;
-    }
-    .tabs::-webkit-scrollbar { display: none; }
-    .tab {
-      padding: 10px 14px;
-      font-size: 12px;
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
+/* ─── Empty state ───────────────────────── */
+.empty-state { text-align: center; padding: 48px 24px; color: var(--text3); }
+.empty-state-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.4; }
+.empty-state-title { font-size: 16px; font-weight: 600; color: var(--text2); margin-bottom: 8px; }
+.empty-state-text { font-size: 13px; max-width: 400px; margin: 0 auto; }
 
-    /* Content area */
-    .content { padding: 10px; }
+/* ─── Two-col layout ────────────────────── */
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
 
-    /* Cards full-width */
-    .cards-grid {
-      grid-template-columns: 1fr;
-      gap: 10px;
-    }
+/* ─── Responsive ────────────────────────── */
+@media (max-width: 900px) {
+  .two-col { grid-template-columns: 1fr; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  .header { padding: 12px 16px; }
+  .container { padding: 16px; }
+  .niche-name { width: 100px; }
+  .niche-stats { width: 100px; }
+  .agents-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  .stats-grid { grid-template-columns: 1fr; }
+  .header-right { display: none; }
+  .opp-title { max-width: 150px; }
+}
 
-    /* Card top: smaller image */
-    .card-top { padding: 10px; gap: 10px; }
-    .card-img { width: 70px; height: 70px; }
-    .card-title { font-size: 12px; }
-    .card-meta { font-size: 10px; gap: 4px; }
-    .card-links { gap: 4px; margin-top: 6px; }
-    .link-btn { padding: 6px 10px; font-size: 11px; min-height: 30px; }
+/* ─── Loading shimmer ───────────────────── */
+.shimmer {
+  background: linear-gradient(90deg, var(--surface) 25%, var(--surface2) 50%, var(--surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: var(--radius-sm);
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
 
-    /* Prices as 2x2 grid */
-    .card-prices {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 6px;
-      padding: 10px;
-    }
-    .price-col { min-width: auto; text-align: center; }
-    .price-label { font-size: 9px; }
-    .price-value { font-size: 13px; }
+/* ─── Opportunity action buttons ────────── */
+.opp-action-btns { display: flex; gap: 4px; align-items: center; }
+.btn-action {
+  width: 26px; height: 26px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  line-height: 1;
+}
+.btn-validate {
+  background: rgba(0,210,160,0.1);
+  color: var(--green);
+  border-color: rgba(0,210,160,0.25);
+}
+.btn-validate:hover { background: var(--green); color: #0b0d14; }
+.btn-validate.sent { background: var(--green); color: #0b0d14; cursor: default; }
+.btn-reject {
+  background: rgba(255,107,107,0.1);
+  color: var(--red);
+  border-color: rgba(255,107,107,0.25);
+}
+.btn-reject:hover { background: var(--red); color: #fff; }
+.btn-reject.open { background: var(--red); color: #fff; }
+.btn-dismiss {
+  background: rgba(90,96,128,0.1);
+  color: var(--text3);
+  border-color: rgba(90,96,128,0.2);
+  font-size: 14px;
+}
+.btn-dismiss:hover { background: rgba(90,96,128,0.3); color: var(--text2); }
+.btn-verify {
+  background: rgba(116,185,255,0.1);
+  color: var(--blue);
+  border-color: rgba(116,185,255,0.25);
+  font-size: 12px;
+}
+.btn-verify:hover { background: var(--blue); color: #0b0d14; }
+.btn-verify.verifying { opacity: 0.85; cursor: not-allowed; animation: verifyPulse 0.8s ease-in-out infinite alternate; }
+@keyframes verifyPulse { from { box-shadow: 0 0 0 rgba(116,185,255,0); } to { box-shadow: 0 0 6px rgba(116,185,255,0.6); } }
+.btn-verify.confirmed { background: rgba(0,210,160,0.2); color: var(--green); border-color: rgba(0,210,160,0.4); cursor: default; }
+.btn-verify.wrong { background: rgba(255,169,77,0.2); color: var(--orange); border-color: rgba(255,169,77,0.4); cursor: default; }
+/* ─── Verify Toast ───────────────────────────── */
+#verify-toast-container {
+  position: fixed; top: 16px; right: 16px; z-index: 9999;
+  max-width: 380px; pointer-events: none;
+}
+.verify-toast {
+  background: #1a1d2e; border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px; padding: 10px 14px; margin-bottom: 8px;
+  font-size: 13px; color: #e8eaf0;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.45);
+  animation: vtoastIn 0.2s ease, vtoastOut 0.3s ease 4.7s forwards;
+}
+.verify-toast.toast-ok  { border-color: rgba(0,210,160,0.45); }
+.verify-toast.toast-warn{ border-color: rgba(255,169,77,0.45); }
+.verify-toast.toast-err { border-color: rgba(255,80,80,0.45); }
+@keyframes vtoastIn  { from { transform: translateX(110%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes vtoastOut { to   { transform: translateX(110%); opacity: 0; } }
+/* ─── Feedback Modal ─────────────────────────── */
+#feedbackModal {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0,0,0,0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#feedbackModal.hidden { display: none; }
+.feedback-modal-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  width: 380px;
+  max-width: 92vw;
+  box-shadow: var(--shadow);
+}
+.feedback-modal-box textarea {
+  width: 100%;
+  background: var(--surface3);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 13px;
+  resize: vertical;
+  outline: none;
+  min-height: 64px;
+  font-family: inherit;
+}
+.feedback-modal-box textarea:focus { border-color: var(--accent); }
 
-    /* Match details compact */
-    .card-matches { padding: 8px 10px; max-height: 180px; }
-    .match-item { gap: 6px; padding: 6px 0; }
-    .match-img { width: 38px; height: 38px; }
-    .match-info-title { font-size: 10px; }
-    .match-info-meta { font-size: 9px; gap: 4px; }
-    .match-link-btn { padding: 3px 8px; font-size: 9px; min-height: 24px; }
-
-    /* Claim button touch-friendly */
-    .card-claim { padding: 8px 10px; }
-    .claim-btn {
-      padding: 12px 16px;
-      font-size: 14px;
-      min-height: 44px;
-      border-radius: 8px;
-    }
-    .claimed-badge {
-      padding: 12px 16px;
-      font-size: 13px;
-      min-height: 44px;
-      border-radius: 8px;
-    }
-
-    /* No data screen */
-    .no-data { padding: 40px 20px; }
-    .no-data-icon { font-size: 32px; }
-  }
-
-  /* Stale cards (from previous scans) */
-  .card.stale { opacity: 0.7; border-left: 4px solid var(--text2); }
-  .stale-badge { font-size: 10px; color: var(--text2); font-style: italic; }
-  .dismiss-btn {
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--text2);
-    padding: 4px 10px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 11px;
-    margin-left: auto;
-  }
-  .dismiss-btn:hover { border-color: var(--red); color: var(--red); }
-
-  /* Underpriced cards */
-  .card.underpriced { border-left: 4px solid var(--red); }
-  .underpriced-discount {
-    font-size: 22px;
-    font-weight: 800;
-    color: var(--red);
-    white-space: nowrap;
-  }
-  .underpriced-vs {
-    font-size: 11px;
-    color: var(--text2);
-    margin-top: 2px;
-  }
-  .underpriced-stats {
-    display: flex;
-    gap: 16px;
-    padding: 12px 14px;
-    background: var(--surface2);
-    border-top: 1px solid var(--border);
-    flex-wrap: wrap;
-  }
-  .underpriced-stat {
-    flex: 1;
-    min-width: 80px;
-    text-align: center;
-  }
-  .underpriced-stat-label {
-    font-size: 10px;
-    color: var(--text2);
-    margin-bottom: 2px;
-  }
-  .underpriced-stat-value {
-    font-size: 14px;
-    font-weight: 700;
-  }
-
-  /* Small phones */
-  @media (max-width: 380px) {
-    .header h1 { font-size: 14px; }
-    .stats-bar { grid-template-columns: repeat(2, 1fr); }
-    .card-img { width: 56px; height: 56px; }
-    .card-prices { grid-template-columns: 1fr 1fr; }
-    .price-value { font-size: 12px; }
-  }
+/* ─── Performance Charts ───────────── */
+.charts-section {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+.chart-panel {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  min-width: 0;
+}
+.chart-panel-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.chart-panel-title .chart-icon {
+  font-size: 16px;
+}
+.chart-container {
+  position: relative;
+  width: 100%;
+  height: 280px;
+}
+@media (max-width: 900px) {
+  .charts-section { flex-direction: column; }
+}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
 
-<div class="username-banner" id="usernameBanner">
-  <div id="usernameInput" class="username-input-group">
-    <input type="text" id="usernameField" placeholder="Votre pseudo..." maxlength="32">
-    <button onclick="saveUsername()">Enregistrer</button>
+<!-- ─── HEADER ─────────────────────────────────────────── -->
+<header class="header">
+  <div class="header-left">
+    <span class="logo">CODEX Dashboard</span>
+    <span id="statusBadge" class="status-badge offline">
+      <span class="status-dot"></span>
+      <span id="statusText">Connexion...</span>
+    </span>
   </div>
-  <div id="usernameDisplay" class="username-display" style="display:none;">
-    <span>Connecté en tant que:</span>
-    <span id="usernameValue"></span>
-  </div>
-</div>
-
-<div class="header">
-  <h1><span>Dils</span> le Scraper</h1>
   <div class="header-right">
-    <span class="last-scan" id="lastScan"></span>
-    <button class="refresh-btn" id="refreshBtn" onclick="doRefresh()">Actualiser</button>
+    <span class="scan-info" id="lastScanInfo">&mdash;</span>
+    <span id="ebayQuotaBadge" style="display:none"></span>
+    <span id="priceDbBadge" class="quota-badge green" style="display:none" title="Produits en base de prix locale"></span>
+    <span id="seenListingsBadge" class="quota-badge green" style="display:none" title="Annonces Vinted déjà vues (cache 24h)"></span>
+    <span id="scanProgress" style="display:none;font-size:12px;color:var(--orange);font-weight:600;background:var(--orange-bg);padding:2px 8px;border-radius:10px;margin-left:4px;"></span>
+    <button class="btn btn-primary" id="scanBtn" onclick="triggerScan()" disabled>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+      Scanner
+    </button>
+  </div>
+</header>
+
+<!-- ─── MAIN ───────────────────────────────────────────── -->
+<div class="container">
+
+  <!-- Stats Cards -->
+  <div class="stats-grid" id="statsGrid">
+    <div class="stat-card">
+      <div class="stat-label">Profit estim&eacute; total</div>
+      <div class="stat-value green" id="statProfit">&mdash;</div>
+      <div class="stat-sub" id="statProfitSub">&nbsp;</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Opportunit&eacute;s actives</div>
+      <div class="stat-value orange" id="statOpps">&mdash;</div>
+      <div class="stat-sub" id="statOppsSub">&nbsp;</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Annonces scann&eacute;es</div>
+      <div class="stat-value blue" id="statScanned">&mdash;</div>
+      <div class="stat-sub" id="statScannedSub">&nbsp;</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Taux de r&eacute;ussite</div>
+      <div class="stat-value purple" id="statRate">&mdash;</div>
+      <div class="stat-sub" id="statRateSub">&nbsp;</div>
+    </div>
+  </div>
+
+  <!-- ─── PERFORMANCE CHARTS ──────────────────────────── -->
+  <div class="charts-section" id="chartsSection">
+    <div class="chart-panel">
+      <div class="chart-panel-title"><span class="chart-icon">&#128200;</span> Profit journalier</div>
+      <div class="chart-container"><canvas id="profitChart"></canvas></div>
+    </div>
+    <div class="chart-panel">
+      <div class="chart-panel-title"><span class="chart-icon">&#128202;</span> R&eacute;partition par cat&eacute;gorie</div>
+      <div class="chart-container"><canvas id="categoryChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ─── AGENT CONTROL ──────────────────────────────── -->
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent2)" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+        Contr&ocirc;le des agents
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="agents-grid" id="agentsGrid">
+        <!-- Filled by JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Opportunities Table -->
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        Opportunit&eacute;s
+        <span class="panel-badge" id="oppCount">0</span>
+      </div>
+      <div class="filter-tabs" id="oppFilterTabs">
+        <button class="filter-tab active" data-filter="active" onclick="setOppFilter('active')">Actives <span class="count" id="countActive">0</span></button>
+        <button class="filter-tab" data-filter="all" onclick="setOppFilter('all')">Toutes <span class="count" id="countAll">0</span></button>
+        <button class="filter-tab" data-filter="expired" onclick="setOppFilter('expired')">Expir&eacute;es <span class="count" id="countExpired">0</span></button>
+        <button class="filter-tab" data-filter="archived" onclick="setOppFilter('archived')">Archiv&eacute;es <span class="count" id="countArchived">0</span></button>
+        <button class="filter-tab" data-filter="dismissed" onclick="setOppFilter('dismissed')">Ignor&eacute;es <span class="count" id="countDismissed">0</span></button>
+        <span style="margin-left:12px;border-left:1px solid var(--border);padding-left:12px">
+          <select id="platformFilter" onchange="updateOpportunities()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer">
+            <option value="all">Toutes plateformes</option>
+            <option value="vinted">Vinted</option>
+            <option value="cardmarket">Cardmarket</option>
+            <option value="leboncoin">Leboncoin</option>
+            <option value="facebook">Facebook</option>
+          </select>
+        </span>
+        <span style="margin-left:8px;">
+          <select id="routeFilter" onchange="updateOpportunities()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer" title="Filtrer par route d'arbitrage">
+            <option value="all">Toutes routes</option>
+            <option value="vinted→ebay">🟢 Vinted → eBay</option>
+            <option value="ebay→vinted">🔵 eBay → Vinted</option>
+            <option value="cardmarket→ebay">🟣 Cardmarket → eBay</option>
+          </select>
+        </span>
+        <span style="margin-left:8px;">
+          <select id="sortSelect" onchange="updateOpportunities()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer" title="Trier par">
+            <option value="profit">Trier : Profit</option>
+            <option value="confidence">Trier : Confiance</option>
+            <option value="liquidity">Trier : Liquidit&eacute;</option>
+            <option value="date">Trier : Date</option>
+          </select>
+        </span>
+        <span style="margin-left:8px;display:inline-flex;align-items:center;gap:4px;">
+          <label for="minConfidence" style="font-size:11px;color:var(--text2);">Conf. min</label>
+          <input id="minConfidence" type="number" min="0" max="100" value="50" oninput="updateOpportunities()" style="width:44px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12px;" title="Score de confiance minimum">
+        </span>
+        <span style="margin-left:8px;display:inline-flex;align-items:center;gap:4px;">
+          <label for="minLiquidity" style="font-size:11px;color:var(--text2);">Liq. min</label>
+          <input id="minLiquidity" type="number" min="0" max="100" value="0" oninput="updateOpportunities()" style="width:44px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:3px 6px;font-size:12px;" title="Score de liquidit&eacute; minimum">
+        </span>
+      </div>
+    </div>
+    <div class="panel-body" style="padding:0;">
+      <div class="table-container" id="oppTableContainer">
+        <div class="empty-state" id="oppEmpty">
+          <div class="empty-state-icon">&#128269;</div>
+          <div class="empty-state-title">Aucune opportunit&eacute; pour le moment</div>
+          <div class="empty-state-text">Lance un scan pour d&eacute;couvrir des opportunit&eacute;s d'arbitrage TCG.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Portfolio Section -->
+  <div class="panel" id="portfolioPanel">
+    <div class="panel-header">
+      <div class="panel-title">
+        💼 Portfolio
+        <span class="panel-badge" id="portfolioCount">0</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span id="portfolioSummaryBar" style="font-size:12px;color:var(--text2);">Chargement...</span>
+        <button class="btn btn-sm" style="background:var(--surface3);color:var(--text2);border:1px solid var(--border)" onclick="updatePortfolio()" title="Rafraîchir les prix marché">🔄 Rafraîchir prix</button>
+      </div>
+    </div>
+    <div class="panel-body" style="padding:0;">
+      <div class="table-container" id="portfolioTableContainer">
+        <div class="empty-state">
+          <div class="empty-state-icon">💼</div>
+          <div class="empty-state-title">Portfolio vide</div>
+          <div class="empty-state-text">Cliquez sur 💰 Acheté sur une opportunité pour l'ajouter au portfolio.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Price Database Section -->
+  <div class="panel" id="priceDatabasePanel">
+    <div class="panel-header" onclick="togglePriceDatabase()" style="cursor:pointer;user-select:none;">
+      <div class="panel-title">
+        📊 Base de prix
+        <span class="panel-badge" id="priceDatabaseCount">0</span>
+      </div>
+      <span id="priceDatabaseChevron" style="color:var(--text2);font-size:14px;transition:transform 0.2s;">▶</span>
+    </div>
+    <div class="panel-body" id="priceDatabaseBody" style="display:none;padding:12px;">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+        <input type="text" id="priceDatabaseSearch" placeholder="🔍 Rechercher par nom ou catégorie..." oninput="filterPriceDatabase()"
+          style="flex:1;min-width:180px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-size:13px;outline:none;" />
+        <div id="priceDatabaseCategoryButtons" style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="btn btn-sm pdb-cat-btn" onclick="setPriceDbCategory('all')" id="pdbcat-all" style="background:var(--accent);color:#fff;border:1px solid var(--accent);">Tous</button>
+        </div>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th onclick="sortPriceDb('name')" style="cursor:pointer;">Produit <span id="pdbsort-name"> ▲</span></th>
+              <th onclick="sortPriceDb('category')" style="cursor:pointer;">Cat. <span id="pdbsort-category"></span></th>
+              <th onclick="sortPriceDb('avgVintedPrice')" style="cursor:pointer;text-align:right;">Prix Vinted moy. <span id="pdbsort-avgVintedPrice"></span></th>
+              <th onclick="sortPriceDb('avgMarketPrice')" style="cursor:pointer;text-align:right;">Prix Marché moy. <span id="pdbsort-avgMarketPrice"></span></th>
+              <th onclick="sortPriceDb('spread')" style="cursor:pointer;text-align:right;">Spread <span id="pdbsort-spread"></span></th>
+              <th onclick="sortPriceDb('vintedObservations')" style="cursor:pointer;text-align:right;">Obs. Vinted <span id="pdbsort-vintedObservations"></span></th>
+              <th onclick="sortPriceDb('marketObservations')" style="cursor:pointer;text-align:right;">Obs. Marché <span id="pdbsort-marketObservations"></span></th>
+              <th onclick="sortPriceDb('lastSeen')" style="cursor:pointer;">Dernière vue <span id="pdbsort-lastSeen"></span></th>
+              <th>Tendance</th>
+            </tr>
+          </thead>
+          <tbody id="priceDatabaseTableBody">
+            <tr><td colspan="9" style="text-align:center;color:var(--text2);padding:24px;">Cliquez pour charger...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Two columns: Niches + Discovery -->
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--orange)" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          Stats par niche
+        </div>
+      </div>
+      <div class="panel-body" id="nicheContainer">
+        <div class="empty-state"><div class="empty-state-text">Pas de donn&eacute;es de niches disponibles.</div></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg>
+          Discovery Multi-Cat&eacute;gories
+          <span class="panel-badge" id="discoveryCount">0</span>
+        </div>
+      </div>
+      <div class="panel-body" id="discoveryContainer">
+        <div class="empty-state"><div class="empty-state-text">L'agent Discovery n'a pas encore de suggestions.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Objectif 5000€ + Classement catégories -->
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          Objectif 5000 EUR/mois
+        </div>
+      </div>
+      <div class="panel-body" id="objectiveContainer">
+        <div class="empty-state"><div class="empty-state-text">Lancez Discovery pour voir le plan.</div></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+          Classement Cat&eacute;gories
+        </div>
+      </div>
+      <div class="panel-body" id="categoryRankingContainer">
+        <div class="empty-state"><div class="empty-state-text">Lancez Discovery pour voir le classement.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tendances de prix -->
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+        &#128200; Tendances prix
+        <span class="panel-badge" id="trendsCount">0</span>
+      </div>
+    </div>
+    <div class="panel-body" id="trendsContainer">
+      <div class="empty-state"><div class="empty-state-text">Pas encore assez d&apos;observations (min 5 par produit).</div></div>
+    </div>
+  </div>
+
+  <!-- Scan history -->
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        Historique des scans
+      </div>
+    </div>
+    <div class="panel-body" id="historyContainer">
+      <div class="empty-state"><div class="empty-state-text">Aucun scan enregistr&eacute;.</div></div>
+    </div>
+  </div>
+
+  <!-- ─── PORTFOLIO SECTION ─────────────────────────────── -->
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+        Portefeuille &amp; Strat&eacute;gie
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm btn-green" onclick="showPurchaseForm()">+ Enregistrer un achat</button>
+        <button class="btn btn-sm btn-blue" onclick="showSaleForm()">+ Enregistrer une vente</button>
+      </div>
+    </div>
+    <div class="panel-body" id="portfolioContainer">
+      <div class="empty-state"><div class="empty-state-text">Chargement du portefeuille...</div></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ─── PURCHASE FORM MODAL ────────────────────────────── -->
+<div class="form-overlay" id="purchaseOverlay">
+  <div class="form-modal">
+    <h3>Enregistrer un achat</h3>
+    <div class="form-group">
+      <label>Nom du produit *</label>
+      <input type="text" id="purchaseProductName" placeholder="Ex: Charizard VMAX Alt Art">
+    </div>
+    <div class="form-group">
+      <label>Prix d'achat (EUR) *</label>
+      <input type="number" id="purchasePurchasePrice" step="0.01" placeholder="15.00">
+    </div>
+    <div class="form-group">
+      <label>Frais de livraison (EUR)</label>
+      <input type="number" id="purchaseShippingCost" step="0.01" value="0">
+    </div>
+    <div class="form-group">
+      <label>Plateforme</label>
+      <select id="purchasePlatform">
+        <option value="vinted">Vinted</option>
+        <option value="leboncoin">Leboncoin</option>
+        <option value="cardmarket">Cardmarket</option>
+        <option value="autre">Autre</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Prix de revente estim&eacute; (EUR)</label>
+      <input type="number" id="purchaseEstimatedSale" step="0.01" placeholder="25.00">
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-sm btn-red" onclick="closePurchaseForm()">Annuler</button>
+      <button class="btn btn-sm btn-green" onclick="submitPurchase()">Enregistrer</button>
+    </div>
   </div>
 </div>
 
-<div class="stats-bar" id="statsBar"></div>
-
-<div class="filters" id="filtersBar">
-  <button class="filter-btn" data-filter="all">Tout</button>
-  <button class="filter-btn active" data-filter="with-matches">Avec matches</button>
-  <button class="filter-btn" data-filter="opportunities">Opportunités</button>
-  <button class="filter-btn" data-filter="no-match">Sans match</button>
-  <button class="filter-btn" data-filter="rejected">Rejetés</button>
-  <button class="filter-btn" data-filter="claimed">Prises</button>
-  <input type="text" class="filter-search" id="searchInput" placeholder="Rechercher un titre...">
+<!-- ─── SALE FORM MODAL ────────────────────────────────── -->
+<div class="form-overlay" id="saleOverlay">
+  <div class="form-modal">
+    <h3>Enregistrer une vente</h3>
+    <div class="form-group">
+      <label>Article en stock *</label>
+      <select id="salePurchaseId">
+        <option value="">-- Choisir un article --</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Prix de vente (EUR) *</label>
+      <input type="number" id="saleSalePrice" step="0.01" placeholder="25.00">
+    </div>
+    <div class="form-group">
+      <label>Plateforme de vente</label>
+      <select id="salePlatform">
+        <option value="ebay">eBay</option>
+        <option value="vinted">Vinted</option>
+        <option value="cardmarket">Cardmarket</option>
+        <option value="leboncoin">Leboncoin</option>
+        <option value="autre">Autre</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Frais de livraison (EUR)</label>
+      <input type="number" id="saleShippingCost" step="0.01" value="0">
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-sm btn-red" onclick="closeSaleForm()">Annuler</button>
+      <button class="btn btn-sm btn-green" onclick="submitSale()">Enregistrer</button>
+    </div>
+  </div>
 </div>
-<div class="filters" id="categoryBar" style="padding-top:0"></div>
-
-<div class="tabs">
-  <div class="tab active" data-view="cards">Cartes</div>
-  <div class="tab" data-view="underpriced">Sous-évalués</div>
-  <div class="tab" data-view="table">Tableau</div>
-  <div class="tab" data-view="config">Config</div>
-</div>
-
-<div class="content" id="mainContent"></div>
 
 <script>
-let scanData = null;
-let currentFilter = 'with-matches';
-let currentCategory = 'all';
-let currentView = 'cards';
-let searchQuery = '';
-let username = '';
-let claims = {};
-let eventSource = null;
+// ─── State ────────────────────────────────────────────────
+let refreshTimer = null;
+let currentOppFilter = 'active';
+let portfolioData = null;
+const API_BASE = '';
+let lastScanningState = null;  // null | 'online' | 'scanning' | 'offline'
+let currentTotalProfit = null; // tracked profit total for immediate UI update
+let currentOppsProfit = {};    // id → profit value cache
+let feedbackInFlight = new Set(); // prevent double-submit
 
-// Auto-detect base path (works behind /dashboard/ reverse proxy or standalone)
-const BASE = window.location.pathname.replace(/\/$/, '');
+const AGENT_DEFS = [
+  { key: 'diagnostic', name: 'Diagnostic', desc: 'Analyse la sante des niches', color: 'orange', icon: '&#9881;' },
+  { key: 'discovery', name: 'Discovery', desc: 'Decouvre de nouvelles niches', color: 'blue', icon: '&#128270;' },
+  { key: 'explore', name: 'Explorateur', desc: 'Explore de nouvelles categories', color: 'purple', icon: '&#127758;' },
+  { key: 'strategy', name: 'Strategie', desc: 'Rapport strategique portefeuille', color: 'green', icon: '&#128200;' },
+  { key: 'liquidity', name: 'Liquidite', desc: 'Analyse la facilite de vente', color: 'blue', icon: '&#128167;' }
+];
 
-// Initialize username
-function initUsername() {
-  username = localStorage.getItem('botvintedcodex_username') || '';
-  if (username) {
-    document.getElementById('usernameInput').style.display = 'none';
-    document.getElementById('usernameDisplay').style.display = 'flex';
-    document.getElementById('usernameValue').textContent = username;
-    document.getElementById('usernameBanner').classList.remove('hidden');
-  } else {
-    document.getElementById('usernameInput').style.display = 'flex';
-    document.getElementById('usernameDisplay').style.display = 'none';
-    document.getElementById('usernameBanner').classList.remove('hidden');
+// ─── Fetch helpers ────────────────────────────────────────
+async function fetchJson(url) {
+  try {
+    const res = await fetch(API_BASE + url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return await res.json();
+  } catch (e) {
+    console.warn('Fetch ' + url + ' failed:', e.message);
+    return null;
   }
 }
 
-function saveUsername() {
-  const input = document.getElementById('usernameField');
-  const val = input.value.trim();
-  if (!val) return;
-  localStorage.setItem('botvintedcodex_username', val);
-  username = val;
-  initUsername();
-  render();
+// ─── Format helpers ───────────────────────────────────────
+function euro(v) {
+  if (v == null || isNaN(v)) return '\u2014';
+  return v.toFixed(2) + ' \u20ac';
 }
-
-// Allow Enter key to save
-document.getElementById('usernameField')?.addEventListener('keypress', (e) => {
-  if (e.key === 'Enter') saveUsername();
-});
-
-// Filter buttons
-document.querySelectorAll('.filter-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    currentFilter = btn.dataset.filter;
-    render();
-  });
-});
-
-// Tab buttons
-document.querySelectorAll('.tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    tab.classList.add('active');
-    currentView = tab.dataset.view;
-    render();
-  });
-});
-
-// Search
-document.getElementById('searchInput').addEventListener('input', (e) => {
-  searchQuery = e.target.value.toLowerCase();
-  render();
-});
-
-function formatDate(iso) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
+function pct(v) {
+  if (v == null || isNaN(v)) return '\u2014';
+  return v.toFixed(1) + '%';
 }
-
-function formatDateTime(iso) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+function timeAgo(dateStr) {
+  if (!dateStr) return '\u2014';
+  var diff = Date.now() - new Date(dateStr).getTime();
+  if (diff < 0) return 'maintenant';
+  var s = Math.floor(diff / 1000);
+  if (s < 60) return 'il y a ' + s + 's';
+  var m = Math.floor(s / 60);
+  if (m < 60) return 'il y a ' + m + 'min';
+  var h = Math.floor(m / 60);
+  if (h < 24) return 'il y a ' + h + 'h';
+  return 'il y a ' + Math.floor(h / 24) + 'j';
 }
-
-function formatEur(val) {
-  if (val === null || val === undefined) return '—';
-  return val.toFixed(2) + ' €';
+function shortDate(dateStr) {
+  if (!dateStr) return '\u2014';
+  try {
+    return new Date(dateStr).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  } catch (e) { return dateStr; }
 }
-
-function getListingStatus(row) {
-  if (row.profit && row.profit.profit >= scanData.thresholds.minProfitEur &&
-      row.profit.profitPercent >= scanData.thresholds.minProfitPercent) {
-    return 'opportunity';
-  }
-  if (row.matchedSales && row.matchedSales.length > 0) {
-    return 'rejected';
-  }
-  return 'no-match';
-}
-
-function renderCategoryButtons() {
-  if (!scanData || !scanData.searchedListings) return;
-  const categories = [...new Set(scanData.searchedListings.map(r => r.search))];
-  const bar = document.getElementById('categoryBar');
-  bar.innerHTML = `<button class="filter-btn ${currentCategory === 'all' ? 'active' : ''}" data-cat="all">Toutes</button>` +
-    categories.map(cat => {
-      const count = scanData.searchedListings.filter(r => r.search === cat).length;
-      return `<button class="filter-btn ${currentCategory === cat ? 'active' : ''}" data-cat="${cat}">${cat} (${count})</button>`;
-    }).join('');
-  bar.querySelectorAll('.filter-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      bar.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      currentCategory = btn.dataset.cat;
-      render();
-    });
-  });
-}
-
-function filterListings(listings) {
-  return listings.filter(row => {
-    if (currentCategory !== 'all' && row.search !== currentCategory) return false;
-    const status = getListingStatus(row);
-    const isClaimed = claims[row.itemKey];
-    const hasMatches = row.matchedSales && row.matchedSales.length > 0;
-
-    if (currentFilter === 'all') {
-      // show all
-    } else if (currentFilter === 'with-matches') {
-      if (!hasMatches) return false;
-    } else if (currentFilter === 'claimed') {
-      if (!isClaimed) return false;
-    } else if (currentFilter === 'opportunities') {
-      if (status !== 'opportunity') return false;
-    } else if (currentFilter === 'no-match') {
-      if (status !== 'no-match') return false;
-    } else if (currentFilter === 'rejected') {
-      if (status !== 'rejected') return false;
-    }
-
-    if (searchQuery && !row.title.toLowerCase().includes(searchQuery) &&
-        !(row.rawTitle || '').toLowerCase().includes(searchQuery)) return false;
-    return true;
-  });
-}
-
-function scoreColor(score) {
-  if (score >= 15) return 'var(--green)';
-  if (score >= 10) return 'var(--orange)';
+function confidenceColor(score) {
+  if (score >= 70) return 'var(--green)';
+  if (score >= 40) return 'var(--orange)';
   return 'var(--red)';
 }
-
-function scoreWidth(score) {
-  return Math.min(100, (score / 25) * 100);
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function renderStats() {
-  if (!scanData) return;
-  const opps = scanData.opportunities || [];
-  const all = scanData.searchedListings || [];
-  const underpricedCount = (scanData.underpricedAlerts || []).length;
-  const withMatches = all.filter(r => r.matchedSales && r.matchedSales.length > 0);
-  const claimed = all.filter(r => claims[r.itemKey]);
-  const avgProfit = opps.length > 0
-    ? opps.reduce((s, o) => s + (o.profit?.profit || 0), 0) / opps.length
-    : 0;
+// ─── Niche bar colors ─────────────────────────────────────
+var NICHE_COLORS = ['#6c5ce7', '#00d2a0', '#ffa94d', '#74b9ff', '#ff6b6b', '#a29bfe', '#fdcb6e', '#55efc4', '#fab1a0', '#81ecec'];
 
-  document.getElementById('statsBar').innerHTML = `
-    <div class="stat">
-      <span class="stat-label">Annonces scannées</span>
-      <span class="stat-value blue">${all.length}</span>
-    </div>
-    <div class="stat">
-      <span class="stat-label">Opportunités</span>
-      <span class="stat-value green">${opps.length}</span>
-    </div>
-    <div class="stat">
-      <span class="stat-label">Sous-évalués</span>
-      <span class="stat-value red">${underpricedCount}</span>
-    </div>
-    <div class="stat">
-      <span class="stat-label">Avec matches</span>
-      <span class="stat-value orange">${withMatches.length}</span>
-    </div>
-    <div class="stat">
-      <span class="stat-label">Prises</span>
-      <span class="stat-value purple">${claimed.length}</span>
-    </div>
-    <div class="stat">
-      <span class="stat-label">Profit moyen</span>
-      <span class="stat-value green">${formatEur(avgProfit)}</span>
-    </div>
-  `;
+// ─── Liquidity cell builder ────────────────────────────────
+function buildLiquidityCell(opp) {
+  if (!opp.liquidityScore && opp.liquidityScore !== 0) return '\u2014';
+  var score = opp.liquidityScore;
+  var summary = opp.liquiditySummary || {};
+  var speedLabel = summary.speedLabel || summary.label || '';
+  var speedEmoji = summary.speedEmoji || '';
+  var adjustedMargin = opp.adjustedMarginPercent;
+
+  // Couleur selon classification (flash=vert vif, rapide=vert, normal=orange, lent=rouge, très lent=gris)
+  var color;
+  if (speedLabel === 'flash')          color = '#00d2a0';
+  else if (speedLabel === 'rapide')    color = '#4cd137';
+  else if (speedLabel === 'normal')    color = '#ffa94d';
+  else if (speedLabel === 'lent')      color = '#ff6b6b';
+  else if (speedLabel === 'très lent') color = '#636e72';
+  else if (score >= 80)  color = '#00d2a0';
+  else if (score >= 60)  color = '#4cd137';
+  else if (score >= 40)  color = '#ffa94d';
+  else if (score >= 20)  color = '#ff6b6b';
+  else                   color = '#636e72';
+
+  var html = '<div style="display:flex;flex-direction:column;gap:2px;">';
+  html += '<span class="confidence-bar"><span class="confidence-fill" style="width:' + score + '%; background:' + color + ';"></span></span>';
+  html += '<span style="font-size:12px;color:' + color + ';font-weight:600;">' + (speedEmoji ? speedEmoji + ' ' : '') + score + '</span>';
+  if (speedLabel) html += '<span style="font-size:10px;color:' + color + ';font-weight:500;">' + esc(speedLabel) + '</span>';
+  if (adjustedMargin != null) html += '<span style="font-size:10px;color:var(--text2);">Adj: ' + adjustedMargin + '%</span>';
+  html += '</div>';
+  return html;
 }
 
-function extractItemKey(url) {
-  // Extract ID from Vinted URL: https://www.vinted.fr/items/1234567890-...
-  const match = url.match(/\/items\/(\d+)/);
-  return match ? match[1] : url;
-}
-
-async function dismissItem(itemKey) {
-  if (!confirm('Retirer cette carte du dashboard ?')) return;
-  try {
-    const response = await fetch(BASE + '/api/listing/' + encodeURIComponent(itemKey), { method: 'DELETE' });
-    if (response.ok) {
-      loadData();
-    } else {
-      alert('Erreur lors de la suppression.');
+// ─── Update Status ────────────────────────────────────────
+async function updateStatus() {
+  var data = await fetchJson('/api/status');
+  if (!data || !data.online) {
+    if (lastScanningState !== 'offline') {
+      lastScanningState = 'offline';
+      document.getElementById('statusBadge').className = 'status-badge offline';
+      document.getElementById('statusText').textContent = 'Hors ligne';
+      document.getElementById('scanBtn').disabled = true;
     }
-  } catch (e) {
-    console.error('Dismiss error:', e);
+    return;
   }
+  var newState = data.isScanning ? 'scanning' : 'online';
+  if (lastScanningState !== newState) {
+    lastScanningState = newState;
+    var badge = document.getElementById('statusBadge');
+    var text = document.getElementById('statusText');
+    var btn = document.getElementById('scanBtn');
+    if (data.isScanning) {
+      badge.className = 'status-badge scanning';
+      text.textContent = 'Scan en cours...';
+      btn.disabled = true;
+    } else {
+      badge.className = 'status-badge online';
+      text.textContent = 'En ligne';
+      btn.disabled = false;
+      var progressEl = document.getElementById('scanProgress');
+      if (progressEl) progressEl.style.display = 'none';
+    }
+  }
+  var _countryFlags = { be: '🇧🇪', fr: '🇫🇷', de: '🇩🇪', es: '🇪🇸', it: '🇮🇹', nl: '🇳🇱', pl: '🇵🇱', uk: '🇬🇧' };
+  var _countryBadge = data.lastScannedCountry
+    ? ' \u00b7 ' + (_countryFlags[data.lastScannedCountry] || '') + ' ' + data.lastScannedCountry.toUpperCase()
+    : '';
+  document.getElementById('lastScanInfo').textContent = data.lastScanAt
+    ? 'Dernier scan ' + timeAgo(data.lastScanAt) + _countryBadge + ' \u00b7 Uptime ' + data.uptimeFormatted
+    : 'Uptime ' + data.uptimeFormatted;
 }
 
-async function claimItem(itemKey, vintedUrl) {
-  if (!username) {
-    alert('Veuillez d\'abord entrer votre pseudo.');
-    document.getElementById('usernameField').focus();
+// ─── Update Stats Cards ──────────────────────────────────
+async function updateStats() {
+  var data = await fetchJson('/api/stats');
+  if (!data) return;
+  // Freeze profit/niche/rate stats during scan — scan data is partial and would show wrong values
+  if (lastScanningState !== 'scanning') {
+    currentTotalProfit = data.totalEstimatedProfit;
+    document.getElementById('statProfit').textContent = euro(data.totalEstimatedProfit);
+    document.getElementById('statProfitSub').textContent = data.topNiche ? 'Meilleure niche: ' + data.topNiche : '';
+    document.getElementById('statRate').textContent = pct(data.successRate);
+    document.getElementById('statRateSub').textContent = data.nicheStats && data.nicheStats.length > 0 ? data.nicheStats.length + ' niche(s) actives' : '';
+    renderNiches(data.nicheStats || []);
+  }
+  // statOpps is managed by updateOpportunities() to stay in sync with history
+  document.getElementById('statScanned').textContent = data.totalScanned || 0;
+  // Afficher la repartition par plateforme si disponible
+  var platSub = '';
+  if (data.platformStats) {
+    var parts = [];
+    for (var p in data.platformStats) {
+      if (data.platformStats[p] > 0) parts.push(p + ': ' + data.platformStats[p]);
+    }
+    platSub = parts.join(' | ');
+  }
+  document.getElementById('statScannedSub').textContent = platSub || (data.scansToday > 0 ? data.scansToday + ' scan(s) aujourd\'hui' : '');
+}
+
+// ─── Render Niches ────────────────────────────────────────
+function renderNiches(niches) {
+  var container = document.getElementById('nicheContainer');
+  if (!niches || niches.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-text">Pas de donnees de niches disponibles.</div></div>';
+    return;
+  }
+  var maxProfit = Math.max.apply(null, niches.map(function(n) { return n.totalProfit; }).concat([1]));
+  var html = '<div class="niche-list">';
+  niches.forEach(function(n, i) {
+    var color = NICHE_COLORS[i % NICHE_COLORS.length];
+    var width = Math.max(2, (n.totalProfit / maxProfit) * 100);
+    html += '<div class="niche-item"><div class="niche-name">' + esc(n.name) + '</div><div class="niche-bar-container"><div class="niche-bar" style="width:' + width + '%; background:' + color + ';"></div><div class="niche-bar-label">' + euro(n.totalProfit) + '</div></div><div class="niche-stats">' + n.opportunities + ' opp / ' + n.scanned + ' scan</div></div>';
+  });
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+// ─── Opportunity Filter ───────────────────────────────────
+function setOppFilter(filter) {
+  currentOppFilter = filter;
+  document.querySelectorAll('.filter-tab').forEach(function(tab) {
+    tab.classList.toggle('active', tab.getAttribute('data-filter') === filter);
+  });
+  updateOpportunities();
+}
+
+// ─── Render Opportunities Table ──────────────────────────
+var oppInteracting = false;   // true while mouse is over the opp zone OR modal is open
+var pendingOppsData = null;   // HTML string buffered when oppInteracting is true
+var feedbackCache = {};       // opportunityId → Boolean(validated)
+
+async function loadFeedbackCache() {
+  var data = await fetchJson('/api/feedback');
+  if (!data || !Array.isArray(data.reports)) return;
+  feedbackCache = {};
+  data.reports.forEach(function(r) {
+    if (r.opportunityId) feedbackCache[r.opportunityId] = Boolean(r.validated);
+  });
+}
+
+function applyFeedbackStates() {
+  Object.keys(feedbackCache).forEach(function(id) {
+    if (feedbackCache[id]) {
+      var vBtn = document.getElementById('vbtn-' + id);
+      if (vBtn && !vBtn.classList.contains('sent')) {
+        vBtn.classList.add('sent');
+        vBtn.title = 'Feedback envoy\u00e9 \u2713';
+        vBtn.onclick = null;
+      }
+    }
+  });
+}
+
+async function updateOpportunities() {
+  var data = await fetchJson('/api/opportunities?filter=' + currentOppFilter);
+  if (!data) return;
+  var container = document.getElementById('oppTableContainer');
+  var countBadge = document.getElementById('oppCount');
+  var opps = data.opportunities || [];
+  var counts = data.counts || {};
+  // Cache profit per opportunity for immediate UI updates on dismiss/reject
+  (data.opportunities || []).forEach(function(o) { if (o.itemKey) currentOppsProfit[o.itemKey] = o.profit || 0; });
+
+  countBadge.textContent = opps.length;
+  // Sync stat card "Opportunités actives" with history-based count
+  document.getElementById('statOpps').textContent = counts.active || 0;
+  document.getElementById('statOppsSub').textContent = (counts.dismissed || 0) > 0 ? (counts.dismissed) + ' ignor\u00e9e(s)' : '';
+  document.getElementById('countActive').textContent = counts.active || 0;
+  document.getElementById('countAll').textContent = (counts.total || 0) - (counts.dismissed || 0) - (counts.bought || 0);
+  document.getElementById('countExpired').textContent = counts.expired || 0;
+  document.getElementById('countArchived').textContent = counts.archived || 0;
+  document.getElementById('countDismissed').textContent = counts.dismissed || 0;
+
+  if (opps.length === 0) {
+    container.innerHTML = '<div class="empty-state" id="oppEmpty"><div class="empty-state-icon">&#128269;</div><div class="empty-state-title">Aucune opportunite pour ce filtre</div><div class="empty-state-text">Lance un scan pour decouvrir des opportunites.</div></div>';
     return;
   }
 
+  var platformFilterVal = document.getElementById('platformFilter') ? document.getElementById('platformFilter').value : 'all';
+  if (platformFilterVal !== 'all') {
+    opps = opps.filter(function(o) { return (o.platform || 'vinted') === platformFilterVal; });
+  }
+
+  // Filtre par route d'arbitrage
+  var routeFilterVal = document.getElementById('routeFilter') ? document.getElementById('routeFilter').value : 'all';
+  if (routeFilterVal !== 'all') {
+    opps = opps.filter(function(o) { return (o.route || 'vinted→ebay') === routeFilterVal; });
+  }
+
+  // Filtre par score minimum de confiance (ignoré pour l'onglet "Toutes")
+  var minConf = parseInt(document.getElementById('minConfidence') ? document.getElementById('minConfidence').value : '0', 10) || 0;
+  if (minConf > 0 && currentOppFilter !== 'all') {
+    opps = opps.filter(function(o) { return (o.confidenceScore != null ? o.confidenceScore : 0) >= minConf; });
+  }
+
+  // Filtre par score minimum de liquidité
+  var minLiq = parseInt(document.getElementById('minLiquidity') ? document.getElementById('minLiquidity').value : '0', 10) || 0;
+  if (minLiq > 0) {
+    opps = opps.filter(function(o) { return (o.liquidityScore != null ? o.liquidityScore : 0) >= minLiq; });
+  }
+
+  // Tri
+  var sortVal = document.getElementById('sortSelect') ? document.getElementById('sortSelect').value : 'profit';
+  opps = opps.slice().sort(function(a, b) {
+    if (sortVal === 'confidence') return (b.confidenceScore || 0) - (a.confidenceScore || 0);
+    if (sortVal === 'liquidity')  return (b.liquidityScore || 0) - (a.liquidityScore || 0);
+    if (sortVal === 'date')       return new Date(b.lastSeenAt || 0) - new Date(a.lastSeenAt || 0);
+    return (b.profit || 0) - (a.profit || 0); // défaut : profit
+  });
+
+  // Déduplication : même joueur/entité ET prix revente à ±5% → garder la meilleure confiance
+  // (skipped for dismissed/archived — on veut voir tous les items individuels)
+  if (currentOppFilter !== 'dismissed' && currentOppFilter !== 'archived') {
+    (function dedup() {
+      var seen = [];
+      var result = [];
+      for (var d = 0; d < opps.length; d++) {
+        var o = opps[d];
+        var price = o.estimatedSalePrice || 0;
+        // Clé d'entité : search + mots significatifs du titre (≥ 4 lettres, hors stopwords)
+        var stopwords = /^(carte|card|pack|lot|set|the|les|une|des|pour|avec|dans|sur|par|ou|et|en)$/i;
+        var entityKey = (o.search || '') + '|' + (o.title || '').toLowerCase().split(/\s+/).filter(function(w) { return w.length >= 4 && !stopwords.test(w); }).slice(0, 4).join('|');
+        var isDup = false;
+        for (var k = 0; k < seen.length; k++) {
+          var s = seen[k];
+          if (s.entityKey === entityKey && price > 0 && s.price > 0) {
+            var ratio = Math.abs(price - s.price) / s.price;
+            if (ratio <= 0.05) { isDup = true; break; }
+          }
+        }
+        if (!isDup) {
+          seen.push({ entityKey: entityKey, price: price, conf: o.confidenceScore || 0 });
+          result.push(o);
+        }
+      }
+      opps = result;
+    })();
+  }
+
+  // Update panel badge to reflect actually displayed count (after dedup + all filters)
+  countBadge.textContent = opps.length;
+
+  // Sync stat card and tab counter with filtered count
+  if (currentOppFilter === 'active') {
+    document.getElementById('statOpps').textContent = opps.length;
+    document.getElementById('countActive').textContent = opps.length;
+  }
+  if (currentOppFilter === 'dismissed') {
+    document.getElementById('countDismissed').textContent = opps.length;
+    var statOppsSubEl2 = document.getElementById('statOppsSub');
+    if (statOppsSubEl2 && opps.length > 0) statOppsSubEl2.textContent = opps.length + ' ignor\u00e9e(s)';
+  }
+  // Update profit card to sum only visible/filtered items (skip during scan — data is partial)
+  if (lastScanningState !== 'scanning') {
+    var filteredProfit = opps.reduce(function(sum, o) { return sum + (o.profit || 0); }, 0);
+    document.getElementById('statProfit').textContent = euro(filteredProfit);
+  }
+
+  var html = '<table><thead><tr><th></th><th>Titre</th><th>Niche</th><th>Source</th><th>Prix achat</th><th>Prix revente est.</th><th>Profit net</th><th>Liquidite</th><th title="Match texte (0-40) + Source (0-20) + Vision IA (0-40)">Confiance</th><th>Statut</th><th>Liens</th><th>Actions</th></tr></thead><tbody>';
+
+  for (var i = 0; i < opps.length; i++) {
+    var opp = opps[i];
+    var profitClass = (opp.profit || 0) > 0 ? 'profit-positive' : ((opp.profit || 0) < 0 ? 'profit-negative' : 'profit-neutral');
+    // Image Vinted
+    var vintedImgHtml = opp.imageUrl
+      ? '<img class="opp-img" src="' + API_BASE + '/api/proxy-image?url=' + encodeURIComponent(opp.imageUrl) + '" alt="Vinted" loading="lazy" title="Image Vinted" onerror="this.outerHTML=\'<div class=opp-img-placeholder style=width:42px;height:42px>&#127183;</div>\'">'
+      : '<div class="opp-img-placeholder" style="width:42px;height:42px">&#127183;</div>';
+    // Image eBay comparable
+    var ebayImgHtml = opp.ebayMatchImageUrl
+      ? '<img class="opp-img" src="' + esc(opp.ebayMatchImageUrl) + '" alt="eBay" loading="lazy" title="Image eBay comparable" onerror="this.style.display=\'none\'">'
+      : '';
+    // Badge similarité image / Vision IA
+    var simScore = opp.imageSimilarityScore;
+    var simBadgeHtml;
+    if (opp.visionVerified && opp.visionResult && opp.visionResult.sameCard) {
+      simBadgeHtml = '<div class="img-sim-badge img-sim-high" title="GPT-4o mini Vision : m\u00eame carte confirm\u00e9e (' + opp.visionResult.confidence + '%)">\u2705 Vision IA</div>';
+    } else if (simScore != null) {
+      var simClass = simScore >= 78 ? 'img-sim-high' : (simScore >= 64 ? 'img-sim-med' : 'img-sim-low');
+      var simLabel = simScore >= 78 ? '✓ ' : (simScore >= 64 ? '~ ' : '! ');
+      simBadgeHtml = '<div class="img-sim-badge ' + simClass + '" title="Similarit\u00e9 image Vinted\u2194eBay : ' + simScore + '%">' + simLabel + simScore + '%</div>';
+    } else {
+      simBadgeHtml = '<div class="img-sim-badge img-sim-none" title="Pas de comparaison image disponible">\u26a0 Non v\u00e9rifi\u00e9e</div>';
+    }
+    var imgHtml;
+    if (ebayImgHtml) {
+      imgHtml = '<div class="opp-img-pair"><div class="opp-img-row">' + vintedImgHtml + '<span class="opp-img-sep">&#8596;</span>' + ebayImgHtml + '</div>' + simBadgeHtml + '</div>';
+    } else {
+      imgHtml = '<div class="opp-img-pair">' + vintedImgHtml + simBadgeHtml + '</div>';
+    }
+
+    var confHtml = '<span style="color:var(--text3);font-size:13px;" title="Score de confiance non calcul\u00e9">?</span>';
+    if (opp.confidenceScore != null) {
+      var confScore = opp.confidenceScore;
+      var confColor = confidenceColor(confScore);
+      var confLabel = confScore >= 70 ? 'Bon' : (confScore >= 50 ? 'Moyen' : null);
+      var imgCapNote = (opp.imageSimilarityScore != null) ? ' | Vision IA: ' + opp.imageSimilarityScore + '%' : ' | Vision IA: non calcul\u00e9e';
+      confHtml = '<div style="display:flex;flex-direction:column;gap:2px;" title="Confiance: ' + confScore + '/100 — Match texte (0-40) + Source (0-20) + Vision IA (0-40)' + imgCapNote + '">' +
+        '<span class="confidence-bar"><span class="confidence-fill" style="width:' + confScore + '%; background:' + confColor + ';"></span></span>' +
+        '<span style="font-size:12px;color:' + confColor + ';font-weight:600;">' + confScore + '<span style="font-size:10px;opacity:0.7;"> / 100</span></span>' +
+        (confScore < 50 ? '<span style="font-size:10px;color:var(--red);font-weight:700;background:var(--red-bg);padding:1px 5px;border-radius:4px;">\u26a0 Douteux</span>' : '<span style="font-size:10px;color:var(--text3);">' + confLabel + '</span>') +
+        '</div>';
+    }
+
+    var statusTag = 'tag-active';
+    var statusLabel = 'Active';
+    if (opp.status === 'expired') { statusTag = 'tag-expired'; statusLabel = 'Expiree'; }
+    else if (opp.status === 'sold') { statusTag = 'tag-sold'; statusLabel = 'Vendue'; }
+    else if (opp.status === 'archived') { statusTag = 'tag-archived'; statusLabel = 'Archivee'; }
+    else if (opp.status === 'dismissed') { statusTag = 'tag-archived'; statusLabel = 'Ignoree'; }
+    else if (opp.verdict === 'confirmed') { statusTag = 'tag-confirmed'; statusLabel = 'Confirmee'; }
+    else if (opp.verdict === 'rejected') { statusTag = 'tag-rejected'; statusLabel = 'Rejetee'; }
+
+    var statusHtml = '<span class="tag ' + statusTag + '">' + statusLabel + '</span>';
+
+    var plat = opp.platform || 'vinted';
+    var platColors = { vinted: '#09B1BA', cardmarket: '#1D3461', leboncoin: '#F56B2A', facebook: '#1877F2', ebay: '#E53238' };
+    var platColor = platColors[plat] || 'var(--text3)';
+    var countryFlag = (opp.vintedCountry && opp.vintedCountry !== 'fr') ? (opp.vintedCountryFlag || '') : '';
+    var platBadge = '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;color:#fff;background:' + platColor + '">' + esc(plat.charAt(0).toUpperCase() + plat.slice(1)) + (countryFlag ? ' ' + countryFlag : '') + '</span>';
+    var linkLabel = plat.charAt(0).toUpperCase() + plat.slice(1);
+    var oppRoute = opp.route || 'vinted→ebay';
+    var routeColors = { 'vinted→ebay': '#00b894', 'ebay→vinted': '#74b9ff', 'cardmarket→ebay': '#a29bfe' };
+    var routeLabels = { 'vinted→ebay': 'V→E', 'ebay→vinted': 'E→V', 'cardmarket→ebay': 'CM→E' };
+    var routeBadge = oppRoute !== 'vinted→ebay' ? '<span style="display:inline-block;padding:2px 6px;border-radius:8px;font-size:10px;font-weight:700;color:#fff;background:' + (routeColors[oppRoute] || '#888') + '">' + (routeLabels[oppRoute] || oppRoute) + '</span>' : '';
+    var buyLabel = oppRoute === 'vinted→ebay' ? 'Vinted' : oppRoute === 'ebay→vinted' ? 'eBay' : 'Cardmarket';
+    var sellLabel = oppRoute === 'vinted→ebay' ? 'eBay moy.' : oppRoute === 'ebay→vinted' ? 'Vinted moy.' : 'eBay moy.';
+
+    // Seller score badge (vert ≥60, jaune 30-59, rouge <30)
+    var sellerBadgeHtml = '';
+    if (opp.sellerScore && opp.sellerScore.score != null) {
+      var ss = opp.sellerScore.score;
+      var ssColor = ss >= 60 ? '#00d2a0' : (ss >= 30 ? '#ffa94d' : '#ff6b6b');
+      var ssBg    = ss >= 60 ? 'rgba(0,210,160,0.12)' : (ss >= 30 ? 'rgba(255,169,77,0.12)' : 'rgba(255,107,107,0.12)');
+      var ssEmoji = ss >= 60 ? '\uD83D\uDFE2' : (ss >= 30 ? '\uD83D\uDFE1' : '\uD83D\uDD34');
+      var ssTooltip = 'Vendeur: ' + ss + '/100';
+      if (opp.sellerScore.feedbackCount != null) ssTooltip += ' | ' + opp.sellerScore.feedbackCount + ' avis';
+      if (opp.sellerScore.isSuspect) ssTooltip += ' \u2014 \u26a0\ufe0f Vendeur suspect';
+      sellerBadgeHtml = '<span style="display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:8px;font-size:10px;font-weight:700;color:' + ssColor + ';background:' + ssBg + ';border:1px solid ' + ssColor + '33;" title="' + esc(ssTooltip) + '">' + ssEmoji + '\u00a0' + ss + '</span>';
+    }
+
+    // Build source URL buttons
+    var sourceLinksHtml = '';
+    if (opp.url) {
+      sourceLinksHtml += '<a class="link-btn" href="' + esc(opp.url) + '" target="_blank" rel="noopener">' + esc(linkLabel) + ' &#8599;</a>';
+      if (sellerBadgeHtml) sourceLinksHtml += ' ' + sellerBadgeHtml;
+    }
+    var srcUrls = opp.sourceUrls || [];
+    if (srcUrls.length > 0) {
+      var srcLabels = { pokemontcg: 'PokeTCG', tcgplayer: 'TCGPlayer', ygoprodeck: 'YGO', cardmarket: 'Cardmarket', ebay: 'eBay' };
+      for (var s = 0; s < srcUrls.length; s++) {
+        var src = srcUrls[s];
+        var srcLabel = srcLabels[src.platform] || src.platform;
+        var srcClass = 'src-' + (src.platform || 'unknown');
+        var srcTitle = esc((src.title || '').slice(0, 60)) + (src.price > 0 ? ' — ' + src.price.toFixed(2) + ' EUR' : '');
+        sourceLinksHtml += ' <a class="source-btn ' + srcClass + '" href="' + esc(src.url) + '" target="_blank" rel="noopener" title="' + srcTitle + '">' + esc(srcLabel) + ' &#8599;</a>';
+      }
+    }
+
+    var safeId = String(opp.itemKey || '').replace(/'/g, '');
+    // Build verify button with saved verification state (persists across refresh)
+    var verifyBtnHtml;
+    var verif = opp.verification;
+    if (!verif) {
+      verifyBtnHtml = '<button class="btn-action btn-verify" id="verifybtn-' + safeId + '" onclick="verifyImage(\'' + safeId + '\')" title="V\u00e9rifier via GPT Vision">\uD83D\uDD0D</button>';
+    } else if (verif.vision && verif.vision.sameCard === false) {
+      verifyBtnHtml = '<button class="btn-action btn-verify wrong" id="verifybtn-' + safeId + '" onclick="verifyOpportunity(\'' + safeId + '\')" title="\u26A0 Images diff\u00e9rentes: ' + esc((verif.vision && verif.vision.summary) || '') + '">\u26A0</button>';
+    } else if (verif.confirmed) {
+      verifyBtnHtml = '<button class="btn-action btn-verify confirmed" id="verifybtn-' + safeId + '" onclick="verifyOpportunity(\'' + safeId + '\')" title="Confirm\u00e9: ' + euro(verif.priceCheck && verif.priceCheck.newPrice) + ' via ' + esc((verif.priceCheck && verif.priceCheck.source) || '') + '">\u2713</button>';
+    } else {
+      verifyBtnHtml = '<button class="btn-action btn-verify wrong" id="verifybtn-' + safeId + '" onclick="verifyOpportunity(\'' + safeId + '\')" title="Prix diff\u00e9rent (' + ((verif.priceCheck && verif.priceCheck.diff) || 0) + '%): ' + euro(verif.priceCheck && verif.priceCheck.newPrice) + ' via ' + esc((verif.priceCheck && verif.priceCheck.source) || '') + '">\u26A0</button>';
+    }
+    var actionsHtml =
+      '<div class="opp-action-btns">' +
+        '<button class="btn-action btn-validate" id="vbtn-' + safeId + '" onclick="submitFeedback(\'' + safeId + '\', true)" title="Bonne opportunit\u00e9">\u2713</button>' +
+        '<button class="btn-action btn-reject" id="rbtn-' + safeId + '" onclick="showFeedbackNote(\'' + safeId + '\')" title="Signaler une erreur">\u2717</button>' +
+        verifyBtnHtml +
+        '<button class="btn-action btn-dismiss" id="dbtn-' + safeId + '" onclick="archiveOpportunity(\'' + safeId + '\')" title="Archiver cette opportunit\u00e9">&#128465;</button>' +
+        '<button class="btn-action" id="portbtn-' + safeId + '" onclick="addToPortfolio(\'' + safeId + '\')" title="Marquer comme achet\u00e9 \u2014 ajoute au portfolio" style="font-size:13px;">&#128176;</button>' +
+      '</div>';
+
+    // Badge alerte profit suspect (> 500%)
+    var profitWarnHtml = '';
+    if (opp.profitPercent != null && opp.profitPercent > 500) {
+      profitWarnHtml = ' <span style="display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;background:rgba(255,169,77,0.18);color:var(--orange);border:1px solid rgba(255,169,77,0.35);" title="Profit > 500% : probablement un matching incorrect (carte base vs variante rare). V\u00e9rifier manuellement.">\u26a0 V\u00e9rifier</span>';
+    }
+
+    // Titre eBay comparable (en gris clair sous le titre Vinted)
+    var ebayTitleHtml = '';
+    if (opp.ebayMatchTitle) {
+      ebayTitleHtml = '<div style="font-size:10px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px;" title="Comparable eBay : ' + esc(opp.ebayMatchTitle) + '">\u2934 ' + esc(opp.ebayMatchTitle.slice(0, 60)) + (opp.ebayMatchTitle.length > 60 ? '\u2026' : '') + '</div>';
+    }
+
+    // Lien recherche eBay (badge cliquable)
+    if (opp.sourceQuery) {
+      var ebaySearchUrl = 'https://www.ebay.co.uk/sch/i.html?_nkw=' + encodeURIComponent(opp.sourceQuery) + '&LH_Sold=1&LH_Complete=1';
+      sourceLinksHtml += ' <a class="source-btn" href="' + esc(ebaySearchUrl) + '" target="_blank" rel="noopener" style="background:rgba(0,114,198,0.15);color:#74b9ff;border-color:rgba(0,114,198,0.3);" title="Rechercher \u00ab ' + esc(opp.sourceQuery) + ' \u00bb sur eBay.co.uk (ventes sold)">&#128269; eBay</a>';
+    }
+
+    html += '<tr data-opp-id="' + esc(safeId) + '"><td>' + imgHtml + '</td><td><div class="opp-title" title="' + esc(opp.title) + '">' + esc(opp.title) + '</div>' + ebayTitleHtml + '<div style="font-size:10px;color:var(--text3)">' + timeAgo(opp.firstSeenAt) + '</div></td><td><span style="font-size:12px;color:var(--text2)">' + esc(opp.search || '\u2014') + '</span></td><td>' + platBadge + (routeBadge ? ' ' + routeBadge : '') + '</td><td title="' + esc(buyLabel) + '">' + euro(opp.vintedPrice) + '</td><td title="' + esc(sellLabel) + '">' + euro(opp.estimatedSalePrice) + '</td><td class="' + profitClass + '">' + euro(opp.profit) + (opp.profitPercent != null ? ' <span style="font-size:11px;opacity:0.7">(' + pct(opp.profitPercent) + ')</span>' : '') + profitWarnHtml + '</td><td>' + buildLiquidityCell(opp) + '</td><td>' + confHtml + '</td><td>' + statusHtml + '</td><td><div class="source-links">' + sourceLinksHtml + '</div></td><td style="white-space:nowrap">' + actionsHtml + '</td></tr>';
+    // Render saved vision banner (persists across refresh)
+    if (opp.verification && opp.verification.vision) {
+      var sv = opp.verification.vision;
+      var svStyle = sv.sameCard === false ? 'background:rgba(255,80,80,0.12);color:#ff6b6b;' : 'background:rgba(0,210,160,0.08);color:var(--green);';
+      var svContent = sv.sameCard === false
+        ? '\u26A0\uFE0F <b>Images diff\u00e9rentes</b> (confiance: ' + sv.confidence + '%) \u2014 ' + esc(sv.summary || '') + (sv.differences && sv.differences.length ? ' | ' + sv.differences.map(function(d){return esc(d);}).join(', ') : '')
+        : '\u2705 <b>M\u00eame carte confirm\u00e9e</b> (confiance: ' + sv.confidence + '%) \u2014 ' + esc(sv.summary || '');
+      html += '<tr class="vision-banner"><td colspan="99" style="padding:4px 8px;font-size:11px;border-top:none;' + svStyle + '">' + svContent + '</td></tr>';
+    }
+  }
+
+  html += '</tbody></table>';
+  if (oppInteracting) {
+    pendingOppsData = html;
+  } else {
+    container.innerHTML = html;
+    applyFeedbackStates();
+  }
+}
+
+// ─── Formatage lisible des résultats agents ───────────────
+function formatAgentResult(agentKey, result) {
+  if (!result) return '';
   try {
-    const response = await fetch(BASE + '/api/claim', {
+    switch (agentKey) {
+      case 'diagnostic': {
+        // "3 niches OK, 2 à surveiller, 1 critique"
+        var healthy = result.healthyNiches || result.healthy || 0;
+        var warning = result.warningNiches || result.warning || 0;
+        var critical = result.criticalNiches || result.critical || 0;
+        var total = result.totalNiches || (healthy + warning + critical) || 0;
+        if (total === 0 && result.status) return '✅ ' + esc(String(result.status));
+        var parts = [];
+        if (healthy > 0) parts.push('<span style="color:var(--green)">' + healthy + ' OK</span>');
+        if (warning > 0) parts.push('<span style="color:var(--orange)">' + warning + ' à surveiller</span>');
+        if (critical > 0) parts.push('<span style="color:var(--red)">' + critical + ' critique' + (critical > 1 ? 's' : '') + '</span>');
+        return '🩺 ' + (parts.length > 0 ? parts.join(', ') : total + ' niches analysées');
+      }
+      case 'discovery': {
+        // "Top 3 catégories : Sneakers (+1852€), Vintage (+859€), Tech (+697€)"
+        var suggestions = result.suggestions || result.totalSuggestions;
+        if (typeof suggestions === 'number') {
+          return '🔍 ' + suggestions + ' suggestion' + (suggestions > 1 ? 's' : '') + ' trouvée' + (suggestions > 1 ? 's' : '');
+        }
+        if (result.topCategories && result.topCategories.length > 0) {
+          var top3 = result.topCategories.slice(0, 3).map(function(c) {
+            return '<b>' + esc(c.name || c.category) + '</b> (+' + (c.estimatedProfit || c.profit || 0) + '€)';
+          }).join(', ');
+          return '🔍 Top : ' + top3;
+        }
+        return '🔍 Analyse terminée';
+      }
+      case 'explore': {
+        // "12 catégories évaluées, top: Sneakers (score 85)"
+        var evaluated = result.categoriesEvaluated || result.totalCategories || result.total || 0;
+        var topCat = result.topCategory || result.top || null;
+        var txt = '🌐 ' + evaluated + ' catégorie' + (evaluated > 1 ? 's' : '') + ' évaluée' + (evaluated > 1 ? 's' : '');
+        if (topCat) {
+          var topName = typeof topCat === 'string' ? topCat : (topCat.name || topCat.category || '');
+          var topScore = typeof topCat === 'object' ? (topCat.score || topCat.totalScore || '') : '';
+          if (topName) txt += ', top: <b>' + esc(topName) + '</b>' + (topScore ? ' (score ' + topScore + ')' : '');
+        }
+        return txt || '🌐 Exploration terminée';
+      }
+      case 'strategy': {
+        // "Palier 1 (500€), budget dispo: 480€, 0 achats en cours"
+        var tier = result.currentTier || result.tier || null;
+        var budget = result.availableBudget || result.budgetRemaining;
+        var active = result.activePurchases || result.activeCount || 0;
+        var parts = [];
+        if (tier) parts.push('Palier ' + esc(String(tier.level || tier)));
+        if (budget !== undefined && budget !== null) parts.push('budget dispo: ' + Number(budget).toFixed(0) + '€');
+        if (active !== undefined) parts.push(active + ' achat' + (active > 1 ? 's' : '') + ' en cours');
+        return '📊 ' + (parts.length > 0 ? parts.join(', ') : 'Analyse terminée');
+      }
+      case 'liquidity': {
+        // "3 opportunités analysées, 1 flash, 1 rapide, 1 lente"
+        var total = result.totalAnalyzed || result.total || 0;
+        var flash = result.flashCount || result.flash || 0;
+        var fast = result.fastCount || result.fast || 0;
+        var slow = result.slowCount || result.slow || 0;
+        var parts = [total + ' opportunité' + (total > 1 ? 's' : '') + ' analysée' + (total > 1 ? 's' : '')];
+        var details = [];
+        if (flash > 0) details.push('<span style="color:var(--green)">' + flash + ' flash</span>');
+        if (fast > 0) details.push('<span style="color:var(--blue)">' + fast + ' rapide' + (fast > 1 ? 's' : '') + '</span>');
+        if (slow > 0) details.push('<span style="color:var(--orange)">' + slow + ' lente' + (slow > 1 ? 's' : '') + '</span>');
+        if (details.length > 0) parts.push(details.join(', '));
+        return '💧 ' + parts.join(' — ');
+      }
+      default: {
+        // Fallback générique amélioré
+        var keys = Object.keys(result);
+        return keys.slice(0, 4).map(function(k) { return esc(k) + ': ' + esc(String(result[k])); }).join(' · ');
+      }
+    }
+  } catch (e) {
+    // Fallback si erreur de formatage
+    var keys = Object.keys(result);
+    return keys.slice(0, 4).map(function(k) { return esc(k) + ': ' + esc(String(result[k])); }).join(' · ');
+  }
+}
+
+// ─── Agent control ────────────────────────────────────────
+function renderAgents(statusData) {
+  var container = document.getElementById('agentsGrid');
+  var html = '';
+  for (var i = 0; i < AGENT_DEFS.length; i++) {
+    var def = AGENT_DEFS[i];
+    var s = (statusData && statusData[def.key]) || { status: 'idle', lastRun: null, lastResult: null, error: null };
+    var isRunning = s.status === 'running';
+    var isError = s.status === 'error';
+    var dotClass = isRunning ? 'running' : (isError ? 'error' : 'idle');
+    var statusLabel = isRunning ? 'En cours...' : (isError ? 'Erreur' : 'Inactif');
+    var btnClass = 'btn btn-sm btn-' + def.color;
+
+    var resultHtml = '';
+    if (s.lastResult) {
+      var resultText = '';
+      if (s.lastResult.error) {
+        resultText = '❌ ' + esc(s.lastResult.error);
+      } else {
+        resultText = formatAgentResult(def.key, s.lastResult);
+      }
+      resultHtml = '<div class="agent-result visible">' + resultText + '</div>';
+    }
+
+    html += '<div class="agent-card"><div class="agent-card-header"><div><span class="agent-status-dot ' + dotClass + '"></span><span class="agent-name">' + def.icon + ' ' + def.name + '</span></div><button class="' + btnClass + '" onclick="launchAgent(\'' + def.key + '\')" ' + (isRunning ? 'disabled' : '') + '>' + (isRunning ? '<span class="spinner"></span> En cours' : 'Lancer') + '</button></div><div class="agent-meta">' + esc(def.desc) + (s.lastRun ? ' \u00b7 Dernier: ' + timeAgo(s.lastRun) : '') + '</div><div style="font-size:11px;color:' + (isError ? 'var(--red)' : 'var(--text3)') + '">' + statusLabel + (s.error ? ': ' + esc(s.error).slice(0, 80) : '') + '</div>' + resultHtml + '</div>';
+  }
+  container.innerHTML = html;
+}
+
+async function updateAgents() {
+  var data = await fetchJson('/api/agents/status');
+  renderAgents(data);
+}
+
+async function launchAgent(agentKey) {
+  try {
+    await fetch(API_BASE + '/api/agents/' + agentKey, { method: 'POST' });
+  } catch (e) {
+    console.error('Agent launch error:', e);
+  }
+  // Immediately update UI
+  updateAgents();
+  // Poll for completion
+  var pollCount = 0;
+  var pollInterval = setInterval(function() {
+    updateAgents();
+    pollCount++;
+    if (pollCount > 120) clearInterval(pollInterval); // Max 2min poll
+  }, 1000);
+  // Also stop polling when agent finishes (checked via SSE)
+  setTimeout(function() { clearInterval(pollInterval); }, 120000);
+}
+
+// ─── Render Discovery Multi-Catégories ────────────────────
+async function updateDiscovery() {
+  var data = await fetchJson('/api/discovery');
+  if (!data) return;
+  var container = document.getElementById('discoveryContainer');
+  var countBadge = document.getElementById('discoveryCount');
+  var objectiveContainer = document.getElementById('objectiveContainer');
+  var rankingContainer = document.getElementById('categoryRankingContainer');
+  var suggestions = data.suggestions || [];
+  countBadge.textContent = suggestions.length;
+
+  // ── Suggestions ──
+  if (suggestions.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-text">L\'agent Discovery n\'a pas encore de suggestions.</div></div>';
+  } else {
+    var typeLabels = { new_category: 'Nouvelle Categorie', new_tcg_set: 'Nouveau Set TCG', keyword_expansion: 'Expansion Keywords', hot_card_type: 'Type Tendance', underperforming_warning: 'Alerte' };
+    var priorityLabels = { high: 'Haute', medium: 'Moyenne', low: 'Basse', info: 'Info' };
+    var priorityColors = { high: 'var(--green)', medium: 'var(--orange)', low: 'var(--text3)', info: 'var(--blue)' };
+    var html = '';
+    for (var i = 0; i < Math.min(suggestions.length, 15); i++) {
+      var s = suggestions[i];
+      var pc = priorityColors[s.priority] || 'var(--text3)';
+      var emoji = s.emoji || '';
+      var metricsHtml = '';
+      if (s.metrics) {
+        metricsHtml = '<div style="display:flex;gap:12px;margin-top:6px;flex-wrap:wrap">';
+        metricsHtml += '<span style="font-size:11px;color:var(--green)">Score ' + s.metrics.score + '/100</span>';
+        metricsHtml += '<span style="font-size:11px;color:var(--blue)">Profit ~' + s.metrics.netProfit + ' EUR</span>';
+        metricsHtml += '<span style="font-size:11px;color:var(--orange)">~' + s.metrics.monthlyProfit + ' EUR/mois</span>';
+        if (s.metrics.isInSeason) metricsHtml += '<span style="font-size:11px;color:var(--green)">EN SAISON</span>';
+        metricsHtml += '</div>';
+      }
+      html += '<div class="suggestion-card ' + (s.priority || '') + '"><div class="suggestion-header"><span class="suggestion-type">' + emoji + ' ' + (typeLabels[s.type] || s.type) + (s.label ? ' \u2014 ' + esc(s.label) : '') + '</span><span class="suggestion-priority" style="background:' + pc + '22; color:' + pc + '">' + (priorityLabels[s.priority] || s.priority) + '</span></div><div class="suggestion-reason">' + esc(s.reason) + '</div>' + metricsHtml;
+      if (s.suggestedQueries && s.suggestedQueries.length > 0) {
+        html += '<div class="suggestion-queries" style="margin-top:6px">Queries Vinted : ' + s.suggestedQueries.slice(0, 5).map(function(q) { return '<code>' + esc(q) + '</code>'; }).join(' ') + '</div>';
+      }
+      if (s.hotItems && s.hotItems.length > 0) {
+        html += '<div style="font-size:11px;color:var(--text3);margin-top:4px">Hot: ' + s.hotItems.slice(0, 2).map(function(h) { return esc(h); }).join(', ') + '</div>';
+      }
+      html += '</div>';
+    }
+    container.innerHTML = html;
+  }
+
+  // ── Objectif 5000€/mois ──
+  if (objectiveContainer && data.objectivePlan) {
+    var plan = data.objectivePlan;
+    var barPct = Math.min(100, Math.round((plan.projectedMonthly / plan.targetMonthly) * 100));
+    var barColor = plan.achievable ? 'var(--green)' : 'var(--orange)';
+    var oHtml = '<div style="text-align:center;margin-bottom:12px"><div style="font-size:28px;font-weight:700;color:' + barColor + '">' + plan.projectedMonthly + ' EUR</div><div style="font-size:12px;color:var(--text2)">sur ' + plan.targetMonthly + ' EUR objectif</div></div>';
+    oHtml += '<div style="background:var(--surface3);border-radius:6px;height:16px;overflow:hidden;margin-bottom:12px"><div style="background:' + barColor + ';height:100%;width:' + barPct + '%;border-radius:6px;transition:width 0.5s"></div></div>';
+    oHtml += '<div style="text-align:center;font-size:13px;color:' + (plan.achievable ? 'var(--green)' : 'var(--orange)') + ';font-weight:600;margin-bottom:12px">' + (plan.achievable ? 'OBJECTIF ATTEIGNABLE' : 'GAP : ' + plan.gap + ' EUR') + '</div>';
+
+    for (var p = 0; p < plan.plan.length; p++) {
+      var step = plan.plan[p];
+      var stepColor = step.status === 'actif' ? 'var(--green)' : 'var(--blue)';
+      var marker = step.status === 'actif' ? 'OK' : '+';
+      oHtml += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)"><span style="font-size:13px;color:var(--text)">[' + marker + '] ' + step.emoji + ' ' + esc(step.category) + '</span><span style="font-size:13px;font-weight:600;color:' + stepColor + '">+' + step.monthlyProfit + ' EUR/mois</span></div>';
+    }
+    objectiveContainer.innerHTML = oHtml;
+  }
+
+  // ── Classement catégories ──
+  if (rankingContainer && data.ranking && data.ranking.length > 0) {
+    var rHtml = '';
+    for (var r = 0; r < Math.min(data.ranking.length, 12); r++) {
+      var cat = data.ranking[r];
+      var scoreColor = cat.score >= 50 ? 'var(--green)' : cat.score >= 30 ? 'var(--orange)' : 'var(--red)';
+      var implBadge = cat.alreadyImplemented ? '<span style="background:var(--green-bg);color:var(--green);font-size:10px;padding:1px 6px;border-radius:3px;margin-left:6px">ACTIF</span>' : '';
+      var seasonBadge = cat.isInSeason ? '<span style="background:var(--orange-bg);color:var(--orange);font-size:10px;padding:1px 6px;border-radius:3px;margin-left:4px">SAISON</span>' : '';
+      rHtml += '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">';
+      rHtml += '<div><span style="color:var(--text3);font-size:12px;margin-right:8px">#' + cat.rank + '</span><span style="font-size:13px;color:var(--text)">' + (cat.emoji || '') + ' ' + esc(cat.label) + '</span>' + implBadge + seasonBadge + '</div>';
+      rHtml += '<div style="display:flex;gap:10px;align-items:center"><span style="font-size:12px;color:var(--blue)">~' + cat.monthlyProfit + ' EUR/mois</span><span style="font-size:13px;font-weight:700;color:' + scoreColor + '">' + cat.score + '/100</span></div>';
+      rHtml += '</div>';
+    }
+    rankingContainer.innerHTML = rHtml;
+  }
+}
+
+// ─── Render Scan History ──────────────────────────────────
+async function updateHistory() {
+  var data = await fetchJson('/api/scans');
+  if (!data) return;
+  var container = document.getElementById('historyContainer');
+  var scans = data.scans || [];
+  if (scans.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-text">Aucun scan enregistre.</div></div>';
+    return;
+  }
+  var html = '<div class="timeline">';
+  for (var i = 0; i < Math.min(scans.length, 20); i++) {
+    var scan = scans[i];
+    html += '<div class="timeline-item"><div class="timeline-time">' + shortDate(scan.scannedAt) + '</div><div class="timeline-detail"><strong>' + (scan.scannedCount || 0) + '</strong> annonces scannees \u00b7 <strong style="color:var(--green)">' + (scan.opportunityCount || 0) + '</strong> opportunite(s)' + (scan.underpricedCount > 0 ? ' \u00b7 <strong style="color:var(--orange)">' + scan.underpricedCount + '</strong> sous-evaluee(s)' : '') + (scan.searches && scan.searches.length > 0 ? '<br><span style="font-size:11px;color:var(--text3)">Niches : ' + scan.searches.join(', ') + '</span>' : '') + '</div></div>';
+  }
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+// ─── Trigger Scan ─────────────────────────────────────────
+async function triggerScan() {
+  var btn = document.getElementById('scanBtn');
+  btn.disabled = true;
+  btn.textContent = 'Lancement...';
+  try {
+    var res = await fetch(API_BASE + '/api/scan', { method: 'POST' });
+    var data = await res.json();
+    if (data.error) alert(data.error);
+  } catch (e) {
+    alert('Erreur : ' + e.message);
+  }
+  setTimeout(function() { btn.textContent = 'Scanner'; refreshAll(); }, 2000);
+}
+
+// ─── Portfolio ─────────────────────────────────────────────
+async function updatePortfolio() {
+  var container = document.getElementById('portfolioContainer');
+  try {
+    var res = await fetch(API_BASE + '/api/portfolio/strategy');
+    if (!res.ok) throw new Error('Erreur API');
+    var d = await res.json();
+    portfolioData = d;
+
+    var tierColors = { 1: 'var(--blue)', 2: 'var(--green)', 3: 'var(--orange)', 4: 'var(--purple)' };
+    var tierColor = tierColors[d.tier.id] || 'var(--accent)';
+    var progressPct = d.progress ? d.progress.progress : 0;
+
+    var stockHtml = '';
+    if (d.pendingStock.items.length > 0) {
+      stockHtml = d.pendingStock.items.slice(0, 5).map(function(p) {
+        return '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text);font-size:13px">' + ((p.productName||'').slice(0,40)) + '</span><span style="color:var(--orange);font-size:13px;font-weight:600">' + p.totalCost + ' EUR</span></div>';
+      }).join('');
+    } else {
+      stockHtml = '<div style="color:var(--text3);font-size:13px;text-align:center;padding:8px">Aucun article en stock</div>';
+    }
+
+    var salesHtml = '';
+    if (d.recentSales.length > 0) {
+      salesHtml = d.recentSales.slice(0, 5).map(function(s) {
+        return '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text);font-size:13px">' + ((s.productName||'').slice(0,35)) + '</span><span style="color:' + (s.netProfit >= 0 ? 'var(--green)' : 'var(--red)') + ';font-size:13px;font-weight:600">' + (s.netProfit >= 0 ? '+' : '') + s.netProfit + ' EUR</span></div>';
+      }).join('');
+    } else {
+      salesHtml = '<div style="color:var(--text3);font-size:13px;text-align:center;padding:8px">Aucune vente enregistree</div>';
+    }
+
+    container.innerHTML =
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px">' +
+        '<div style="background:var(--surface2);border-radius:var(--radius-sm);padding:12px;text-align:center"><div style="color:var(--text2);font-size:11px;text-transform:uppercase;letter-spacing:1px">Capital Total</div><div style="color:var(--green);font-size:22px;font-weight:700;margin-top:4px">' + d.totalPortfolioValue + ' EUR</div></div>' +
+        '<div style="background:var(--surface2);border-radius:var(--radius-sm);padding:12px;text-align:center"><div style="color:var(--text2);font-size:11px;text-transform:uppercase;letter-spacing:1px">Disponible</div><div style="color:var(--blue);font-size:22px;font-weight:700;margin-top:4px">' + d.availableBalance + ' EUR</div></div>' +
+        '<div style="background:var(--surface2);border-radius:var(--radius-sm);padding:12px;text-align:center"><div style="color:var(--text2);font-size:11px;text-transform:uppercase;letter-spacing:1px">ROI Global</div><div style="color:' + (d.globalROI >= 0 ? 'var(--green)' : 'var(--red)') + ';font-size:22px;font-weight:700;margin-top:4px">' + d.globalROI + '%</div></div>' +
+        '<div style="background:var(--surface2);border-radius:var(--radius-sm);padding:12px;text-align:center"><div style="color:var(--text2);font-size:11px;text-transform:uppercase;letter-spacing:1px">Profit Total</div><div style="color:' + (d.totals.profit >= 0 ? 'var(--green)' : 'var(--red)') + ';font-size:22px;font-weight:700;margin-top:4px">' + d.totals.profit + ' EUR</div></div>' +
+      '</div>' +
+      '<div style="background:var(--surface2);border-radius:var(--radius-sm);padding:14px;margin-bottom:16px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span style="color:' + tierColor + ';font-weight:700;font-size:14px">Palier ' + d.tier.id + ' \u2014 ' + d.tier.name + '</span><span style="color:var(--text2);font-size:12px">' + d.tier.description + '</span></div>' +
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap"><span style="color:var(--text3);font-size:11px">Max/achat</span><span style="color:var(--text);font-size:13px;font-weight:600">' + d.tier.maxPerPurchase + ' EUR</span><span style="color:var(--text3);font-size:11px;margin-left:12px">Marge cible</span><span style="color:var(--text);font-size:13px;font-weight:600">' + d.tier.targetMarginPercent + '%+</span><span style="color:var(--text3);font-size:11px;margin-left:12px">Categories</span><span style="color:var(--text);font-size:13px">' + d.tier.allowedCategories.join(', ') + '</span></div>' +
+        (d.progress.nextTierCapital
+          ? '<div style="margin-top:10px"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:4px"><span>Progression vers Palier ' + (d.progress.currentTier + 1) + ' (' + d.progress.nextTierName + ')</span><span>' + progressPct + '% \u2014 reste ' + d.progress.remaining + ' EUR</span></div><div style="background:var(--surface3);border-radius:4px;height:8px;overflow:hidden"><div style="background:' + tierColor + ';height:100%;width:' + progressPct + '%;border-radius:4px;transition:width 0.5s ease"></div></div></div>'
+          : '<div style="color:var(--green);font-size:12px;margin-top:8px;font-weight:600">Palier maximum atteint !</div>') +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px">' +
+        '<div style="background:var(--surface2);border-radius:var(--radius-sm);padding:12px"><div style="color:var(--text2);font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Semaine en cours</div><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="color:var(--text3);font-size:12px">Ventes</span><span style="color:var(--text);font-size:13px;font-weight:600">' + d.weekly.salesCount + '</span></div><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="color:var(--text3);font-size:12px">Profit</span><span style="color:' + (d.weekly.profit >= 0 ? 'var(--green)' : 'var(--red)') + ';font-size:13px;font-weight:600">' + d.weekly.profit + ' EUR</span></div><div style="display:flex;justify-content:space-between"><span style="color:var(--text3);font-size:12px">ROI</span><span style="color:var(--text);font-size:13px;font-weight:600">' + d.weekly.roi + '%</span></div></div>' +
+        '<div style="background:var(--surface2);border-radius:var(--radius-sm);padding:12px"><div style="color:var(--text2);font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">En stock (' + d.pendingStock.count + ' articles \u2014 ' + d.pendingStock.value + ' EUR)</div>' + stockHtml + '</div>' +
+      '</div>' +
+      '<div style="background:var(--surface2);border-radius:var(--radius-sm);padding:12px"><div style="color:var(--text2);font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Dernieres ventes</div>' + salesHtml + '</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:12px;padding:8px;background:var(--surface2);border-radius:var(--radius-sm)">' +
+        '<div style="text-align:center"><span style="color:var(--text3);font-size:10px;display:block">Total investi</span><span style="color:var(--text);font-size:13px;font-weight:600">' + d.totals.invested + ' EUR</span></div>' +
+        '<div style="text-align:center"><span style="color:var(--text3);font-size:10px;display:block">Total revenus</span><span style="color:var(--text);font-size:13px;font-weight:600">' + d.totals.revenue + ' EUR</span></div>' +
+        '<div style="text-align:center"><span style="color:var(--text3);font-size:10px;display:block">Total frais</span><span style="color:var(--red);font-size:13px;font-weight:600">' + d.totals.fees + ' EUR</span></div>' +
+        '<div style="text-align:center"><span style="color:var(--text3);font-size:10px;display:block">Achats</span><span style="color:var(--text);font-size:13px;font-weight:600">' + d.totals.purchaseCount + '</span></div>' +
+        '<div style="text-align:center"><span style="color:var(--text3);font-size:10px;display:block">Ventes</span><span style="color:var(--text);font-size:13px;font-weight:600">' + d.totals.saleCount + '</span></div>' +
+      '</div>';
+  } catch (err) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-text">Erreur chargement portefeuille</div></div>';
+  }
+}
+
+// ─── Purchase / Sale forms ────────────────────────────────
+function showPurchaseForm() {
+  document.getElementById('purchaseOverlay').classList.add('active');
+}
+function closePurchaseForm() {
+  document.getElementById('purchaseOverlay').classList.remove('active');
+}
+async function submitPurchase() {
+  var name = document.getElementById('purchaseProductName').value.trim();
+  var price = document.getElementById('purchasePurchasePrice').value;
+  if (!name || !price) { alert('Nom et prix requis'); return; }
+  try {
+    var res = await fetch(API_BASE + '/api/portfolio/purchase', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        itemKey: itemKey,
-        username: username,
-        vintedUrl: vintedUrl
+        productName: name,
+        purchasePrice: Number(price),
+        shippingCost: Number(document.getElementById('purchaseShippingCost').value || 0),
+        platform: document.getElementById('purchasePlatform').value,
+        estimatedSalePrice: Number(document.getElementById('purchaseEstimatedSale').value) || null
       })
     });
-
-    if (response.ok) {
-      const result = await response.json();
-      claims[itemKey] = {
-        username: username,
-        claimedAt: new Date().toISOString()
-      };
-      render();
+    var data = await res.json();
+    if (data.success) {
+      closePurchaseForm();
+      document.getElementById('purchaseProductName').value = '';
+      document.getElementById('purchasePurchasePrice').value = '';
+      document.getElementById('purchaseEstimatedSale').value = '';
+      updatePortfolio();
     } else {
-      alert('Erreur lors de la prise de l\'annonce.');
+      alert('Erreur: ' + (data.error || data.reason || 'Inconnu'));
     }
   } catch (e) {
-    console.error('Claim error:', e);
-    alert('Erreur de connexion au serveur.');
+    alert('Erreur: ' + e.message);
   }
 }
 
-function renderCardView(listings) {
-  if (listings.length === 0) {
-    return `<div class="no-data"><div class="no-data-icon">📭</div>Aucune annonce ne correspond aux filtres.</div>`;
+function showSaleForm() {
+  // Populate stock dropdown
+  var select = document.getElementById('salePurchaseId');
+  select.innerHTML = '<option value="">-- Choisir un article --</option>';
+  if (portfolioData && portfolioData.pendingStock && portfolioData.pendingStock.items) {
+    portfolioData.pendingStock.items.forEach(function(item) {
+      var opt = document.createElement('option');
+      opt.value = item.id;
+      opt.textContent = item.productName + ' (' + item.totalCost + ' EUR)';
+      select.appendChild(opt);
+    });
   }
-
-  return `<div class="cards-grid">${listings.map((row) => {
-    const status = getListingStatus(row);
-    const isClaimed = claims[row.itemKey];
-    const hasMatches = row.matchedSales && row.matchedSales.length > 0;
-    const profit = row.profit;
-
-    let pricesHtml = '';
-    if (profit) {
-      pricesHtml = `
-        <div class="card-prices">
-          <div class="price-col">
-            <div class="price-label">Vinted</div>
-            <div class="price-value" style="color:var(--blue)">${formatEur(row.vintedBuyerPrice)}</div>
-          </div>
-          <div class="price-col">
-            <div class="price-label">eBay moy.</div>
-            <div class="price-value">${formatEur(profit.averageBuyerPaid)}</div>
-          </div>
-          <div class="price-col">
-            <div class="price-label">Net estimé</div>
-            <div class="price-value">${formatEur(profit.estimatedNetSale)}</div>
-          </div>
-          <div class="price-col">
-            <div class="price-label">Profit</div>
-            <div class="price-value" style="color:${profit.profit >= 0 ? 'var(--green)' : 'var(--red)'}">
-              ${formatEur(profit.profit)} <span style="font-size:11px">(${profit.profitPercent.toFixed(1)}%)</span>
-            </div>
-          </div>
-        </div>`;
+  document.getElementById('saleOverlay').classList.add('active');
+}
+function closeSaleForm() {
+  document.getElementById('saleOverlay').classList.remove('active');
+}
+async function submitSale() {
+  var purchaseId = document.getElementById('salePurchaseId').value;
+  var salePrice = document.getElementById('saleSalePrice').value;
+  if (!purchaseId || !salePrice) { alert('Article et prix de vente requis'); return; }
+  try {
+    var res = await fetch(API_BASE + '/api/portfolio/sale', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        purchaseId: purchaseId,
+        salePrice: Number(salePrice),
+        salePlatform: document.getElementById('salePlatform').value,
+        shippingCost: Number(document.getElementById('saleShippingCost').value || 0)
+      })
+    });
+    var data = await res.json();
+    if (data.success) {
+      closeSaleForm();
+      document.getElementById('saleSalePrice').value = '';
+      updatePortfolio();
     } else {
-      pricesHtml = `
-        <div class="card-prices">
-          <div class="price-col">
-            <div class="price-label">Vinted</div>
-            <div class="price-value" style="color:var(--blue)">${formatEur(row.vintedBuyerPrice)}</div>
-          </div>
-          <div class="price-col">
-            <div class="price-label">eBay moy.</div>
-            <div class="price-value" style="color:var(--text2)">—</div>
-          </div>
-          <div class="price-col">
-            <div class="price-label">Net estimé</div>
-            <div class="price-value" style="color:var(--text2)">—</div>
-          </div>
-          <div class="price-col">
-            <div class="price-label">Profit</div>
-            <div class="price-value" style="color:var(--text2)">—</div>
-          </div>
-        </div>`;
+      alert('Erreur: ' + (data.error || data.reason || 'Inconnu'));
     }
-
-    let matchesHtml = '';
-    if (hasMatches) {
-      const isApi = row.pricingSource && row.pricingSource !== 'ebay';
-      const sourceLabel = row.pricingSource === 'pokemon-tcg-api' ? 'TCGdex + eBay'
-        : row.pricingSource === 'ebay-sold' ? 'TCGdex + eBay'
-        : row.pricingSource === 'ygoprodeck' ? 'YGOPRODeck + eBay'
-        : row.pricingSource || 'eBay';
-      const matchLabel = isApi ? `Prix marché — ${sourceLabel} (${row.matchedSales.length})` : `Ventes eBay matchées (${row.matchedSales.length})`;
-      matchesHtml = `
-        <div class="card-matches">
-          <div class="match-title">${matchLabel}</div>
-          ${row.matchedSales.map(sale => {
-            const isApiSale = sale.apiData;
-            const linkLabel = isApiSale ? 'Cardmarket ↗' : 'eBay ↗';
-            const apiInfo = isApiSale ? `
-              <div style="margin-top:4px;font-size:10px">
-                ${sale.apiData.rarity ? `<span class="badge badge-purple" style="font-size:9px">${sale.apiData.rarity}</span>` : ''}
-                ${sale.apiData.setName ? `<span style="color:var(--text2)">${sale.apiData.setName}</span>` : ''}
-                ${sale.apiData.cardmarketPrice ? `<span style="color:var(--green)">CM: ${sale.apiData.cardmarketPrice.toFixed(2)}€</span>` : ''}
-                ${sale.apiData.tcgplayerPrice ? `<span style="color:var(--blue)">TCG: $${sale.apiData.tcgplayerPrice.toFixed(2)}</span>` : ''}
-              </div>` : '';
-            return `
-            <div class="match-item">
-              <img class="match-img" src="${sale.imageUrl || ''}" onerror="this.style.display='none'" alt="">
-              <div class="match-info">
-                <div class="match-info-title">${sale.title}</div>
-                <div class="match-info-meta">
-                  <span style="font-weight:700">${formatEur(sale.price || sale.totalPrice)}</span>
-                  ${!isApiSale ? `<span>${formatDate(sale.soldAt)}</span>` : ''}
-                  <span>${sale.marketplace || ''}</span>
-                  ${sale.imageMatch ? `<span class="confidence confidence-${sale.imageMatch.confidence}"><span class="confidence-dot"></span>${sale.imageMatch.confidence}</span>` : ''}
-                  ${sale.url ? `<a href="${sale.url}" target="_blank" rel="noopener" class="match-link-btn">${linkLabel}</a>` : ''}
-                </div>
-                ${apiInfo}
-                ${!isApiSale && sale.match ? `
-                  <div style="margin-top:4px;font-size:10px">
-                    <div style="display:flex;align-items:center;gap:4px">
-                      <span>Score: ${sale.match.score}</span>
-                      <div class="score-bar" style="flex:1;max-width:60px">
-                        <div class="score-fill" style="width:${scoreWidth(sale.match.score)}%;background:${scoreColor(sale.match.score)}"></div>
-                      </div>
-                      <span>Couv: ${(sale.match.specificCoverage * 100).toFixed(0)}%</span>
-                    </div>
-                    ${(sale.match.sharedSpecificTokens || []).length > 0 ? `<div style="margin-top:2px;color:var(--text2)">Tokens: ${sale.match.sharedSpecificTokens.join(', ')}</div>` : ''}
-                    ${sale.match.missingCritical ? '<span class="badge badge-red">MISMATCH</span>' : ''}
-                  </div>
-                ` : ''}
-              </div>
-            </div>`;
-          }).join('')}
-        </div>`;
-    }
-
-    const statusBadge = status === 'opportunity'
-      ? '<span class="badge badge-green">OPPORTUNITÉ</span>'
-      : status === 'rejected'
-      ? '<span class="badge badge-orange">SOUS SEUIL</span>'
-      : '<span class="badge badge-gray">PAS DE MATCH</span>';
-
-    const staleBadge = row.stale ? '<span class="stale-badge">Scan précédent</span>' : '';
-    const firstSeen = row.firstSeenAt ? `<span style="font-size:10px;color:var(--text2)">Vu: ${formatDateTime(row.firstSeenAt)}</span>` : '';
-    const dismissBtn = `<button class="dismiss-btn" onclick="dismissItem('${row.itemKey}')">Retirer</button>`;
-
-    const claimHtml = isClaimed ? `
-      <div class="card-claim">
-        <button class="claimed-badge" disabled>
-          <span class="claimed-by">PRISE PAR <span class="claimed-user">${isClaimed.username}</span></span>
-          <span class="claimed-time">${formatDateTime(isClaimed.claimedAt)}</span>
-        </button>
-      </div>
-    ` : `
-      <div class="card-claim">
-        <button class="claim-btn" onclick="claimItem('${row.itemKey}', '${row.url}')">Prendre</button>
-      </div>
-    `;
-
-    return `
-      <div class="card ${status} ${row.stale ? 'stale' : ''}">
-        <div class="card-top">
-          <img class="card-img" src="${row.imageUrl || ''}" onerror="this.style.display='none'" alt="">
-          <div class="card-info">
-            <div class="card-title">${row.title}</div>
-            <div class="card-meta">
-              ${statusBadge}
-              <span class="badge badge-blue">${row.search}</span>
-              ${row.pricingSource && row.pricingSource !== 'ebay' ? `<span class="badge badge-purple" style="font-size:9px">API</span>` : ''}
-              ${staleBadge}
-              ${firstSeen}
-              ${dismissBtn}
-            </div>
-            <div class="card-links">
-              <a href="${row.url}" target="_blank" rel="noopener" class="link-btn purple">Vinted ↗</a>
-              ${hasMatches ? row.matchedSales.filter(s => s.url).map((s, idx) =>
-                `<a href="${s.url}" target="_blank" rel="noopener" class="link-btn">eBay ${idx + 1} ↗</a>`
-              ).join('') : ''}
-            </div>
-          </div>
-        </div>
-        ${pricesHtml}
-        ${matchesHtml}
-        ${claimHtml}
-      </div>`;
-  }).join('')}</div>`;
-}
-
-function renderTableView(listings) {
-  if (listings.length === 0) {
-    return `<div class="no-data"><div class="no-data-icon">📭</div>Aucune annonce.</div>`;
-  }
-
-  return `<div class="table-wrap"><table>
-    <tr>
-      <th>Statut</th>
-      <th>Catégorie</th>
-      <th>Titre</th>
-      <th>Prix Vinted</th>
-      <th>eBay Matchs</th>
-      <th>eBay Moy.</th>
-      <th>Profit</th>
-      <th>%</th>
-      <th>Image Conf.</th>
-      <th>Prise par</th>
-      <th>Lien Vinted</th>
-    </tr>
-    ${listings.map(row => {
-      const status = getListingStatus(row);
-      const profit = row.profit;
-      const isClaimed = claims[row.itemKey];
-      const matchCount = row.matchedSales ? row.matchedSales.length : 0;
-      const avgSold = profit ? formatEur(profit.averageBuyerPaid) : '—';
-      const profitVal = profit ? formatEur(profit.profit) : '—';
-      const profitPct = profit ? profit.profitPercent.toFixed(1) + '%' : '—';
-      const imgConf = row.matchedSales && row.matchedSales.length > 0
-        ? row.matchedSales.map(s => s.imageMatch?.confidence || '?').join(', ')
-        : '—';
-
-      const statusBadge = status === 'opportunity'
-        ? '<span class="badge badge-green">OPP</span>'
-        : status === 'rejected'
-        ? '<span class="badge badge-orange">NON</span>'
-        : '<span class="badge badge-gray">—</span>';
-
-      return `<tr>
-        <td>${statusBadge}</td>
-        <td>${row.search}</td>
-        <td style="max-width:280px">${row.title}</td>
-        <td>${formatEur(row.vintedBuyerPrice)}</td>
-        <td>${matchCount}</td>
-        <td>${avgSold}</td>
-        <td style="color:${profit && profit.profit >= 0 ? 'var(--green)' : 'var(--red)'}">${profitVal}</td>
-        <td>${profitPct}</td>
-        <td>${imgConf}</td>
-        <td>${isClaimed ? `<span class="badge badge-purple">${isClaimed.username}</span>` : '—'}</td>
-        <td><a href="${row.url}" target="_blank" rel="noopener" class="link-btn purple">Vinted ↗</a></td>
-      </tr>`;
-    }).join('')}
-  </table></div>`;
-}
-
-function renderUnderpricedView() {
-  const alerts = scanData.underpricedAlerts || [];
-  if (alerts.length === 0) {
-    return `<div class="no-data"><div class="no-data-icon">✅</div>Aucune carte sous-évaluée détectée pour le moment.</div>`;
-  }
-
-  // Apply search filter if any
-  const filtered = searchQuery
-    ? alerts.filter(a => a.listing.title.toLowerCase().includes(searchQuery) || (a.search || '').toLowerCase().includes(searchQuery))
-    : alerts;
-
-  if (filtered.length === 0) {
-    return `<div class="no-data"><div class="no-data-icon">🔍</div>Aucun résultat pour "${searchQuery}".</div>`;
-  }
-
-  return `<div class="cards-grid">${filtered.map(alert => {
-    const listing = alert.listing;
-    return `
-      <div class="card underpriced">
-        <div class="card-top">
-          <img class="card-img" src="${listing.imageUrl || ''}" onerror="this.style.display='none'" alt="">
-          <div class="card-info">
-            <div class="card-title">${listing.title}</div>
-            <div class="card-meta">
-              <span class="badge badge-red">-${alert.discount}%</span>
-              <span class="badge badge-blue">${alert.search || ''}</span>
-              ${alert.matchedByImage ? '<span class="badge badge-purple">IMAGE MATCH</span>' : ''}
-            </div>
-            <div class="card-links">
-              <a href="${listing.url}" target="_blank" rel="noopener" class="link-btn purple">Vinted ↗</a>
-            </div>
-          </div>
-        </div>
-        <div class="underpriced-stats">
-          <div class="underpriced-stat">
-            <div class="underpriced-stat-label">Prix affiché</div>
-            <div class="underpriced-stat-value" style="color:var(--green)">${formatEur(listing.buyerPrice)}</div>
-          </div>
-          <div class="underpriced-stat">
-            <div class="underpriced-stat-label">Médiane Vinted</div>
-            <div class="underpriced-stat-value" style="color:var(--orange)">${formatEur(alert.medianPrice)}</div>
-          </div>
-          <div class="underpriced-stat">
-            <div class="underpriced-stat-label">Moyenne</div>
-            <div class="underpriced-stat-value">${formatEur(alert.avgPrice)}</div>
-          </div>
-          <div class="underpriced-stat">
-            <div class="underpriced-stat-label">Comparables</div>
-            <div class="underpriced-stat-value" style="color:var(--blue)">${alert.compCount}</div>
-          </div>
-          <div class="underpriced-stat">
-            <div class="underpriced-stat-label">Réduction</div>
-            <div class="underpriced-stat-value" style="color:var(--red)">-${alert.discount}%</div>
-          </div>
-        </div>
-      </div>`;
-  }).join('')}</div>`;
-}
-
-function renderConfigView() {
-  return `<div style="max-width:800px">
-    <h2 style="margin-bottom:16px;font-size:16px">Configuration active</h2>
-    <div id="configContent" style="font-size:13px;color:var(--text2)">Chargement...</div>
-  </div>`;
-}
-
-async function loadConfig() {
-  try {
-    const res = await fetch(BASE + '/api/config');
-    const cfg = await res.json();
-    const el = document.getElementById('configContent');
-    if (!el) return;
-
-    el.innerHTML = `
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-        <div style="background:var(--surface);padding:16px;border-radius:8px;border:1px solid var(--border)">
-          <h3 style="color:var(--text);font-size:14px;margin-bottom:12px">Seuils de profit</h3>
-          <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text2)">Min profit</span><span style="font-weight:700">${cfg.minProfitEur} €</span></div>
-          <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text2)">Min %</span><span style="font-weight:700">${cfg.minProfitPercent}%</span></div>
-          <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text2)">Max items/search</span><span style="font-weight:700">${cfg.maxItemsPerSearch}</span></div>
-          <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text2)">Frais Vinted</span><span style="font-weight:700">${cfg.vintedShippingEstimate} €</span></div>
-          <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text2)">Frais eBay</span><span style="font-weight:700">${cfg.ebayOutboundShippingEstimate} €</span></div>
-        </div>
-        <div style="background:var(--surface);padding:16px;border-radius:8px;border:1px solid var(--border)">
-          <h3 style="color:var(--text);font-size:14px;margin-bottom:12px">eBay Marketplaces</h3>
-          ${cfg.ebayBaseUrls.map(u => `<div style="padding:4px 0;font-size:12px">${u}</div>`).join('')}
-        </div>
-      </div>
-      <div style="margin-top:16px">
-        <h3 style="color:var(--text);font-size:14px;margin-bottom:12px">Recherches configurées</h3>
-        ${cfg.searches.map(s => `
-          <div style="background:var(--surface);padding:14px;border-radius:8px;border:1px solid var(--border);margin-bottom:8px">
-            <div style="font-weight:700;margin-bottom:6px">${s.name} <span style="color:var(--text2);font-weight:400;font-size:12px">(max ${s.maxPrice}€)</span></div>
-            <div style="font-size:11px;color:var(--text2)">
-              <div>Queries: ${s.vintedQueries.join(' | ')}</div>
-              ${s.requiredAllTokens ? `<div>Tous requis: ${s.requiredAllTokens.join(', ')}</div>` : ''}
-              ${s.requiredAnyTokens ? `<div>Au moins un: ${s.requiredAnyTokens.join(', ')}</div>` : ''}
-              ${s.blockedTokens && s.blockedTokens.length > 0 ? `<div style="color:var(--red)">Bloqués: ${s.blockedTokens.join(', ')}</div>` : ''}
-            </div>
-          </div>
-        `).join('')}
-      </div>
-    `;
   } catch (e) {
-    console.error('Config load error:', e);
+    alert('Erreur: ' + e.message);
   }
 }
 
-async function loadClaims() {
-  try {
-    const res = await fetch(BASE + '/api/claims');
-    const data = await res.json();
-    // Server returns {itemKey: {username, vintedUrl, claimedAt}, ...}
-    claims = data || {};
-  } catch (e) {
-    console.error('Claims load error:', e);
+// ─── Tendances de prix ────────────────────────────────────
+async function updateTrends() {
+  var data = await fetchJson('/api/price-trends');
+  var container = document.getElementById('trendsContainer');
+  var countBadge = document.getElementById('trendsCount');
+  if (!container) return;
+
+  var trends = (data && data.trends) || [];
+  if (countBadge) countBadge.textContent = trends.length;
+
+  if (trends.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-state-text">Pas encore assez d\'observations (min 5 par produit).</div></div>';
+    return;
   }
+
+  var html = '<ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;">';
+  for (var i = 0; i < trends.length; i++) {
+    var t = trends[i];
+    var td = t.trend || {};
+    var isRising = td.direction === 'rising';
+    var color = isRising ? 'var(--green)' : 'var(--red)';
+    var emoji = isRising ? '\uD83D\uDCC8' : '\uD83D\uDCC9'; // 📈 or 📉
+    var sign = td.changePercent > 0 ? '+' : '';
+    var fromVal = td.avgFirst != null ? td.avgFirst.toFixed(2) + '\u20ac' : '?';
+    var toVal   = td.avgLast  != null ? td.avgLast.toFixed(2)  + '\u20ac' : '?';
+    html += '<li style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);">' +
+      '<span style="font-size:18px;">' + emoji + '</span>' +
+      '<span style="flex:1;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + esc(t.name) + '">' + esc(t.name) + '</span>' +
+      '<span style="font-size:12px;color:var(--text2);">' + esc(t.category) + '</span>' +
+      '<span style="font-size:13px;font-weight:700;color:' + color + ';min-width:60px;text-align:right;">' + sign + td.changePercent + '%</span>' +
+      '<span style="font-size:11px;color:var(--text3);min-width:100px;text-align:right;">' + fromVal + ' \u2192 ' + toVal + '</span>' +
+      '</li>';
+  }
+  html += '</ul>';
+  container.innerHTML = html;
 }
 
-function render() {
-  if (!scanData) {
-    document.getElementById('mainContent').innerHTML =
-      '<div class="no-data"><div class="no-data-icon">⏳</div>Chargement des données...</div>';
-    return;
-  }
-
-  renderStats();
-  renderCategoryButtons();
-
-  const content = document.getElementById('mainContent');
-
-  if (currentView === 'config') {
-    content.innerHTML = renderConfigView();
-    loadConfig();
-    return;
-  }
-
-  if (currentView === 'underpriced') {
-    content.innerHTML = renderUnderpricedView();
-    return;
-  }
-
-  // Reverse order: latest scanned first
-  const allListings = [...(scanData.searchedListings || [])].reverse();
-  const filtered = filterListings(allListings);
-
-  if (currentView === 'cards') {
-    content.innerHTML = renderCardView(filtered);
+// ─── eBay quota badge ─────────────────────────────────────
+async function updateEbayQuota() {
+  var data = await fetchJson('/api/ebay-quota');
+  var badge = document.getElementById('ebayQuotaBadge');
+  if (!badge) return;
+  if (!data || data.limit == null) { badge.style.display = 'none'; return; }
+  var remaining = data.remaining;
+  var limit = data.limit;
+  badge.style.display = '';
+  if (remaining <= 0) {
+    badge.className = 'quota-badge red';
+    badge.textContent = 'eBay: \u00c9PUIS\u00c9 \u26d4';
   } else {
-    content.innerHTML = renderTableView(filtered);
+    var ratio = limit > 0 ? remaining / limit : 0;
+    var color = ratio > 0.5 ? 'green' : (ratio > 0.2 ? 'orange' : 'red');
+    badge.className = 'quota-badge ' + color;
+    badge.textContent = 'eBay: ' + remaining + '/' + limit;
   }
 }
 
-async function doRefresh() {
-  const btn = document.getElementById('refreshBtn');
-  btn.textContent = 'Chargement...';
-  btn.disabled = true;
-  await loadData();
-  btn.textContent = 'Actualiser';
-  btn.disabled = false;
+// ─── Price DB badge ────────────────────────────────────────
+async function updatePriceDbBadge() {
+  var data = await fetchJson('/api/price-database/stats');
+  var badge = document.getElementById('priceDbBadge');
+  if (!badge) return;
+  if (!data || data.totalProducts == null) { badge.style.display = 'none'; return; }
+  badge.style.display = '';
+  badge.textContent = '\uD83D\uDCCA Base: ' + data.totalProducts + ' produits';
+  var pdbCount = document.getElementById('priceDatabaseCount');
+  if (pdbCount) pdbCount.textContent = data.totalProducts;
+
+  var seenBadge = document.getElementById('seenListingsBadge');
+  if (seenBadge && data.seenListings != null) {
+    seenBadge.style.display = '';
+    seenBadge.textContent = '\uD83D\uDC41 Vus: ' + data.seenListings;
+  }
 }
 
-async function loadData() {
+// ─── Price Database Browser ────────────────────────────────
+var priceDatabaseState = {
+  loaded: false,
+  open: false,
+  data: [],
+  filtered: [],
+  sortField: 'name',
+  sortAsc: true,
+  category: 'all',
+  search: ''
+};
+
+function togglePriceDatabase() {
+  var body = document.getElementById('priceDatabaseBody');
+  var chevron = document.getElementById('priceDatabaseChevron');
+  priceDatabaseState.open = !priceDatabaseState.open;
+  body.style.display = priceDatabaseState.open ? '' : 'none';
+  chevron.textContent = priceDatabaseState.open ? '▼' : '▶';
+  if (priceDatabaseState.open && !priceDatabaseState.loaded) {
+    loadPriceDatabaseData();
+  }
+}
+
+async function loadPriceDatabaseData() {
+  var tbody = document.getElementById('priceDatabaseTableBody');
+  tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text2);padding:24px;">Chargement...</td></tr>';
+  var data = await fetchJson('/api/price-database/browse');
+  if (!data || !data.products) return;
+  priceDatabaseState.data = data.products;
+  priceDatabaseState.loaded = true;
+  var badge = document.getElementById('priceDatabaseCount');
+  if (badge) badge.textContent = data.products.length;
+  // Extract unique categories and render buttons dynamically
+  var cats = [];
+  data.products.forEach(function(p) { if (p.category && cats.indexOf(p.category) === -1) cats.push(p.category); });
+  renderPriceDbCategoryButtons(cats);
+  applyPriceDatabaseFilter();
+}
+
+function pdbCatLabel(cat) {
+  var labels = {
+    'pokemon': 'Pokémon', 'yugioh': 'Yu-Gi-Oh', 'lego': 'LEGO',
+    'topps-f1': 'Topps F1', 'one-piece': 'One Piece',
+    'topps-football': 'Topps Football', 'topps-ufc': 'Topps UFC',
+    'topps-tennis': 'Topps Tennis', 'topps-sport-general': 'Topps Sport General',
+    'topps-chrome-football': 'Topps Chrome Football', 'ebay': 'eBay', 'misc': 'Divers'
+  };
+  return labels[cat] || cat.split('-').map(function(w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(' ');
+}
+
+function renderPriceDbCategoryButtons(categories) {
+  var container = document.getElementById('priceDatabaseCategoryButtons');
+  if (!container) return;
+  var activeCat = priceDatabaseState.category || 'all';
+  var html = '<button class="btn btn-sm pdb-cat-btn" onclick="setPriceDbCategory(\'all\')" id="pdbcat-all" style="' +
+    (activeCat === 'all' ? 'background:var(--accent);color:#fff;border:1px solid var(--accent);' : 'background:var(--surface3);color:var(--text2);border:1px solid var(--border);') +
+    '">Tous</button>';
+  categories.slice().sort().forEach(function(cat) {
+    html += '<button class="btn btn-sm pdb-cat-btn" onclick="setPriceDbCategory(\'' + cat + '\')" id="pdbcat-' + cat + '" style="' +
+      (activeCat === cat ? 'background:var(--accent);color:#fff;border:1px solid var(--accent);' : 'background:var(--surface3);color:var(--text2);border:1px solid var(--border);') +
+      '">' + pdbCatLabel(cat) + '</button>';
+  });
+  container.innerHTML = html;
+}
+
+function setPriceDbCategory(cat) {
+  priceDatabaseState.category = cat;
+  document.querySelectorAll('.pdb-cat-btn').forEach(function(btn) {
+    var btnCat = btn.id.replace('pdbcat-', '') || 'all';
+    if (btnCat === cat) {
+      btn.style.background = 'var(--accent)'; btn.style.color = '#fff'; btn.style.borderColor = 'var(--accent)';
+    } else {
+      btn.style.background = 'var(--surface3)'; btn.style.color = 'var(--text2)'; btn.style.borderColor = 'var(--border)';
+    }
+  });
+  applyPriceDatabaseFilter();
+}
+
+function filterPriceDatabase() {
+  priceDatabaseState.search = (document.getElementById('priceDatabaseSearch').value || '').toLowerCase();
+  applyPriceDatabaseFilter();
+}
+
+function sortPriceDb(field) {
+  if (priceDatabaseState.sortField === field) {
+    priceDatabaseState.sortAsc = !priceDatabaseState.sortAsc;
+  } else {
+    priceDatabaseState.sortField = field;
+    priceDatabaseState.sortAsc = true;
+  }
+  ['name','category','avgVintedPrice','avgMarketPrice','spread','vintedObservations','marketObservations','lastSeen'].forEach(function(f) {
+    var el = document.getElementById('pdbsort-' + f);
+    if (!el) return;
+    el.textContent = f === field ? (priceDatabaseState.sortAsc ? ' ▲' : ' ▼') : '';
+  });
+  renderPriceDatabaseTable();
+}
+
+function applyPriceDatabaseFilter() {
+  var cat = priceDatabaseState.category;
+  var search = priceDatabaseState.search;
+  priceDatabaseState.filtered = priceDatabaseState.data.filter(function(p) {
+    if (cat !== 'all' && p.category !== cat) return false;
+    if (search && !p.name.toLowerCase().includes(search) && !p.category.toLowerCase().includes(search)) return false;
+    return true;
+  });
+  renderPriceDatabaseTable();
+}
+
+function renderPriceDatabaseTable() {
+  var f = priceDatabaseState.sortField;
+  var asc = priceDatabaseState.sortAsc;
+  var sorted = priceDatabaseState.filtered.slice().sort(function(a, b) {
+    var av = a[f] != null ? a[f] : '';
+    var bv = b[f] != null ? b[f] : '';
+    if (typeof av === 'number' && typeof bv === 'number') return asc ? av - bv : bv - av;
+    return asc ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
+  });
+  var tbody = document.getElementById('priceDatabaseTableBody');
+  if (sorted.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text2);padding:24px;">Aucun résultat</td></tr>';
+    return;
+  }
+  var html = '';
+  sorted.forEach(function(p) {
+    var trendColor = p.trend === 'rising' ? 'var(--green)' : p.trend === 'falling' ? 'var(--red)' : 'var(--text3)';
+    var trendIcon = p.trend === 'rising' ? '↑' : p.trend === 'falling' ? '↓' : '→';
+    var trendLabel = p.trend === 'rising' ? 'Hausse' : p.trend === 'falling' ? 'Baisse' : 'Stable';
+    var catLabel = pdbCatLabel(p.category);
+    var spreadStr = p.spread != null ? (p.spread > 0 ? '+' : '') + p.spread + '%' : '&mdash;';
+    var spreadColor = p.spread != null && p.spread > 50 ? 'var(--green)' : p.spread != null && p.spread > 20 ? 'var(--orange)' : 'var(--text2)';
+    html += '<tr>' +
+      '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + p.name + '">' + p.name + '</td>' +
+      '<td><span style="background:var(--surface3);padding:2px 6px;border-radius:4px;font-size:11px;">' + catLabel + '</span></td>' +
+      '<td style="text-align:right;color:var(--blue);">' + (p.avgVintedPrice > 0 ? p.avgVintedPrice.toFixed(2) + '&euro;' : '&mdash;') + '</td>' +
+      '<td style="text-align:right;font-weight:600;">' + (p.avgMarketPrice > 0 ? p.avgMarketPrice.toFixed(2) + '&euro;' : '&mdash;') + '</td>' +
+      '<td style="text-align:right;font-weight:600;color:' + spreadColor + ';">' + spreadStr + '</td>' +
+      '<td style="text-align:right;color:var(--text2);">' + (p.vintedObservations || 0) + '</td>' +
+      '<td style="text-align:right;color:var(--text2);">' + (p.marketObservations || 0) + '</td>' +
+      '<td style="color:var(--text2);">' + (p.lastSeen || '&mdash;') + '</td>' +
+      '<td style="color:' + trendColor + ';font-weight:600;">' + trendIcon + ' ' + trendLabel + '</td>' +
+      '</tr>';
+  });
+  tbody.innerHTML = html;
+}
+
+// ─── Refresh all data ─────────────────────────────────────
+async function refreshAll() {
+  await Promise.all([
+    updateStatus(),
+    updateStats(),
+    updateOpportunities(),
+    updateDiscovery(),
+    updateTrends(),
+    updateHistory(),
+    updatePortfolio(),
+    updateAgents(),
+    updatePriceDbBadge()
+  ]);
+}
+
+// ─── SSE: Real-time updates ───────────────────────────────
+function connectSSE() {
+  var evtSource = new EventSource(API_BASE + '/api/events');
+  evtSource.addEventListener('connected', function() {
+    console.log('SSE connected');
+  });
+  evtSource.onmessage = function(event) {
+    try {
+      var data = JSON.parse(event.data);
+      if (data.type === 'scan-progress') {
+        // Only update the progress counter — no full re-render
+        var progressEl = document.getElementById('scanProgress');
+        if (progressEl && data.scanned != null) {
+          progressEl.textContent = data.scanned + (data.total ? '/' + data.total : '') + ' trait\u00e9s';
+          progressEl.style.display = '';
+        }
+        if (lastScanningState !== 'scanning') {
+          lastScanningState = 'scanning';
+          document.getElementById('statusBadge').className = 'status-badge scanning';
+          document.getElementById('statusText').textContent = 'Scan en cours...';
+          document.getElementById('scanBtn').disabled = true;
+        }
+      } else if (data.type === 'scan-update' || data.type === 'claim' || data.type === 'unclaim' || data.type === 'portfolio-update' || data.type === 'opportunities-update') {
+        if (data.type === 'scan-update') {
+          lastScanningState = null; // Force re-check on next updateStatus call
+          var progressEl2 = document.getElementById('scanProgress');
+          if (progressEl2) progressEl2.style.display = 'none';
+        }
+        refreshAll();
+      }
+      if (data.type === 'agent-status') {
+        renderAgents(data.data);
+      }
+    } catch (e) { /* ignore */ }
+  };
+  evtSource.onerror = function() {
+    console.warn('SSE disconnected, retrying in 5s...');
+    evtSource.close();
+    setTimeout(connectSSE, 5000);
+  };
+}
+
+// ─── Immediate count & profit update (called on every user action) ───
+function adjustCounts(deltaActive, deltaDismissed, deltaProfit) {
+  var statOppsEl = document.getElementById('statOpps');
+  var countActiveEl = document.getElementById('countActive');
+  var countAllEl = document.getElementById('countAll');
+  var countDismissedEl = document.getElementById('countDismissed');
+  var oppCountEl = document.getElementById('oppCount');
+  var statOppsSubEl = document.getElementById('statOppsSub');
+  if (deltaActive !== 0) {
+    if (statOppsEl) statOppsEl.textContent = Math.max(0, (parseInt(statOppsEl.textContent) || 0) + deltaActive);
+    if (countActiveEl) countActiveEl.textContent = Math.max(0, (parseInt(countActiveEl.textContent) || 0) + deltaActive);
+    if (countAllEl) countAllEl.textContent = Math.max(0, (parseInt(countAllEl.textContent) || 0) + deltaActive);
+    if (oppCountEl) oppCountEl.textContent = Math.max(0, (parseInt(oppCountEl.textContent) || 0) + deltaActive);
+  }
+  if (deltaDismissed !== 0 && countDismissedEl) {
+    countDismissedEl.textContent = Math.max(0, (parseInt(countDismissedEl.textContent) || 0) + deltaDismissed);
+  }
+  if (deltaProfit !== 0 && currentTotalProfit !== null) {
+    currentTotalProfit = Math.max(0, currentTotalProfit + deltaProfit);
+    var profitEl = document.getElementById('statProfit');
+    if (profitEl) profitEl.textContent = euro(currentTotalProfit);
+  }
+  var dismissedCount = parseInt((countDismissedEl || {}).textContent || '') || 0;
+  if (statOppsSubEl) statOppsSubEl.textContent = dismissedCount > 0 ? dismissedCount + ' ignor\u00e9e(s)' : '';
+}
+
+// ─── Archive opportunity (🗑 button) ─────────────────────────────────
+async function archiveOpportunity(id) {
+  var archiveBtn = document.getElementById('dbtn-' + id);
+  if (archiveBtn) archiveBtn.disabled = true;
   try {
-    const res = await fetch(BASE + '/api/scan');
-    scanData = await res.json();
-    if (scanData.error) {
-      document.getElementById('mainContent').innerHTML =
-        `<div class="no-data"><div class="no-data-icon">⚠️</div>${scanData.error}</div>`;
+    var res = await fetch(API_BASE + '/api/opportunities/' + id, { method: 'DELETE' });
+    var data = await res.json();
+    if (!data.success) { alert('Erreur: ' + (data.error || 'Inconnu')); return; }
+    var profit = currentOppsProfit[id] || 0;
+    delete currentOppsProfit[id];
+    adjustCounts(-1, 0, profit > 0 ? -profit : 0);
+    updateOpportunities();
+  } catch (e) {
+    alert('Erreur: ' + e.message);
+  }
+}
+
+// ─── Verify image (GPT Vision auto-dismiss) ────────────────
+var verifyImageInFlight = new Set();
+
+async function verifyImage(id) {
+  if (verifyImageInFlight.has(id)) return;
+  verifyImageInFlight.add(id);
+  var btn = document.getElementById('verifybtn-' + id);
+  if (btn) {
+    btn.disabled = true;
+    btn.classList.add('verifying');
+    btn.title = 'V\u00e9rification vision\u2026';
+    btn.textContent = '\u23F3';
+  }
+  try {
+    var res = await fetch(API_BASE + '/api/verify-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id })
+    });
+    var data = await res.json();
+    if (!data.success) {
+      if (btn) { btn.classList.remove('verifying'); btn.textContent = '\uD83D\uDD0D'; btn.disabled = false; }
+      showVerifyToast('\u26A0\uFE0F Erreur v\u00e9rification\u00a0: ' + esc(data.error || 'Inconnu'), 'toast-warn');
+      return;
+    }
+    if (data.skipped) {
+      if (btn) { btn.classList.remove('verifying'); btn.textContent = '\uD83D\uDD0D'; btn.disabled = false; btn.title = data.reason || 'Images non disponibles'; }
+      showVerifyToast('\u26A0\uFE0F ' + esc(data.reason || 'Images non disponibles'), 'toast-warn');
+      return;
+    }
+    if (!data.match) {
+      // Masquer la ligne immédiatement (le SSE fait le refresh complet)
+      var row = document.querySelector('tr[data-opp-id="' + id + '"]');
+      if (row) {
+        row.style.transition = 'opacity 0.4s';
+        row.style.opacity = '0';
+        setTimeout(function() { if (row.parentNode) row.parentNode.removeChild(row); }, 400);
+        var banner = row.nextElementSibling;
+        if (banner && banner.classList && banner.classList.contains('vision-banner')) {
+          banner.style.transition = 'opacity 0.4s'; banner.style.opacity = '0';
+          setTimeout(function() { if (banner.parentNode) banner.parentNode.removeChild(banner); }, 400);
+        }
+      }
+      showVerifyToast('\u274C <b>Rejet\u00e9e</b> \u2014 ' + esc(data.reason || 'Cartes diff\u00e9rentes'), 'toast-err');
+    } else {
+      if (btn) {
+        btn.classList.remove('verifying');
+        btn.classList.add('confirmed');
+        btn.textContent = '\u2713';
+        btn.disabled = false;
+        btn.title = 'Confirm\u00e9e par GPT (' + (data.confidence || '?') + '%)';
+        btn.setAttribute('onclick', 'verifyOpportunity(\'' + id + '\')');
+      }
+      showVerifyToast('\u2705 <b>Confirm\u00e9e par GPT</b> (' + (data.confidence || '?') + '%)', 'toast-ok');
+    }
+  } catch (e) {
+    if (btn) { btn.classList.remove('verifying'); btn.textContent = '\uD83D\uDD0D'; btn.disabled = false; btn.title = 'Erreur: ' + e.message; }
+    showVerifyToast('\u26A0\uFE0F Erreur v\u00e9rification\u00a0: ' + esc(e.message), 'toast-warn');
+  } finally {
+    verifyImageInFlight.delete(id);
+  }
+}
+
+// ─── Verify opportunity ────────────────────────────────────
+var verifyInFlight = new Set();
+
+function showVerifyToast(html, cls) {
+  var c = document.getElementById('verify-toast-container');
+  if (!c) {
+    c = document.createElement('div');
+    c.id = 'verify-toast-container';
+    document.body.appendChild(c);
+  }
+  var t = document.createElement('div');
+  t.className = 'verify-toast ' + (cls || '');
+  t.innerHTML = html;
+  c.appendChild(t);
+  setTimeout(function() { if (t.parentNode) t.parentNode.removeChild(t); }, 5100);
+}
+
+async function verifyOpportunity(id) {
+  if (verifyInFlight.has(id)) return;
+  verifyInFlight.add(id);
+  var btn = document.getElementById('verifybtn-' + id);
+  if (btn) {
+    btn.disabled = true;
+    btn.classList.add('verifying');
+    btn.title = 'V\u00e9rification\u2026';
+    btn.textContent = '\u23F3';
+  }
+  try {
+    var res = await fetch(API_BASE + '/api/verify-opportunity', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id })
+    });
+    var data = await res.json();
+    if (!data.success) {
+      if (btn) {
+        btn.classList.remove('verifying');
+        btn.textContent = '\uD83D\uDD0D';
+        btn.disabled = false;
+        btn.title = 'V\u00e9rification \u00e9chou\u00e9e: ' + (data.error || 'Inconnu');
+      }
+      showVerifyToast('\u26A0\uFE0F V\u00e9rification \u00e9chou\u00e9e\u00a0: ' + esc(data.error || 'Inconnu'), 'toast-warn');
+      return;
+    }
+    var r = data.result;
+    // Update price and profit cells in-place
+    var row = document.querySelector('tr[data-opp-id="' + id + '"]');
+    if (row && r) {
+      var cells = row.querySelectorAll('td');
+      if (cells[5]) {
+        cells[5].innerHTML = euro(r.newPrice) +
+          ' <span style="font-size:10px;color:var(--text3)">via ' + esc(r.source) + '</span>';
+      }
+      if (cells[6] && r.newProfit != null) {
+        var pc = r.newProfit >= 15 ? 'profit-positive' : r.newProfit >= 0 ? 'profit-neutral' : 'profit-negative';
+        cells[6].className = pc;
+        cells[6].textContent = euro(r.newProfit);
+      }
+    }
+    // Vision result banner
+    var row2 = document.querySelector('tr[data-opp-id="' + id + '"]');
+    if (row2 && r.vision) {
+      var v = r.vision;
+      var existingBanner = row2.querySelector('.vision-banner');
+      if (existingBanner) existingBanner.remove();
+      var bannerRow = document.createElement('tr');
+      bannerRow.className = 'vision-banner';
+      var bannerCell = document.createElement('td');
+      bannerCell.colSpan = 99;
+      bannerCell.style.cssText = 'padding:4px 8px;font-size:11px;border-top:none;';
+      if (v.sameCard === false) {
+        bannerCell.style.background = 'rgba(255,80,80,0.12)';
+        bannerCell.style.color = '#ff6b6b';
+        bannerCell.innerHTML = '\u26A0\uFE0F <b>Images diff\u00e9rentes</b> (confiance: ' + v.confidence + '%) \u2014 ' + esc(v.summary || '') +
+          (v.differences && v.differences.length ? ' | ' + v.differences.map(function(d){return esc(d);}).join(', ') : '');
+      } else {
+        bannerCell.style.background = 'rgba(0,210,160,0.08)';
+        bannerCell.style.color = 'var(--green)';
+        bannerCell.innerHTML = '\u2705 <b>M\u00eame carte confirm\u00e9e</b> (confiance: ' + v.confidence + '%) \u2014 ' + esc(v.summary || '');
+      }
+      bannerRow.appendChild(bannerCell);
+      row2.after(bannerRow);
+    }
+    if (btn) {
+      btn.classList.remove('verifying');
+      btn.disabled = false;
+      if (r.vision && r.vision.sameCard === false) {
+        btn.classList.add('wrong');
+        btn.textContent = '\u26A0';
+        btn.title = '\u26A0 Images diff\u00e9rentes: ' + esc((r.vision && r.vision.summary) || '');
+        showVerifyToast('\u26A0\uFE0F <b>Images diff\u00e9rentes</b> \u2014 ' + esc(r.vision.summary || '') + ' (confiance\u00a0: ' + r.vision.confidence + '%)', 'toast-warn');
+      } else if (r.confirmed) {
+        btn.classList.add('confirmed');
+        btn.textContent = '\u2713';
+        btn.title = 'Confirm\u00e9: ' + euro(r.newPrice) + ' via ' + r.source;
+        showVerifyToast('\u2705 <b>Prix confirm\u00e9</b> \u2014 ' + euro(r.newPrice) + ' via ' + esc(r.source), 'toast-ok');
+      } else {
+        btn.classList.add('wrong');
+        btn.textContent = '\u26A0';
+        btn.title = 'Prix diff\u00e9rent (' + r.diff + '%): ' + euro(r.newPrice) + ' via ' + r.source;
+        showVerifyToast('\u26A0\uFE0F <b>Prix diff\u00e9rent</b> (' + r.diff + '%) \u2014 ' + euro(r.newPrice) + ' via ' + esc(r.source), 'toast-warn');
+      }
+    }
+  } catch (e) {
+    if (btn) {
+      btn.classList.remove('verifying');
+      btn.textContent = '\uD83D\uDD0D';
+      btn.disabled = false;
+      btn.title = 'Erreur: ' + e.message;
+    }
+    showVerifyToast('\u26A0\uFE0F Erreur\u00a0: ' + esc(e.message), 'toast-err');
+  } finally {
+    verifyInFlight.delete(id);
+  }
+}
+
+// ─── Feedback Modal ────────────────────────────────────────
+var currentFeedbackId = null;
+
+function showFeedbackNote(id) {
+  oppInteracting = true;
+  currentFeedbackId = id;
+  var modal = document.getElementById('feedbackModal');
+  var ta = document.getElementById('feedbackModalText');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+  if (ta) { ta.value = ''; ta.focus(); }
+}
+
+function closeFeedbackModal() {
+  var modal = document.getElementById('feedbackModal');
+  if (modal) modal.classList.add('hidden');
+  currentFeedbackId = null;
+  oppInteracting = false;
+  if (pendingOppsData) {
+    var c = document.getElementById('oppTableContainer');
+    if (c) { c.innerHTML = pendingOppsData; applyFeedbackStates(); }
+    pendingOppsData = null;
+  }
+}
+
+// ─── Feedback: submit ─────────────────────────────────────
+async function submitFeedback(id, validated, note) {
+  // Prevent double-submit (Fix 3)
+  if (feedbackInFlight.has(id)) return;
+  feedbackInFlight.add(id);
+  // Disable buttons immediately before async call
+  var vBtn = document.getElementById('vbtn-' + id);
+  var rBtn = document.getElementById('rbtn-' + id);
+  if (vBtn) vBtn.disabled = true;
+  if (rBtn) rBtn.disabled = true;
+  try {
+    var res = await fetch(API_BASE + '/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ opportunityId: id, validated: validated, note: note || null })
+    });
+    var data = await res.json();
+    if (!data.success) { alert('Erreur feedback: ' + (data.error || 'Inconnu')); return; }
+    if (!validated) {
+      delete currentOppsProfit[id]; // cleaned up; adjustCounts called by submitFeedbackModal
+    }
+    feedbackCache[id] = Boolean(validated);
+    // Visual confirmation for validate button
+    if (validated) {
+      if (vBtn) {
+        vBtn.classList.add('sent');
+        vBtn.title = 'Feedback envoy\u00e9 \u2713';
+        vBtn.onclick = null;
+      }
+    }
+  } catch (e) {
+    alert('Erreur: ' + e.message);
+  } finally {
+    feedbackInFlight.delete(id);
+  }
+}
+
+async function submitFeedbackModal() {
+  if (!currentFeedbackId) return;
+  var ta = document.getElementById('feedbackModalText');
+  var note = ta ? ta.value.trim() : '';
+  var id = currentFeedbackId;
+  var profit = currentOppsProfit[id] || 0; // capture before submitFeedback clears it
+  closeFeedbackModal();
+  await submitFeedback(id, false, note);
+  // Remove row immediately from DOM (server auto-dismisses via feedback endpoint)
+  var btn = document.getElementById('rbtn-' + id) || document.getElementById('vbtn-' + id);
+  if (btn) {
+    var tr = btn.closest('tr');
+    if (tr) tr.remove();
+  }
+  // Update all counts and profit total immediately
+  adjustCounts(-1, 1, profit > 0 ? -profit : 0);
+}
+
+// ─── Portfolio ────────────────────────────────────────────
+
+async function addToPortfolio(id) {
+  var btn = document.getElementById('portbtn-' + id);
+  if (btn) { btn.disabled = true; btn.textContent = '\u23f3'; }
+  try {
+    var res = await fetch(API_BASE + '/api/portfolio/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vintedId: id })
+    });
+    var data = await res.json();
+    if (data.success) {
+      // Remove from Active tab immediately — item is now in portfolio (status=bought)
+      var profit = currentOppsProfit[id] || 0;
+      delete currentOppsProfit[id];
+      var tr = btn ? btn.closest('tr') : null;
+      if (tr) tr.remove();
+      adjustCounts(-1, 0, profit > 0 ? -profit : 0);
+      loadPortfolio();
+    } else {
+      alert('Erreur: ' + (data.error || 'Inconnu'));
+      if (btn) { btn.disabled = false; btn.textContent = '\uD83D\uDCB0'; }
+    }
+  } catch (e) {
+    alert('Erreur: ' + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = '\uD83D\uDCB0'; }
+  }
+}
+
+async function markPortfolioSold(id) {
+  var price = prompt('Prix de vente r\u00e9el (\u20ac) ?');
+  if (!price || isNaN(Number(price))) return;
+  try {
+    var res = await fetch(API_BASE + '/api/portfolio/sold', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id, soldPrice: Number(price) })
+    });
+    var data = await res.json();
+    if (data.success) { loadPortfolio(); }
+    else { alert('Erreur: ' + (data.error || 'Inconnu')); }
+  } catch (e) { alert('Erreur: ' + e.message); }
+}
+
+async function updatePortfolio() {
+  try {
+    await fetch(API_BASE + '/api/portfolio/update-prices', { method: 'POST' });
+    loadPortfolio();
+  } catch (e) { console.error('Portfolio update error:', e); }
+}
+
+async function loadPortfolio() {
+  try {
+    var statsRes = await fetchJson('/api/portfolio/stats');
+    var itemsRes = await fetchJson('/api/portfolio');
+
+    var bar = document.getElementById('portfolioSummaryBar');
+    if (bar && statsRes) {
+      var sign = statsRes.unrealizedProfit >= 0 ? '+' : '';
+      bar.innerHTML = '<b>Investi:</b> ' + euro(statsRes.totalInvested) +
+        ' \u00a0|\u00a0 <b>Valeur actuelle:</b> ' + euro(statsRes.totalCurrentValue) +
+        ' \u00a0|\u00a0 <b>Profit latent:</b> <span style="color:' + (statsRes.unrealizedProfit >= 0 ? 'var(--green)' : 'var(--red)') + '">' + sign + euro(statsRes.unrealizedProfit) + '</span>' +
+        ' \u00a0|\u00a0 <b>R\u00e9alis\u00e9:</b> <span style="color:' + (statsRes.realizedProfit >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (statsRes.realizedProfit >= 0 ? '+' : '') + euro(statsRes.realizedProfit) + '</span>' +
+        (statsRes.avgROI != null ? ' \u00a0|\u00a0 <b>ROI moyen:</b> ' + statsRes.avgROI + '%' : '');
+    }
+
+    var badge = document.getElementById('portfolioCount');
+    if (badge && statsRes) { badge.textContent = statsRes.itemCount || 0; }
+
+    var container = document.getElementById('portfolioTableContainer');
+    if (!container) return;
+
+    if (!itemsRes || !Array.isArray(itemsRes) || itemsRes.length === 0) {
+      container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">\uD83D\uDCBC</div><div class="empty-state-title">Portfolio vide</div><div class="empty-state-text">Cliquez sur \uD83D\uDCB0 sur une opportunit\u00e9 pour l\'ajouter.</div></div>';
       return;
     }
 
-    // Attach itemKey to each listing
-    if (scanData.searchedListings) {
-      scanData.searchedListings.forEach(row => {
-        if (!row.itemKey) {
-          row.itemKey = extractItemKey(row.url);
-        }
-      });
+    var html = '<table><thead><tr><th>Titre</th><th>Cat\u00e9gorie</th><th>Achet\u00e9</th><th>Valeur actuelle</th><th>Profit latent</th><th>Statut</th><th>Actions</th></tr></thead><tbody>';
+    for (var i = 0; i < itemsRes.length; i++) {
+      var item = itemsRes[i];
+      var latentProfit = item.status === 'in_stock' ? Math.round((item.currentMarketPrice - item.boughtAt) * 100) / 100 : null;
+      var profitColor = latentProfit != null ? (latentProfit >= 0 ? 'var(--green)' : 'var(--red)') : 'var(--text3)';
+      var statusBadge = item.status === 'sold' ? '<span class="tag tag-sold">Vendu</span>' : '<span class="tag tag-active">En stock</span>';
+      var actionBtns = item.status === 'in_stock'
+        ? '<button class="btn btn-sm" style="background:var(--green-bg);color:var(--green);border:1px solid rgba(0,210,160,0.3)" onclick="markPortfolioSold(\'' + esc(item.id) + '\')">Vendu</button>'
+        : '<span style="color:var(--text3);font-size:11px;">' + esc(item.soldDate || '') + ' — ' + euro(item.soldAt) + '</span>';
+      html += '<tr>' +
+        '<td><div style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + esc(item.title) + '">' + esc(item.title) + '</div></td>' +
+        '<td><span style="font-size:11px;color:var(--text2)">' + esc(item.category) + '</span></td>' +
+        '<td>' + euro(item.boughtAt) + '<div style="font-size:10px;color:var(--text3)">' + esc(item.boughtDate || '') + '</div></td>' +
+        '<td>' + euro(item.status === 'in_stock' ? item.currentMarketPrice : item.soldAt) + '</td>' +
+        '<td style="color:' + profitColor + ';font-weight:600">' + (latentProfit != null ? (latentProfit >= 0 ? '+' : '') + euro(latentProfit) : (item.profit != null ? (item.profit >= 0 ? '+' : '') + euro(item.profit) : '\u2014')) + '</td>' +
+        '<td>' + statusBadge + '</td>' +
+        '<td>' + actionBtns + '</td>' +
+        '</tr>';
     }
-
-    document.getElementById('lastScan').textContent = `Dernier scan: ${formatDateTime(scanData.scannedAt)}`;
-    render();
+    html += '</tbody></table>';
+    container.innerHTML = html;
   } catch (e) {
-    console.error('Load error:', e);
-    document.getElementById('mainContent').innerHTML =
-      `<div class="no-data"><div class="no-data-icon">❌</div>Erreur de connexion au serveur.</div>`;
+    console.error('Portfolio load error:', e);
   }
 }
 
-function connectSSE() {
-  if (eventSource) eventSource.close();
+// ─── Performance Charts ──────────────────────────────────
+var profitChartInstance = null;
+var categoryChartInstance = null;
+var CHART_COLORS = ['#6c5ce7', '#00d2a0', '#ffa94d', '#74b9ff', '#ff6b6b', '#a29bfe', '#fdcb6e', '#55efc4', '#fab1a0', '#81ecec', '#636e72', '#dfe6e9'];
 
-  eventSource = new EventSource(BASE + '/api/events');
+async function loadPerformanceCharts() {
+  if (typeof Chart === 'undefined') return;
+  var data = await fetchJson('/api/performance-history');
+  if (!data) return;
 
-  eventSource.onmessage = (e) => {
-    try {
-      const msg = JSON.parse(e.data);
-      if (msg.type === 'scan-update') {
-        // New scan results available — reload immediately
-        loadData();
-        loadClaims();
-      } else if (msg.type === 'claim' && msg.data) {
-        // Server sends: {type:'claim', data:{username, vintedUrl, claimedAt}}
-        // We need itemKey — reload all claims to be safe
-        loadClaims().then(() => render());
-      } else if (msg.type === 'unclaim' && msg.data) {
-        delete claims[msg.data.itemKey];
-        render();
-      }
-    } catch (err) {
-      console.error('SSE parse error:', err);
+  var textColor = '#e8eaf0';
+  var gridColor = 'rgba(42,47,66,0.6)';
+
+  // ── Profit line chart ──
+  var profitCtx = document.getElementById('profitChart');
+  if (profitCtx) {
+    var labels = (data.profitHistory || []).map(function(d) { return d.date.slice(5); });
+    var profits = (data.profitHistory || []).map(function(d) { return d.profit; });
+    var counts = (data.profitHistory || []).map(function(d) { return d.count; });
+
+    if (profitChartInstance) {
+      profitChartInstance.data.labels = labels;
+      profitChartInstance.data.datasets[0].data = profits;
+      profitChartInstance.data.datasets[1].data = counts;
+      profitChartInstance.update('none');
+    } else {
+      profitChartInstance = new Chart(profitCtx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Profit (\u20ac)',
+              data: profits,
+              borderColor: '#00d2a0',
+              backgroundColor: 'rgba(0,210,160,0.1)',
+              borderWidth: 2,
+              fill: true,
+              tension: 0.3,
+              pointRadius: 3,
+              pointBackgroundColor: '#00d2a0',
+              yAxisID: 'y'
+            },
+            {
+              label: 'Opportunit\u00e9s',
+              data: counts,
+              borderColor: '#6c5ce7',
+              backgroundColor: 'rgba(108,92,231,0.1)',
+              borderWidth: 2,
+              fill: false,
+              tension: 0.3,
+              pointRadius: 3,
+              pointBackgroundColor: '#6c5ce7',
+              yAxisID: 'y1'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { labels: { color: textColor, boxWidth: 12, font: { size: 11 } } },
+            tooltip: { backgroundColor: '#1c2030', titleColor: textColor, bodyColor: textColor, borderColor: '#2a2f42', borderWidth: 1 }
+          },
+          scales: {
+            x: { ticks: { color: '#8890a8', font: { size: 10 } }, grid: { color: gridColor } },
+            y: { position: 'left', ticks: { color: '#00d2a0', font: { size: 10 }, callback: function(v) { return v + '\u20ac'; } }, grid: { color: gridColor } },
+            y1: { position: 'right', ticks: { color: '#6c5ce7', font: { size: 10 } }, grid: { drawOnChartArea: false } }
+          }
+        }
+      });
     }
-  };
+  }
 
-  eventSource.onerror = () => {
-    console.log('SSE disconnected, reconnecting in 3s...');
-    setTimeout(connectSSE, 3000);
-  };
+  // ── Category doughnut chart ──
+  var catCtx = document.getElementById('categoryChart');
+  if (catCtx) {
+    var catData = (data.categoryBreakdown || []).filter(function(c) { return c.profit > 0; }).slice(0, 10);
+    var catLabels = catData.map(function(c) { return c.category; });
+    var catProfits = catData.map(function(c) { return c.profit; });
+    var catColors = catData.map(function(_c, i) { return CHART_COLORS[i % CHART_COLORS.length]; });
+
+    if (categoryChartInstance) {
+      categoryChartInstance.data.labels = catLabels;
+      categoryChartInstance.data.datasets[0].data = catProfits;
+      categoryChartInstance.data.datasets[0].backgroundColor = catColors;
+      categoryChartInstance.update('none');
+    } else {
+      categoryChartInstance = new Chart(catCtx, {
+        type: 'doughnut',
+        data: {
+          labels: catLabels,
+          datasets: [{
+            data: catProfits,
+            backgroundColor: catColors,
+            borderColor: '#141722',
+            borderWidth: 2,
+            hoverBorderColor: '#e8eaf0',
+            hoverBorderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '55%',
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: { color: textColor, boxWidth: 12, font: { size: 11 }, padding: 12 }
+            },
+            tooltip: {
+              backgroundColor: '#1c2030',
+              titleColor: textColor,
+              bodyColor: textColor,
+              borderColor: '#2a2f42',
+              borderWidth: 1,
+              callbacks: {
+                label: function(ctx) {
+                  var total = ctx.dataset.data.reduce(function(a, b) { return a + b; }, 0);
+                  var pctVal = total > 0 ? Math.round(ctx.raw / total * 100) : 0;
+                  return ctx.label + ': ' + ctx.raw.toFixed(2) + '\u20ac (' + pctVal + '%)';
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+  }
 }
 
-// Initialize
-initUsername();
-loadData();
-loadClaims();
-connectSSE();
+// ─── Init ─────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  loadFeedbackCache().then(function() { refreshAll(); });
+  loadPortfolio();
+  connectSSE();
+  refreshTimer = setInterval(refreshAll, 30000);
+  setInterval(loadPortfolio, 60000);
+  updateEbayQuota();
+  setInterval(updateEbayQuota, 60000);
+  updatePriceDbBadge();
+  setInterval(updatePriceDbBadge, 120000);
+  loadPerformanceCharts();
+  setInterval(loadPerformanceCharts, 60000);
 
-// Auto-refresh every 2 minutes
-setInterval(loadData, 120000);
+  // Pause re-render while user hovers over the opportunity table
+  var oppArea = document.getElementById('oppTableContainer');
+  if (oppArea) {
+    oppArea.addEventListener('mouseenter', function() { oppInteracting = true; });
+    oppArea.addEventListener('mouseleave', function() {
+      oppInteracting = false;
+      if (pendingOppsData) {
+        oppArea.innerHTML = pendingOppsData;
+        pendingOppsData = null;
+        applyFeedbackStates();
+      }
+    });
+  }
+});
 </script>
+
+<!-- ─── Feedback Modal Overlay ──────────────────────────────── -->
+<div id="feedbackModal" class="hidden" onclick="if(event.target===this)closeFeedbackModal()">
+  <div class="feedback-modal-box">
+    <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:12px;">Signaler une erreur</div>
+    <textarea id="feedbackModalText" placeholder="Raison de l'erreur&#x2026;" rows="3"></textarea>
+    <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end;">
+      <button class="btn btn-sm" style="background:var(--surface3);color:var(--text2);border:1px solid var(--border)" onclick="closeFeedbackModal()">Annuler</button>
+      <button class="btn btn-sm btn-red" onclick="submitFeedbackModal()">Envoyer &rarr;</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

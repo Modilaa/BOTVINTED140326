@@ -361,11 +361,7 @@ function parseSoldPage(html, query, config) {
     const soldAt = parseSoldDate(soldText);
     const href = linkNode.attr('href') || '';
     const resolvedUrl = href.startsWith('http') ? href : new URL(href, config.ebayBaseUrl).toString();
-    const rawImageUrl = imageNode.attr('data-defer-load') || imageNode.attr('src') || '';
-    // Upgrade eBay thumbnails (225px/300px) to HD (1600px)
-    const imageUrl = rawImageUrl
-      .replace(/\/thumbs\/images\//g, '/images/')
-      .replace(/s-l\d+\.(?:jpg|png|webp)/i, 's-l1600.jpg');
+    const imageUrl = imageNode.attr('data-defer-load') || imageNode.attr('src') || '';
 
     if (!itemTitle || !itemPrice || !href) {
       return;
@@ -515,8 +511,7 @@ async function getEbaySoldListings(title, config) {
   }
 
   const cacheDir = path.join(config.outputDir, 'http-cache', 'ebay');
-  // Une seule query (la plus complète) pour éviter de consommer 3x le crédit Decodo
-  const queries = buildQueryVariants(title, 1);
+  const queries = buildQueryVariants(title, config.maxEbayQueryVariants);
   const dedupedListings = new Map();
 
   for (const baseUrl of config.ebayBaseUrls) {
@@ -537,8 +532,7 @@ async function getEbaySoldListings(title, config) {
             maxDelayMs: config.httpMaxDelayMs
           });
         } catch (err) {
-          // Blocked or timeout — skip this query on this domain, try next query
-          console.log(`    eBay ${new URL(baseUrl).hostname}: bloqué/timeout pour "${query}" — essai suivant`);
+          // Blocked or timeout on this domain — skip to next domain
           break;
         }
 

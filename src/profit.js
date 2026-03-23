@@ -32,11 +32,22 @@ function buildProfitAnalysis(vintedListing, soldListings, config) {
   };
 }
 
-function isOpportunity(analysis, config) {
+/**
+ * Détermine si une analyse de profit constitue une opportunité.
+ *
+ * @param {object} analysis - Résultat de buildProfitAnalysis
+ * @param {object} config - Config globale (seuils par défaut)
+ * @param {object} [search] - Objet search depuis config.js (optionnel)
+ *   search.minProfitEur et search.minProfitPercent surchargent les seuils globaux.
+ *   Utile pour des seuils différents par catégorie (ex: sneakers = 15€/25%).
+ */
+function isOpportunity(analysis, config, search) {
+  const minEur = (search && search.minProfitEur != null) ? search.minProfitEur : config.minProfitEur;
+  const minPct = (search && search.minProfitPercent != null) ? search.minProfitPercent : config.minProfitPercent;
   return (
     analysis &&
-    analysis.profit >= config.minProfitEur &&
-    analysis.profitPercent >= config.minProfitPercent
+    analysis.profit >= minEur &&
+    analysis.profitPercent >= minPct
   );
 }
 

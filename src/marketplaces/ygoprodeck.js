@@ -196,9 +196,12 @@ function extractYugiohSearchTerms(vintedTitle) {
     }
   }
 
-  // Extract set code (e.g., "PHNI-FR001", "RA02-EN001")
-  const setCodeMatch = vintedTitle.match(/([A-Z]{2,5}-[A-Z]{2}\d{3})/i);
-  const setCode = setCodeMatch ? setCodeMatch[1].toUpperCase() : null;
+  // Extract set code — full code first (e.g., "PHNI-FR001"), then simple prefix (e.g., "RA04", "MAGO", "LDK2")
+  const fullCodeMatch = vintedTitle.match(/\b([A-Z]{2,5}-[A-Z]{2}\d{3})\b/i);
+  const prefixCodeMatch = !fullCodeMatch ? vintedTitle.match(/\b([A-Z]{2,5}\d{1,3})\b/) : null;
+  const setCode = fullCodeMatch
+    ? fullCodeMatch[1].toUpperCase()
+    : (prefixCodeMatch ? prefixCodeMatch[1].toUpperCase() : null);
 
   // Extract rarity from title
   let rarity = null;
@@ -216,31 +219,36 @@ function extractYugiohSearchTerms(vintedTitle) {
 function findBestSetMatch(cardSets, terms) {
   if (!cardSets || cardSets.length === 0) return null;
 
-  // If we have a set code, match it
+  const lowestPrice = (sets) =>
+    [...sets].sort((a, b) => parseFloat(a.set_price || 0) - parseFloat(b.set_price || 0))[0];
+
+  // If we have a set code, try to match it
   if (terms.setCode) {
     const match = cardSets.find(s =>
       (s.set_code || '').toUpperCase().startsWith(terms.setCode.split('-')[0])
     );
-    if (match) return match;
+    if (match) return { ...match, _setCodeFound: true }; // Exact set code match — high confidence
+
+    // Set code was specified but NOT found in this card's printings.
+    // Do NOT fall through to rarity — that risks picking an expensive wrong variant
+    // (e.g. a 689€ promo when the actual card is a 4€ reprint).
+    // Use the LOWEST priced printing as a conservative estimate.
+    return { ...lowestPrice(cardSets), _setCodeFound: false };
   }
 
-  // If we have a rarity, filter by it
+  // No set code — try rarity matching
   if (terms.rarity) {
     const rarityMatches = cardSets.filter(s =>
       (s.set_rarity || '').toLowerCase().includes(terms.rarity.toLowerCase())
     );
     if (rarityMatches.length > 0) {
-      // Return the one with highest price
-      return rarityMatches.sort((a, b) =>
-        parseFloat(b.set_price || 0) - parseFloat(a.set_price || 0)
-      )[0];
+      // Return LOWEST priced rarity match (conservative — avoids anchoring on expensive promos)
+      return lowestPrice(rarityMatches);
     }
   }
 
-  // Default: return the set with the highest price (most valuable printing)
-  return [...cardSets].sort((a, b) =>
-    parseFloat(b.set_price || 0) - parseFloat(a.set_price || 0)
-  )[0];
+  // Default: return the LOWEST priced printing
+  return lowestPrice(cardSets);
 }
 
 async function getYugiohMarketPrice(vintedListing, config) {
@@ -321,28 +329,43 @@ async function getYugiohMarketPrice(vintedListing, config) {
       const tcgplayerPrice = parseFloat(prices.tcgplayer_price || 0);
       const ebayPrice = parseFloat(prices.ebay_price || 0);
 
-      // When rarity is specified, ALWAYS use set-specific price if available
+      // Price priority: set-specific > min across all sets > global aggregate.
+      // Using the global cardmarket aggregate risks returning the most expensive
+      // variant (e.g. a 690€ promo) for a listing that is clearly a cheap reprint.
       let bestPrice = null;
       let source = 'cardmarket';
 
-      if (terms.rarity && bestSet && setPrice > 0) {
-        // Use set-specific price for the matched rarity (USD → EUR)
+      if (bestSet && setPrice > 0) {
+        // Best case: the matched set has a price — use it directly
         bestPrice = setPrice * (config.usdToEurRate || 0.865);
         source = 'ygoprodeck-set';
-      } else if (cardmarketPrice > 0) {
-        bestPrice = cardmarketPrice;
-        source = 'cardmarket';
-      } else if (tcgplayerPrice > 0) {
-        bestPrice = tcgplayerPrice * (config.usdToEurRate || 0.865);
-        source = 'tcgplayer';
-      } else if (ebayPrice > 0) {
-        bestPrice = ebayPrice * (config.usdToEurRate || 0.865);
-        source = 'ebay-ygoprodeck';
+      } else {
+        // No set-specific price available. Use the MINIMUM price across all
+        // set printings to avoid anchoring on the most expensive variant.
+        const allSetPrices = (card.card_sets || [])
+          .map(s => parseFloat(s.set_price || 0))
+          .filter(p => p > 0);
+        const minSetPrice = allSetPrices.length > 0 ? Math.min(...allSetPrices) : 0;
+
+        if (minSetPrice > 0) {
+          bestPrice = minSetPrice * (config.usdToEurRate || 0.865);
+          source = 'ygoprodeck-set-min';
+        } else if (cardmarketPrice > 0) {
+          bestPrice = cardmarketPrice;
+          source = 'cardmarket';
+        } else if (tcgplayerPrice > 0) {
+          bestPrice = tcgplayerPrice * (config.usdToEurRate || 0.865);
+          source = 'tcgplayer';
+        } else if (ebayPrice > 0) {
+          bestPrice = ebayPrice * (config.usdToEurRate || 0.865);
+          source = 'ebay-ygoprodeck';
+        }
       }
 
       return {
         card,
         bestSet,
+        setCodeFound: bestSet?._setCodeFound, // true = exact set code match, false = miss, undefined = no code in title
         score,
         bestPrice,
         source,
@@ -378,6 +401,11 @@ async function getYugiohMarketPrice(vintedListing, config) {
         continue;
       }
 
+      // Build source URLs
+      const cardSlug = (r.card.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+      const ygoprodeckUrl = `https://ygoprodeck.com/card/${cardSlug}-${r.card.id}`;
+      const cmSearchUrl = `https://www.cardmarket.com/en/YuGiOh/Products/Singles?searchString=${encodeURIComponent(r.card.name)}`;
+
       matchedSale = {
         title: `${r.card.name}${r.bestSet ? ` (${r.bestSet.set_name} - ${r.bestSet.set_rarity})` : ''}`,
         price: r.bestPrice,
@@ -385,11 +413,13 @@ async function getYugiohMarketPrice(vintedListing, config) {
         shippingPrice: 0,
         soldAt: new Date().toISOString(),
         soldAtTs: Date.now(),
-        url: `https://www.cardmarket.com/en/YuGiOh/Products/Singles?searchString=${encodeURIComponent(r.card.name)}`,
+        url: cmSearchUrl,
         itemKey: `ygo-${r.card.id}`,
         imageUrl: apiImageUrl,
         marketplace: r.source || 'cardmarket',
         queryUsed: `YGOPRODeck API: ${r.card.name}`,
+        sourceUrl: ygoprodeckUrl,
+        cardmarketUrl: cmSearchUrl,
         match: {
           score: r.score,
           sharedTokens: [],
@@ -410,7 +440,8 @@ async function getYugiohMarketPrice(vintedListing, config) {
           cardmarketPrice: r.cardmarketPrice,
           tcgplayerPrice: r.tcgplayerPrice,
           ebayPrice: r.ebayPrice,
-          setPrice: r.setPrice
+          setPrice: r.setPrice,
+          setCodeFound: r.setCodeFound
         }
       };
       break;
@@ -418,12 +449,36 @@ async function getYugiohMarketPrice(vintedListing, config) {
 
     if (!matchedSale) return null;
 
+    // ── Sanity check: price ratio ────────────────────────────────────────────
+    const vintedPrice = vintedListing.buyerPrice || vintedListing.price || 0;
+    let confidence = matchedSale.match.score >= 8 ? 'high' : matchedSale.match.score >= 4 ? 'medium' : 'low';
+
+    // HARD SAFETY NET: reject insane price ratios regardless of source.
+    // Root cause of the 689€ false positive: set code miss → rarity fallback picks most expensive
+    // "secret rare" variant → source='ygoprodeck-set' → old cap was bypassed.
+    // Now we apply this cap ALWAYS. A 30x ratio (e.g. 4€ Vinted → 120€+ market) is almost
+    // always a wrong-set match, not a legitimate opportunity.
+    console.log(`[ygoprodeck] SAFETY CHECK: card="${matchedSale.apiData.cardName}", price=${matchedSale.price.toFixed(2)}, vintedPrice=${vintedPrice}, ratio=${vintedPrice > 0 ? (matchedSale.price / vintedPrice).toFixed(1) : 'N/A'} (buyerPrice=${vintedListing.buyerPrice}, listingPrice=${vintedListing.price})`);
+    if (vintedPrice > 0 && matchedSale.price > vintedPrice * 30) {
+      console.log(`[ygoprodeck] REJECTED: ${matchedSale.price.toFixed(2)}€ > 30x ${vintedPrice}€ (setCodeFound=${matchedSale.apiData.setCodeFound})`);
+      return null;
+    }
+    if (vintedPrice === 0) {
+      console.log(`[ygoprodeck] WARNING: vintedPrice=0, safety cap cannot fire — buyerPrice=${vintedListing.buyerPrice}, price=${vintedListing.price}`);
+    }
+
+    if (vintedPrice > 0 && matchedSale.price > vintedPrice * 20) {
+      console.log(`    [YGO] Sanity check: prix API ${matchedSale.price.toFixed(2)}€ >> vinted ${vintedPrice}€ → confidence plafonnée`);
+      matchedSale.match.score = Math.min(matchedSale.match.score, 20);
+      confidence = 'low';
+    }
+
     return {
       matchedSales: [matchedSale],
       pricingSource: 'ygoprodeck',
       bestMatch: matchedSale.apiData.cardName,
       marketPrice: matchedSale.price,
-      confidence: matchedSale.match.score >= 8 ? 'high' : matchedSale.match.score >= 4 ? 'medium' : 'low'
+      confidence
     };
   } catch (error) {
     console.error(`    YGOPRODeck API error: ${error.message}`);

@@ -58,7 +58,10 @@ function loadDotEnv() {
 
 loadDotEnv();
 
-const searches = [
+// ─── Searches TCG prioritaires (toujours actives) ────────────────────────────
+// Pokemon, Yu-Gi-Oh, Topps F1, One Piece TCG = sources de prix fiables
+// Topps Chrome Football et Panini Football désactivés (re-activer via SEARCH_TOPPS_FOOTBALL / SEARCH_PANINI)
+const tcgSearches = [
   {
     name: 'Topps F1',
     pricingSource: 'ebay',
@@ -75,23 +78,6 @@ const searches = [
     requiredAllTokens: ['topps'],
     requiredAnyTokens: ['f1', 'formula', 'turbo', 'attax'],
     blockedTokens: ['panini', 'pokemon', 'yugioh']
-  },
-  {
-    name: 'Topps Chrome Football',
-    pricingSource: 'ebay',
-    maxPrice: 120,
-    vintedQueries: [
-      'topps chrome ucc card',
-      'topps merlin chrome card',
-      'topps finest uefa card',
-      'topps chrome yamal',
-      'topps chrome bellingham',
-      'topps chrome musiala',
-      'topps merlin heritage'
-    ],
-    requiredAllTokens: ['topps'],
-    requiredAnyTokens: ['chrome', 'finest', 'merlin', 'uefa', 'champions', 'premier'],
-    blockedTokens: ['panini', 'futera', 'mundicromo', 'world cup', 'mondial']
   },
   {
     name: 'Pokemon',
@@ -133,35 +119,17 @@ const searches = [
     vintedQueries: [
       'one piece card game',
       'one piece tcg carte',
-      'one piece manga card rare',
+      'one piece card rare',
       'one piece card game leader',
-      'one piece manga rare',
       'one piece alt art carte',
-      'one piece OP13 carte'
+      'one piece OP13 carte',
+      'one piece tcg rare'
     ],
     requiredAnyTokens: ['one piece'],
-    blockedTokens: ['pokemon', 'yugioh', 'figurine', 'poster', 'manga livre', 'tapis', 'playmat'],
+    blockedTokens: ['pokemon', 'yugioh', 'figurine', 'poster', 'manga livre', 'tapis', 'playmat', 'tome', 'livre', 'roman', 'volume', 'coffret'],
     facebookEnabled: true,
     facebookQueries: ['one piece card game rare', 'one piece tcg carte'],
     facebookLocation: 'paris'
-  },
-  {
-    name: 'Panini Football',
-    pricingSource: 'ebay',
-    maxPrice: 120,
-    vintedQueries: [
-      'panini prizm football card',
-      'panini donruss football card',
-      'panini select football card',
-      'panini mosaic football card',
-      'panini chronicles football',
-      'panini prizm premier league',
-      'panini select premier league',
-      'panini prizm silver'
-    ],
-    requiredAllTokens: ['panini'],
-    requiredAnyTokens: ['prizm', 'donruss', 'select', 'mosaic', 'football', 'chronicles', 'optic', 'premier'],
-    blockedTokens: ['topps', 'pokemon', 'album', 'sticker', 'autocollant', 'vignette']
   },
   {
     name: 'Yu-Gi-Oh',
@@ -187,15 +155,286 @@ const searches = [
   }
 ];
 
+// ─── Catégories TCG désactivées (re-activer via SEARCH_TOPPS_FOOTBALL / SEARCH_PANINI) ─
+const toppsFootballSearches = parseBoolean(process.env.SEARCH_TOPPS_FOOTBALL, false) ? [
+  {
+    name: 'Topps Chrome Football',
+    pricingSource: 'ebay',
+    maxPrice: 120,
+    vintedQueries: [
+      'topps chrome ucc card',
+      'topps merlin chrome card',
+      'topps finest uefa card',
+      'topps chrome yamal',
+      'topps chrome bellingham',
+      'topps chrome musiala',
+      'topps merlin heritage'
+    ],
+    requiredAllTokens: ['topps'],
+    requiredAnyTokens: ['chrome', 'finest', 'merlin', 'uefa', 'champions', 'premier'],
+    blockedTokens: ['panini', 'futera', 'mundicromo', 'world cup', 'mondial']
+  }
+] : [];
+
+const paniniSearches = parseBoolean(process.env.SEARCH_PANINI, false) ? [
+  {
+    name: 'Panini Football',
+    pricingSource: 'ebay',
+    maxPrice: 120,
+    vintedQueries: [
+      'panini prizm football card',
+      'panini donruss football card',
+      'panini select football card',
+      'panini mosaic football card',
+      'panini chronicles football',
+      'panini prizm premier league',
+      'panini select premier league',
+      'panini prizm silver'
+    ],
+    requiredAllTokens: ['panini'],
+    requiredAnyTokens: ['prizm', 'donruss', 'select', 'mosaic', 'football', 'chronicles', 'optic', 'premier'],
+    blockedTokens: ['topps', 'pokemon', 'album', 'sticker', 'autocollant', 'vignette']
+  }
+] : [];
+
+// ─── Catégories multi-produits (Discovery v2) ────────────────────────────
+// Chaque catégorie est activable/désactivable via le .env
+
+const sneakersSearches = parseBoolean(process.env.SEARCH_SNEAKERS, false) ? [
+  {
+    name: 'Sneakers',
+    pricingSource: 'ebay',
+    isNonTcg: true,
+    ebayCategory: null, // Pas de restriction de catégorie — la query suffit
+    minProfitEur: 15,
+    minProfitPercent: 25,
+    maxPrice: 150,
+    vintedQueries: [
+      'nike dunk low',
+      'nike dunk high',
+      'jordan 1 retro',
+      'jordan 4 retro',
+      'new balance 550',
+      'new balance 2002r',
+      'adidas samba',
+      'adidas gazelle',
+      'yeezy 350',
+      'nike air max 90'
+    ],
+    requiredAnyTokens: ['nike', 'jordan', 'new balance', 'adidas', 'dunk', 'samba', 'yeezy', 'vans', 'converse', 'reebok', 'asics'],
+    blockedTokens: ['chaussette', 'lacet', 'semelle', 'boite vide', 'poster', 'tshirt', 'maillot', 'peluche', 'figurine'],
+    maxPricePerQuery: {
+      'nike dunk low': 100,
+      'nike dunk high': 100,
+      'jordan 1 retro': 150,
+      'jordan 4 retro': 150,
+      'new balance 550': 80,
+      'new balance 2002r': 80,
+      'adidas samba': 70,
+      'adidas gazelle': 60,
+      'yeezy 350': 120,
+      'nike air max 90': 80
+    }
+  }
+] : [];
+
+const legoSearches = parseBoolean(process.env.SEARCH_LEGO, false) ? [
+  {
+    name: 'LEGO',
+    pricingSource: 'rebrickable',
+    isNonTcg: true,
+    ebayCategory: null,
+    minProfitEur: 10,
+    minProfitPercent: 20,
+    maxPrice: 120,
+    vintedQueries: [
+      'lego star wars boite',
+      'lego technic complet',
+      'lego harry potter',
+      'lego creator complet',
+      'lego city complet',
+      'lego ideas',
+      'lego architecture'
+    ],
+    requiredAllTokens: ['lego'],
+    blockedTokens: ['duplo', 'mega bloks', 'playmobil', 'notice seule', 'sticker seul', 'autocollant seul', 'piece seule', 'lot pieces'],
+    maxPricePerQuery: {
+      'lego star wars boite': 120,
+      'lego technic complet': 80,
+      'lego harry potter': 80,
+      'lego creator complet': 60,
+      'lego city complet': 50,
+      'lego ideas': 100,
+      'lego architecture': 80
+    }
+  }
+] : [];
+
+const vintageSearches = parseBoolean(process.env.SEARCH_VINTAGE, false) ? [
+  {
+    name: 'Vetements Vintage',
+    pricingSource: 'ebay',
+    isNonTcg: true,
+    ebayCategory: null,
+    minProfitEur: 10,
+    minProfitPercent: 20,
+    maxPrice: 100,
+    vintedQueries: [
+      'ralph lauren vintage',
+      'the north face nuptse',
+      'the north face vintage',
+      'carhartt wip veste',
+      'carhartt detroit jacket',
+      'burberry trench vintage',
+      'stone island vintage',
+      'arcteryx veste'
+    ],
+    requiredAnyTokens: ['ralph lauren', 'north face', 'nuptse', 'burberry', 'carhartt', 'stone island', 'arcteryx', 'patagonia'],
+    blockedTokens: ['contrefacon', 'replica', 'inspired', 'style', 'casquette seule', 'chaussette'],
+    maxPricePerQuery: {
+      'ralph lauren vintage': 40,
+      'the north face nuptse': 100,
+      'the north face vintage': 80,
+      'carhartt wip veste': 80,
+      'carhartt detroit jacket': 80,
+      'burberry trench vintage': 100,
+      'stone island vintage': 100,
+      'arcteryx veste': 100
+    }
+  }
+] : [];
+
+const techSearches = parseBoolean(process.env.SEARCH_TECH, false) ? [
+  {
+    name: 'Tech',
+    pricingSource: 'ebay',
+    isNonTcg: true,
+    ebayCategory: null,
+    minProfitEur: 20,
+    minProfitPercent: 20,
+    maxPrice: 200,
+    vintedQueries: [
+      'airpods pro',
+      'airpods 3eme generation',
+      'iphone 13',
+      'iphone 12',
+      'ipad air',
+      'dyson airwrap',
+      'sony wh1000xm5',
+      'nintendo switch oled'
+    ],
+    requiredAnyTokens: ['airpods', 'iphone', 'ipad', 'dyson', 'sony wh', 'switch oled', 'samsung galaxy', 'gopro'],
+    blockedTokens: ['coque seule', 'etui seul', 'protection seule', 'film seul', 'cable seul', 'chargeur seul', 'pieces detachees', 'pour pieces', 'hs', 'casse', 'bloque', 'icloud'],
+    maxPricePerQuery: {
+      'airpods pro': 120,
+      'airpods 3eme generation': 80,
+      'iphone 13': 200,
+      'iphone 12': 150,
+      'ipad air': 200,
+      'dyson airwrap': 200,
+      'sony wh1000xm5': 150,
+      'nintendo switch oled': 200
+    }
+  }
+] : [];
+
+const retroSearches = parseBoolean(process.env.SEARCH_RETRO, false) ? [
+  {
+    name: 'Consoles Retro',
+    pricingSource: 'ebay',
+    isNonTcg: true,
+    ebayCategory: null,
+    minProfitEur: 10,
+    minProfitPercent: 20,
+    maxPrice: 120,
+    vintedQueries: [
+      'game boy color',
+      'game boy advance',
+      'gameboy advance sp',
+      'nintendo 64 console',
+      'super nintendo console',
+      'sega mega drive console',
+      'ps1 playstation console',
+      'psp sony'
+    ],
+    requiredAnyTokens: ['game boy', 'gameboy', 'nintendo 64', 'n64', 'super nintendo', 'snes', 'sega', 'mega drive', 'ps1', 'playstation 1', 'psp', 'gba'],
+    blockedTokens: ['jeu seul', 'boitier seul', 'coque seule', 'pieces detachees', 'pour pieces', 'hs', 'casse', 'ne fonctionne pas', 'en panne'],
+    maxPricePerQuery: {
+      'game boy color': 80,
+      'game boy advance': 60,
+      'gameboy advance sp': 80,
+      'nintendo 64 console': 100,
+      'super nintendo console': 80,
+      'sega mega drive console': 80,
+      'ps1 playstation console': 60,
+      'psp sony': 80
+    }
+  }
+] : [];
+
+const vinylesSearches = parseBoolean(process.env.SEARCH_VINYLES, false) ? [
+  {
+    name: 'Vinyles',
+    pricingSource: 'discogs',
+    isNonTcg: true,
+    ebayCategory: null,
+    minProfitEur: 5,
+    minProfitPercent: 25,
+    maxPrice: 60,
+    vintedQueries: [
+      'vinyle edition limitee',
+      'vinyle rap francais',
+      'vinyle rock classique',
+      'vinyl collector',
+      'vinyle jazz rare',
+      'disque vinyle france gall',
+      'disque vinyle serge gainsbourg'
+    ],
+    requiredAnyTokens: ['vinyle', 'vinyl', 'disque', '33 tours', 'lp', 'ep'],
+    blockedTokens: ['platine', 'tourne disque', 'lecteur', 'enceinte', 'ampli', 'cadre', 'decoration', 'poster', 'livre'],
+    maxPricePerQuery: {
+      'vinyle edition limitee': 60,
+      'vinyle rap francais': 30,
+      'vinyle rock classique': 25,
+      'vinyl collector': 60,
+      'vinyle jazz rare': 40,
+      'disque vinyle france gall': 40,
+      'disque vinyle serge gainsbourg': 40
+    }
+  }
+] : [];
+
+// ─── Fusion de toutes les recherches ─────────────────────────────────────
+const searches = [
+  ...tcgSearches,
+  ...toppsFootballSearches,
+  ...paniniSearches,
+  ...sneakersSearches,
+  ...legoSearches,
+  ...vintageSearches,
+  ...techSearches,
+  ...retroSearches,
+  ...vinylesSearches
+];
+
+// ─── Multi-plateforme sourcing ──────────────────────────────────────────────
+const sourcingPlatforms = parseList(process.env.SOURCING_PLATFORMS, ['vinted']);
+const cardmarketEnabled = parseBoolean(process.env.CARDMARKET_ENABLED, false);
+const leboncoinEnabled = parseBoolean(process.env.LEBONCOIN_ENABLED, false);
+
 module.exports = {
   searches,
+  sourcingPlatforms,
+  cardmarketEnabled,
+  leboncoinEnabled,
   minListingPriceEur: parseNumber(process.env.MIN_LISTING_PRICE_EUR, 2),
   underpricedThreshold: parseNumber(process.env.UNDERPRICED_THRESHOLD, 0.50),
   underpricedMinComps: parseNumber(process.env.UNDERPRICED_MIN_COMPS, 3),
   minProfitEur: parseNumber(process.env.MIN_PROFIT_EUR, 5),
   minProfitPercent: parseNumber(process.env.MIN_PROFIT_PERCENT, 20),
-  maxItemsPerSearch: parseNumber(process.env.MAX_ITEMS_PER_SEARCH, 80),
+  maxItemsPerSearch: parseNumber(process.env.MAX_ITEMS_PER_SEARCH, 30),
   requestTimeoutMs: parseNumber(process.env.REQUEST_TIMEOUT_MS, 60000),
+  vintedCountries: parseList(process.env.VINTED_COUNTRIES, ['be']),
   vintedShippingEstimate: parseNumber(process.env.VINTED_SHIPPING_ESTIMATE, 3.5),
   ebayOutboundShippingEstimate: parseNumber(process.env.EBAY_OUTBOUND_SHIPPING_ESTIMATE, 4.5),
   vintedPagesPerSearch: parseNumber(process.env.VINTED_PAGES_PER_SEARCH, 8),
@@ -220,7 +459,12 @@ module.exports = {
   gbpToEurRate: parseNumber(process.env.GBP_TO_EUR_RATE, 1.153),
   minImageSimilarity: parseNumber(process.env.MIN_IMAGE_SIMILARITY, 0.60),
   ebayAppId: process.env.EBAY_APP_ID || '',
+  ebayClientSecret: process.env.EBAY_CLIENT_SECRET || '',
+  pricingStrategy: process.env.PRICING_STRATEGY || 'api',
+  pokemonTcgApiKey: process.env.POKEMON_TCG_API_KEY || '',
   outputDir: path.resolve(process.cwd(), process.env.OUTPUT_DIR || 'output'),
+  cardmarketShippingEstimate: parseNumber(process.env.CARDMARKET_SHIPPING_ESTIMATE, 1.5),
+  leboncoinShippingEstimate: parseNumber(process.env.LEBONCOIN_SHIPPING_ESTIMATE, 4.0),
   telegram: {
     token: process.env.TELEGRAM_BOT_TOKEN || '',
     chatId: process.env.TELEGRAM_CHAT_ID || ''

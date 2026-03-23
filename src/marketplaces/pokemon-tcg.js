@@ -428,6 +428,16 @@ async function getPokemonMarketPrice(vintedListing, config) {
   console.log(`    eBay query: "${ebayQuery}"`);
 
   // ── Step 4: Fetch eBay sold listings ──────────────────────────────────────
+  // Skip if HTML scraping is disabled — direct proxy eBay scraping is also blocked
+  // when DECODO_SCRAPING_API is off (residential proxy exhausted).
+  const scrapingEnabled = ['1', 'true', 'yes', 'on'].includes(
+    (process.env.DECODO_SCRAPING_API || '').toLowerCase()
+  );
+  if (!scrapingEnabled) {
+    console.log(`    TCGdex+eBay: HTML scraping désactivé, skip`);
+    return null;
+  }
+
   let soldListings = [];
   try {
     soldListings = await getEbaySoldListings(ebayQuery, config);

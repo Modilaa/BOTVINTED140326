@@ -4,24 +4,50 @@ require('dns').setDefaultResultOrder('ipv4first');
 const fs = require('fs');
 const path = require('path');
 const config = require('./config');
-const { attachImageSignals } = require('./image-match');
-const { chooseBestSoldListings } = require('./matching');
-const { getEbaySoldListings } = require('./marketplaces/ebay');
-const { getPokemonMarketPrice, clearMemoryCache: clearPokemonCache } = require('./marketplaces/pokemon-tcg');
-const { getYugiohMarketPrice, clearMemoryCache: clearYugiohCache } = require('./marketplaces/ygoprodeck');
-const { getVintedListings } = require('./marketplaces/vinted');
+// Note: matching/image-match/ebay sont utilisés par le price-router, plus besoin ici
+const { clearMemoryCache: clearPokemonCache } = require('./marketplaces/pokemon-tcg');
+const { clearMemoryCache: clearYugiohCache } = require('./marketplaces/ygoprodeck');
+const { clearMemoryCache: clearPokemonTcgApiCache } = require('./marketplaces/pokemontcg-api');
+const { getPrice: getPriceViaRouter, clearPriceCache } = require('./price-router');
+const seenListings = require('./seen-listings');
+const { getVintedListings, fetchVintedDescription } = require('./marketplaces/vinted');
+const { enrichTitleFromDescription } = require('./description-enricher');
 const { getFacebookMarketplaceListings } = require('./marketplaces/facebook');
-const { buildTelegramMessage, sendTelegramMessage } = require('./notifier');
+const { getCardmarketListings, clearMemoryCache: clearCardmarketCache } = require('./marketplaces/cardmarket');
+const { getLeboncoinListings, clearMemoryCache: clearLeboncoinCache } = require('./marketplaces/leboncoin');
+const { purgeBlockedCache } = require('./http');
+const { buildTelegramMessage, sendTelegramMessage, sendOpportunityAlert } = require('./notifier');
+const { detectTrends, getStats: getPriceDbStats, recordVintedPrice, getUnderPricedProducts } = require('./price-database');
+const { checkAndAlert, errorCounts: apiErrorCounts } = require('./api-monitor');
 const { buildProfitAnalysis, isOpportunity } = require('./profit');
 const { findUnderpricedListings } = require('./underpriced');
+const { runPipeline } = require('./agents/orchestrator');
+const { extractCardLanguage, getLanguageSearchKeyword } = require('./agents/supervisor');
+const { computeConfidence, computeLiquidity } = require('./scoring');
+const { evaluateSeller } = require('./seller-score');
+const { runReverseScanner } = require('./scanners/reverse-scanner');
+const { runCardmarketScanner } = require('./scanners/cardmarket-scanner');
+const { compareCardImages } = require('./vision-verify');
+
+// Stocke le quota eBay du dernier scan pour l'inclure dans le résumé
+let _lastEbayQuota = null;
 
 async function ensureOutputDir(outputDir) {
   await fs.promises.mkdir(outputDir, { recursive: true });
 }
 
+// Global filter: remove physical manga/book listings from ALL categories.
+// Vinted queries for TCG cards frequently surface manga volumes, novels, and
+// collector boxes that have nothing to do with the card game.
+const MANGA_BOOK_WORDS = ['tome', 'manga', 'livre', 'roman', 'volume', 'coffret', 'book'];
+function isMangaListing(title) {
+  const lower = (title || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return MANGA_BOOK_WORDS.some(word => new RegExp(`\\b${word}\\b`).test(lower));
+}
+
 // Save current scan state to disk and notify dashboard
 // previousListings = cards from previous scans (history) to keep visible during scan
-async function flushProgress(outputDir, opportunities, underpricedAlerts, searchedListings, previousListings) {
+async function flushProgress(outputDir, opportunities, underpricedAlerts, searchedListings, previousListings, scannedSoFar, totalItems) {
   // Combine current scan progress with previous history
   const previousByUrl = new Map();
   for (const prev of previousListings) {
@@ -48,8 +74,42 @@ async function flushProgress(outputDir, opportunities, underpricedAlerts, search
   const outputPath = path.join(outputDir, 'latest-scan.json');
   await fs.promises.writeFile(outputPath, JSON.stringify(snapshot, null, 2));
   if (global._broadcastSSE) {
-    global._broadcastSSE({ type: 'scan-update' });
+    global._broadcastSSE({ type: 'scan-progress', scanned: scannedSoFar || searchedListings.length, total: totalItems || 0 });
   }
+}
+
+/**
+ * Deduplique les listings multi-plateforme.
+ * Garde la version la moins chere si le meme titre apparait sur 2 plateformes.
+ */
+function deduplicateListings(listings) {
+  const byUrl = new Map();
+  const byNormalizedTitle = new Map();
+
+  for (const listing of listings) {
+    // Dedup exact par URL
+    if (byUrl.has(listing.url)) continue;
+    byUrl.set(listing.url, listing);
+
+    // Dedup par titre normalise : garder le moins cher
+    const normTitle = (listing.title || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 80);
+    if (normTitle.length < 10) continue; // Titre trop court pour dedup
+
+    const existing = byNormalizedTitle.get(normTitle);
+    if (existing) {
+      // Garder le moins cher
+      if (listing.buyerPrice < existing.buyerPrice) {
+        byUrl.delete(existing.url);
+        byNormalizedTitle.set(normTitle, listing);
+      } else {
+        byUrl.delete(listing.url);
+      }
+    } else {
+      byNormalizedTitle.set(normTitle, listing);
+    }
+  }
+
+  return [...byUrl.values()];
 }
 
 async function runScan(previousListings) {
@@ -58,23 +118,102 @@ async function runScan(previousListings) {
   const underpricedAlerts = [];
   const minPrice = config.minListingPriceEur || 2;
 
+  // ─── Log quota eBay Browse API avant le scan ───────────────────────────────
+  if (config.ebayAppId && config.ebayClientSecret) {
+    try {
+      const { getEbayQuota, markQuotaExhausted: markEbayQuotaExhausted, resetEbayQuota } = require('./marketplaces/ebay-api');
+      // Reset the exhaustion flag at the start of each scan cycle
+      resetEbayQuota();
+      const quota = await getEbayQuota(config);
+      if (quota) {
+        const resetMs = quota.resetTime ? new Date(quota.resetTime).getTime() - Date.now() : 0;
+        const resetH = Math.floor(Math.max(0, resetMs) / 3600000);
+        const resetMin = Math.floor((Math.max(0, resetMs) % 3600000) / 60000);
+        const resetStr = resetMs > 0 ? ` (reset dans ${resetH}h${resetMin}m)` : '';
+        _lastEbayQuota = quota;
+        if (quota.remaining === 0) {
+          console.log(`[QUOTA] eBay quota épuisé (0/${quota.limit})${resetStr} → Browse API désactivée pour ce scan`);
+          markEbayQuotaExhausted();
+          checkAndAlert('ebay-quota-zero', true, `Quota eBay Browse API épuisé ! (0/${quota.limit})${resetStr}`);
+          checkAndAlert('ebay-quota-low', true, `Quota eBay: 0/${quota.limit}`);
+        } else if (quota.remaining < 500) {
+          console.log(`[QUOTA] ⚠ eBay quota bas: ${quota.remaining}/${quota.limit} — scan réduit recommandé`);
+          checkAndAlert('ebay-quota-zero', false, '');
+          checkAndAlert('ebay-quota-low', true, `Quota eBay bas: ${quota.remaining}/${quota.limit} restants${resetStr}`);
+        } else {
+          console.log(`[QUOTA] eBay Browse API: ${quota.remaining}/${quota.limit} restants${resetStr}`);
+          checkAndAlert('ebay-quota-zero', false, '');
+          checkAndAlert('ebay-quota-low', false, '');
+        }
+      }
+    } catch { /* non-critique */ }
+  }
+
+  // Purge blocked pages from cache before scanning
+  const ebayCacheDir = path.join(config.outputDir, 'http-cache', 'ebay');
+  const cardmarketCacheDir = path.join(config.outputDir, 'http-cache', 'cardmarket');
+  const leboncoinCacheDir = path.join(config.outputDir, 'http-cache', 'leboncoin');
+  await purgeBlockedCache(ebayCacheDir);
+  await purgeBlockedCache(cardmarketCacheDir);
+  await purgeBlockedCache(leboncoinCacheDir);
+
+  const platforms = config.sourcingPlatforms || ['vinted'];
+
   for (const search of config.searches) {
-    console.log(`Scan Vinted: ${search.name}`);
+    console.log(`Scan [${platforms.join(',')}]: ${search.name}`);
+  try {
 
     let listings = [];
-    try {
-      listings = await getVintedListings(search, config);
-    } catch (error) {
-      console.error(`Impossible de lire Vinted pour ${search.name}: ${error.message}`);
-      continue;
+
+    // ─── 1. Vinted (toujours actif si dans les platforms) ──────────────
+    if (platforms.includes('vinted')) {
+      try {
+        const vintedListings = await getVintedListings(search, config);
+        // Tag chaque listing avec sa plateforme source
+        for (const l of vintedListings) { l.platform = l.platform || 'vinted'; }
+        listings = listings.concat(vintedListings);
+        console.log(`  Vinted: ${vintedListings.length} annonce(s)`);
+        checkAndAlert('vinted-empty', vintedListings.length === 0, `Vinted retourne 0 annonces pour "${search.name}" — possible blocage`);
+      } catch (error) {
+        console.error(`  Vinted erreur pour ${search.name}: ${error.message}`);
+      }
     }
 
-    // Also scan Facebook Marketplace if enabled for this search
+    // ─── 2. Cardmarket sourcing (si active) ───────────────────────────
+    if (platforms.includes('cardmarket') && config.cardmarketEnabled) {
+      try {
+        console.log(`  Scan Cardmarket: ${search.name}`);
+        const cmListings = await getCardmarketListings(search, config);
+        if (cmListings.length > 0) {
+          console.log(`  Cardmarket: ${cmListings.length} annonce(s) ajoutees`);
+          listings = listings.concat(cmListings);
+        }
+      } catch (error) {
+        console.error(`  Cardmarket erreur pour ${search.name}: ${error.message}`);
+      }
+    }
+
+    // ─── 3. Leboncoin sourcing (si active) ────────────────────────────
+    if (platforms.includes('leboncoin') && config.leboncoinEnabled) {
+      try {
+        console.log(`  Scan Leboncoin: ${search.name}`);
+        const lbcListings = await getLeboncoinListings(search, config);
+        if (lbcListings.length > 0) {
+          console.log(`  Leboncoin: ${lbcListings.length} annonce(s) ajoutees`);
+          listings = listings.concat(lbcListings);
+        }
+      } catch (error) {
+        console.error(`  Leboncoin erreur pour ${search.name}: ${error.message}`);
+      }
+    }
+
+    // ─── 4. Facebook Marketplace (existant) ───────────────────────────
     if (search.facebookEnabled && process.env.APIFY_API_KEY) {
       try {
         console.log(`  Scan Facebook Marketplace: ${search.name}`);
         const fbListings = await getFacebookMarketplaceListings(search, config);
         if (fbListings.length > 0) {
+          for (const l of fbListings) { l.platform = l.platform || 'facebook'; }
           console.log(`  Facebook: ${fbListings.length} annonce(s) ajoutees`);
           listings = listings.concat(fbListings);
         }
@@ -83,11 +222,21 @@ async function runScan(previousListings) {
       }
     }
 
+    // ─── Deduplication multi-plateforme ───────────────────────────────
+    // Deduplique par titre normalise (meme carte sur 2 plateformes)
+    const deduped = deduplicateListings(listings);
+
     // Filter out bait listings (< 2 EUR = auction bait)
-    const validListings = listings.filter((l) => l.buyerPrice >= minPrice);
-    const filtered = listings.length - validListings.length;
-    if (filtered > 0) {
-      console.log(`  ${listings.length} brutes -> ${validListings.length} valides (${filtered} < ${minPrice}EUR ignorees)`);
+    const priceFiltered = deduped.filter((l) => l.buyerPrice >= minPrice);
+    // Global filter: remove manga/book listings regardless of category
+    const validListings = priceFiltered.filter((l) => !isMangaListing(l.title));
+    const priceDrop = deduped.length - priceFiltered.length;
+    const mangaDrop = priceFiltered.length - validListings.length;
+    if (priceDrop > 0 || mangaDrop > 0) {
+      const details = [];
+      if (priceDrop > 0) details.push(`${priceDrop} < ${minPrice}EUR`);
+      if (mangaDrop > 0) details.push(`${mangaDrop} manga/livre`);
+      console.log(`  ${listings.length} brutes -> ${validListings.length} valides (${details.join(', ')} ignorées)`);
     } else {
       console.log(`  ${validListings.length} annonce(s) candidates.`);
     }
@@ -100,59 +249,91 @@ async function runScan(previousListings) {
     }
 
     const pricingSource = search.pricingSource || 'ebay';
-    const useApi = pricingSource !== 'ebay';
-    if (useApi) {
-      console.log(`  Source de prix: ${pricingSource} (API directe)`);
+
+    // TOUJOURS utiliser le price-router — il gère les fallbacks automatiquement
+    // (Browse API → API spécifique → Cardmarket → HTML scraping)
+    console.log(`  Source de prix: ${pricingSource} via price-router`);
+
+    // Limiter à 30 items max par catégorie, triés par prix croissant
+    // (les moins chers = plus de chances d'arbitrage)
+    const maxItems = config.maxItemsPerSearch || 30;
+    const itemsToProcess = validListings
+      .slice()
+      .sort((a, b) => (a.buyerPrice || 0) - (b.buyerPrice || 0))
+      .slice(0, maxItems);
+    if (validListings.length > maxItems) {
+      console.log(`  Cap: ${maxItems} items retenus sur ${validListings.length} (les moins chers d'abord)`);
     }
 
-    // For eBay-based searches, limit items to avoid rate limiting
-    const effectiveLimit = useApi ? validListings.length : Math.min(validListings.length, config.maxItemsPerSearch);
-    const itemsToProcess = validListings.slice(0, effectiveLimit);
+    // ─── Enrichissement des titres via description Vinted ─────────────────────
+    // Améliore la précision du matching eBay : le titre est souvent trop vague.
+    // On scrape la description de chaque annonce Vinted validée (pas les 150 brutes).
+    // La description révèle: chrome/refractor/base, RC, /299, etc.
+    const vintedToEnrich = itemsToProcess.filter(
+      (l) => (l.platform === 'vinted' || !l.platform) && l.url
+    );
+    if (vintedToEnrich.length > 0) {
+      console.log(`  Enrichissement descriptions: ${vintedToEnrich.length} annonce(s) Vinted...`);
+      for (const listing of vintedToEnrich) {
+        try {
+          const description = await fetchVintedDescription(listing.url, config);
+          if (description) {
+            listing.description = description;
+            const enriched = enrichTitleFromDescription(listing.title, description);
+            if (enriched !== listing.title) {
+              listing.enrichedTitle = enriched;
+              console.log(`    [ENRICH] "${listing.title.slice(0, 45)}" → "${enriched.slice(0, 55)}"`);
+            }
+          }
+        } catch {
+          // Non-fatal — le titre original sera utilisé
+        }
+      }
+    }
 
     for (let i = 0; i < itemsToProcess.length; i += 1) {
       const listing = itemsToProcess[i];
       try {
+        // Record Vinted price for every listing (before seen-check, to always track prices)
+        if (listing.id && listing.buyerPrice > 0 && (!listing.platform || listing.platform === 'vinted')) {
+          recordVintedPrice(listing.title, search.name, listing.buyerPrice, listing.id, listing.vintedCountry || 'be');
+        }
+
+        // Skip listings already processed in the last 24h with a definitive result
+        if (listing.id && seenListings.isAlreadySeen(listing.id)) {
+          console.log(`[seen] Skip ${listing.id} "${listing.title.slice(0, 50)}" (déjà traité: ${seenListings.getSeenResult(listing.id)})`);
+          continue;
+        }
+
         console.log(`  [${i + 1}/${itemsToProcess.length}] ${listing.title.slice(0, 60)}...`);
 
         let matchedSales = [];
+        let sourceUrls = [];
+        let resultCount = 0;
 
-        if (pricingSource === 'pokemon-tcg-api') {
-          // Use Pokemon TCG API for pricing
-          const apiResult = await getPokemonMarketPrice(listing, config);
-          if (apiResult && apiResult.matchedSales.length > 0) {
-            matchedSales = apiResult.matchedSales;
-            console.log(`    API: ${apiResult.bestMatch} -> ${apiResult.marketPrice.toFixed(2)} EUR (${apiResult.confidence})`);
-          } else {
-            console.log(`    API: pas de match Pokemon`);
-          }
-        } else if (pricingSource === 'ygoprodeck') {
-          // Use YGOPRODeck API for pricing
-          const apiResult = await getYugiohMarketPrice(listing, config);
-          if (apiResult && apiResult.matchedSales.length > 0) {
-            matchedSales = apiResult.matchedSales;
-            console.log(`    API: ${apiResult.bestMatch} -> ${apiResult.marketPrice.toFixed(2)} EUR (${apiResult.confidence})`);
-          } else {
-            console.log(`    API: pas de match Yu-Gi-Oh`);
-          }
+        // Price Router — gère automatiquement les fallbacks:
+        // Browse API → API spécifique (YGOPRODeck/PokemonTCG) → Cardmarket → HTML
+        const routerResult = await getPriceViaRouter(listing, pricingSource, config, search);
+        if (routerResult && routerResult.matchedSales.length > 0) {
+          matchedSales = routerResult.matchedSales;
+          sourceUrls = routerResult.sourceUrls || [];
+          resultCount = routerResult.resultCount || matchedSales.length;
+          console.log(`    Router [${routerResult.pricingSource}]: ${routerResult.bestMatch} -> ${routerResult.marketPrice.toFixed(2)} EUR (${routerResult.confidence})`);
         } else {
-          // eBay scraping flow (Topps, Panini, One Piece, etc.)
-          const soldListings = await getEbaySoldListings(listing.title, config);
-          const validSoldListings = soldListings.filter((s) => s.totalPrice >= minPrice);
-          const textMatches = chooseBestSoldListings(listing, validSoldListings);
-          matchedSales = await attachImageSignals(listing, textMatches, config);
-
-          if (textMatches.length > 0 && matchedSales.length === 0) {
-            console.log(`    ${textMatches.length} match(es) texte rejete(s) par image.`);
-          } else if (matchedSales.length > 0) {
-            const avgScore = matchedSales.reduce((s, m) => s + (m.imageMatch?.score || 0), 0) / matchedSales.length;
-            console.log(`    ${matchedSales.length} match(es) valide(s) (img: ${(avgScore * 100).toFixed(0)}%)`);
-          }
+          console.log(`    Router: pas de match pour "${listing.title.slice(0, 50)}"`);
         }
 
         const profit = buildProfitAnalysis(listing, matchedSales, config);
 
+        // Langue détectée pour traçabilité
+        const rowDetectedLang = extractCardLanguage(listing.title, listing.rawTitle);
+
+        // Source réelle utilisée par le router (peut différer de la config)
+        const actualPricingSource = (routerResult && routerResult.pricingSource) || pricingSource;
+
         const row = {
           search: search.name,
+          route: 'vinted→ebay',
           title: listing.title,
           vintedListedPrice: listing.listedPrice,
           vintedBuyerPrice: listing.buyerPrice,
@@ -160,23 +341,150 @@ async function runScan(previousListings) {
           url: listing.url,
           imageUrl: listing.imageUrl,
           rawTitle: listing.rawTitle,
-          pricingSource,
+          enrichedTitle: listing.enrichedTitle || null,
+          platform: listing.platform || 'vinted',
+          vintedCountry: listing.vintedCountry || null,
+          vintedCountryFlag: listing.vintedCountryFlag || null,
+          pricingSource: actualPricingSource,
+          detectedLanguage: rowDetectedLang,
+          resultCount,
+          scanCount: (routerResult && routerResult.scanCount) || null,
           matchedSales,
+          ebayMatchImageUrl: (matchedSales[0] && matchedSales[0].imageUrl) || null,
+          sourceUrls,
           profit
         };
 
+        // Seller score (données vendeur Vinted si disponibles)
+        row.sellerScore = evaluateSeller(listing);
+
+        // Auto-vision: run BEFORE computeConfidence so the result informs the score.
+        // GPT-4o mini verdict → computeConfidence returns 0 on reject (instant gate fail).
+        if (row.imageUrl && row.ebayMatchImageUrl && matchedSales.length > 0 && process.env.OPENAI_API_KEY) {
+          try {
+            console.log(`[vision-auto] Vérification image: "${row.title.slice(0, 50)}"`);
+            const visionResult = await compareCardImages(row.imageUrl, row.ebayMatchImageUrl);
+            if (visionResult) {
+              row.visionVerified = true;
+              row.visionResult = visionResult;
+              if (visionResult.sameCard === false) {
+                console.log(`[vision-auto] ❌ REJET: "${row.title.slice(0, 50)}" — ${visionResult.summary}`);
+              } else {
+                console.log(`[vision-auto] ✅ CONFIRMÉ: "${row.title.slice(0, 50)}" (${visionResult.confidence}%)`);
+              }
+            }
+          } catch (err) {
+            console.log(`[vision-auto] Erreur: ${err.message} — on continue sans vision`);
+          }
+        }
+
+        // Scores — confidence now incorporates vision result (returns 0 if GPT rejected)
+        row.confidence = computeConfidence(row);
+        row.liquidity = computeLiquidity(row);
+
         searchedListings.push(row);
 
-        if (isOpportunity(profit, config)) {
-          opportunities.push(row);
-          console.log(`  Opportunite: ${listing.title} -> ${profit.profit.toFixed(2)} EUR`);
+        // Determine result type for seen-listings cache
+        let _seenResult;
+        if (!routerResult) {
+          _seenResult = 'no-price'; // API totalement indisponible → retenter au prochain scan
+        } else if (routerResult.matchedSales.length === 0) {
+          _seenResult = 'no-match';
+        } else if (routerResult.isKeywordEstimate) {
+          _seenResult = 'no-match'; // Estimation ignorée, pas fiable
+          console.log(`  Estimation mots-clés ignorée (pas assez fiable): ${listing.title.slice(0, 50)}`);
+        } else {
+          // ── Seuils d'opportunité stricts ──────────────────────────────────
+          const _minProfitEur = Math.max(5, (search && search.minProfitEur != null) ? search.minProfitEur : config.minProfitEur);
+          const _minProfitPct = Math.max(20, (search && search.minProfitPercent != null) ? search.minProfitPercent : config.minProfitPercent);
+          const _liquidityScore = (row.liquidity && typeof row.liquidity === 'object') ? row.liquidity.score : 0;
+
+          const _failsProfit = !profit || profit.profit < _minProfitEur;
+          const _failsMargin = !profit || profit.profitPercent < _minProfitPct;
+          const _failsConfidence = row.confidence < 50;
+          const _failsLiquidity = _liquidityScore < 40;
+
+          if (_failsProfit || _failsMargin || _failsConfidence || _failsLiquidity) {
+            const _reasons = [];
+            if (_failsProfit) _reasons.push(`profit ${profit ? profit.profit.toFixed(2) : '0.00'}€ < ${_minProfitEur}€`);
+            if (_failsMargin) _reasons.push(`marge ${profit ? profit.profitPercent.toFixed(1) : '0.0'}% < ${_minProfitPct}%`);
+            if (_failsConfidence) _reasons.push(`confiance ${row.confidence}/100 < 50`);
+            if (_failsLiquidity) _reasons.push(`liquidité ${_liquidityScore}/100 < 40`);
+            console.log(`  [no-opportunity] ${listing.title.slice(0, 50)}: ${_reasons.join(', ')}`);
+            _seenResult = 'no-match';
+          } else {
+            // Vision ran before computeConfidence — if GPT rejected, confidence = 0 → already filtered above
+            _seenResult = 'opportunity';
+            opportunities.push(row);
+            console.log(`  Opportunite: ${listing.title} -> ${profit.profit.toFixed(2)} EUR`);
+            sendOpportunityAlert(row).catch(() => {});
+          }
+        }
+
+        // Record listing as processed (skip on next scan if result is definitive)
+        if (listing.id) {
+          seenListings.markAsSeen(
+            listing.id,
+            search.name,
+            listing.title,
+            _seenResult,
+            routerResult ? (routerResult.marketPrice || null) : null
+          );
         }
 
         // Flush progress to dashboard after each listing (include history so count doesn't reset)
-        await flushProgress(config.outputDir, opportunities, underpricedAlerts, searchedListings, previousListings);
+        await flushProgress(config.outputDir, opportunities, underpricedAlerts, searchedListings, previousListings, i + 1, itemsToProcess.length);
       } catch (error) {
         console.error(`  Erreur sur "${listing.title}": ${error.message}`);
       }
+    }
+  } catch (searchError) {
+    console.error(`  [SKIP] Categorie "${search.name}" echouee (${searchError.message}), passage a la suivante.`);
+  }
+
+  // Délai entre catégories pour éviter le rate limit
+  await new Promise((r) => setTimeout(r, 5000));
+  }
+
+  // ─── Scan eBay→Vinted (reverse) ─────────────────────────────────────────
+  if (process.env.REVERSE_SCAN_ENABLED !== 'false') {
+    try {
+      const reverseOpps = await runReverseScanner(config, searchedListings);
+      for (const opp of reverseOpps) {
+        opp.confidence = computeConfidence(opp);
+        opp.liquidity = computeLiquidity(opp);
+        searchedListings.push(opp);
+        if (isOpportunity(opp.profit, config, config.searches.find(s => s.name === opp.search))) {
+          opportunities.push(opp);
+          console.log(`  Opportunite eBay→Vinted: ${opp.title.slice(0, 60)} -> ${opp.profit.profit.toFixed(2)} EUR`);
+        }
+      }
+      if (reverseOpps.length > 0) {
+        await flushProgress(config.outputDir, opportunities, underpricedAlerts, searchedListings, previousListings);
+      }
+    } catch (err) {
+      console.error(`Reverse scanner erreur: ${err.message}`);
+    }
+  }
+
+  // ─── Scan Cardmarket→eBay (TCG uniquement) ───────────────────────────────
+  if (process.env.CARDMARKET_SCAN_ENABLED !== 'false') {
+    try {
+      const cmOpps = await runCardmarketScanner(config);
+      for (const opp of cmOpps) {
+        opp.confidence = computeConfidence(opp);
+        opp.liquidity = computeLiquidity(opp);
+        searchedListings.push(opp);
+        if (isOpportunity(opp.profit, config, config.searches.find(s => s.name === opp.search))) {
+          opportunities.push(opp);
+          console.log(`  Opportunite CM→eBay: ${opp.title.slice(0, 60)} -> ${opp.profit.profit.toFixed(2)} EUR`);
+        }
+      }
+      if (cmOpps.length > 0) {
+        await flushProgress(config.outputDir, opportunities, underpricedAlerts, searchedListings, previousListings);
+      }
+    } catch (err) {
+      console.error(`Cardmarket scanner erreur: ${err.message}`);
     }
   }
 
@@ -260,6 +568,18 @@ function mergeWithHistory(newResult, outputDir, previousData) {
 async function runOnce() {
   await ensureOutputDir(config.outputDir);
 
+  // ─── Country rotation in loop mode ─────────────────────────────────────
+  if (loopEnabled && _allVintedCountries.length > 0) {
+    const rotIdx = _countryRotationIndex % _allVintedCountries.length;
+    const currentCountry = _allVintedCountries[rotIdx];
+    _countryRotationIndex++;
+    const flag = _COUNTRY_FLAGS[currentCountry] || '';
+    const name = _COUNTRY_NAMES[currentCountry] || currentCountry.toUpperCase();
+    console.log(`[scan] ${flag} Scan Vinted ${name} (${rotIdx + 1}/${_allVintedCountries.length})`);
+    config.vintedCountries = [currentCountry];
+    global._currentVintedCountry = currentCountry;
+  }
+
   // Save previous history BEFORE the scan (flushProgress will overwrite latest-scan.json)
   const historyPath = path.join(config.outputDir, 'latest-scan.json');
   let previousData = null;
@@ -287,21 +607,135 @@ async function runOnce() {
   // Free memory after scan — disk cache persists for next scan
   clearPokemonCache();
   clearYugiohCache();
+  clearPokemonTcgApiCache();
+  clearPriceCache();
+  clearCardmarketCache();
+  clearLeboncoinCache();
+
+  // Detect price trends at end of scan cycle
+  try {
+    const trends = detectTrends();
+    if (trends.length > 0) {
+      console.log(`[Tendances] ${trends.length} tendance(s) détectée(s): ${trends.map(t => `${t.name} ${t.trend.direction === 'rising' ? '📈' : '📉'} ${t.trend.changePercent > 0 ? '+' : ''}${t.trend.changePercent}%`).slice(0, 3).join(', ')}`);
+    }
+  } catch { /* non-bloquant */ }
 
   console.log(`Scan termine. ${result.scannedCount} annonces analysees (${merged.searchedListings.length} total avec historique).`);
   console.log(`${merged.opportunities.length} opportunite(s) detectee(s).`);
   console.log(`${merged.underpricedAlerts.length} carte(s) sous-evaluee(s).`);
   console.log(`Resultat: ${outputPath}`);
 
-  if (result.opportunities.length > 0 || result.underpricedAlerts.length > 0) {
-    const message = buildTelegramMessage(result);
-    try {
-      await sendTelegramMessage(config.telegram, message);
-      console.log('Notification Telegram envoyee.');
-    } catch (error) {
-      console.error(`Notification Telegram impossible: ${error.message}`);
+  // ─── Résumé Telegram : UNIQUEMENT si au moins 1 opportunité ─────────────
+  try {
+    const activeAlerts = Object.entries(apiErrorCounts)
+      .filter(([, count]) => count > 0)
+      .map(([name]) => name);
+
+    const opportunitiesFound = result.opportunities.length;
+    if (opportunitiesFound > 0) {
+      const dbStats = getPriceDbStats();
+
+      // Lecture budget Apify du jour
+      let apifyStr = 'N/A';
+      try {
+        const usageRaw = fs.readFileSync(path.join(config.outputDir, 'apify-usage.json'), 'utf8');
+        const usageData = JSON.parse(usageRaw);
+        const today = new Date().toISOString().slice(0, 10);
+        if (usageData.date === today) apifyStr = `${usageData.count}/50 (jour)`;
+      } catch { /* pas de fichier usage */ }
+
+      const ebayStr = _lastEbayQuota
+        ? `${_lastEbayQuota.remaining}/${_lastEbayQuota.limit}`
+        : 'N/A';
+
+      const summaryLines = [
+        '📊 RÉSUMÉ SCAN',
+        '',
+        `🔍 Annonces scannées: ${result.scannedCount}`,
+        `✅ Opportunités trouvées: ${opportunitiesFound}`,
+        `📊 Base de prix: ${dbStats.totalProducts} produits`,
+        `🔋 eBay: ${ebayStr}`,
+        `🔋 Apify: ${apifyStr}`
+      ];
+
+      if (activeAlerts.length > 0) {
+        summaryLines.push('');
+        summaryLines.push(`⚠️ Alertes: ${activeAlerts.join(', ')}`);
+      }
+
+      const telegramConfig = {
+        token: process.env.TELEGRAM_BOT_TOKEN,
+        chatId: process.env.TELEGRAM_CHAT_ID
+      };
+      sendTelegramMessage(telegramConfig, summaryLines.join('\n')).catch(() => {});
     }
+  } catch { /* non-bloquant */ }
+
+  // ─── Pipeline multi-agents DÉSACTIVÉ (auto-run supprimé) ───────
+  // Les agents (discovery, diagnostic, orchestrator) ne tournent plus
+  // automatiquement après chaque scan — ils spammaient Justin toutes les
+  // 10 min avec des messages "Discovery Multi-Categories" inutiles.
+  // Pour les lancer manuellement : boutons "Lancer" du dashboard (server.js).
+  // Les alertes opportunités individuelles sont déjà envoyées via
+  // sendOpportunityAlert() dans la boucle de scan ci-dessus.
+
+  // ─── Axe 5: Vérification expiration des opportunités actives ────────────
+  // Tous les 3 scans, vérifie si les opportunités actives sont encore dispo sur Vinted
+  _scanCounter++;
+  if (_scanCounter % 3 === 0) {
+    try {
+      const activeOpps = merged.opportunities.filter(o => !o.stale && !o.archived);
+      const toCheck = activeOpps.slice(0, 5); // Max 5 par cycle pour limiter les requêtes
+      let expired = 0;
+      for (const opp of toCheck) {
+        try {
+          const resp = await fetch(opp.url, { redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0' } });
+          if (!resp.ok) continue;
+          const html = await resp.text();
+          const isSold = /item-sold|sold-overlay|"is_closed"\s*:\s*true|"status"\s*:\s*"(sold|hidden)"|réservé|reserved|vendu/i.test(html);
+          if (isSold) {
+            opp.stale = true;
+            opp.expiredAt = new Date().toISOString();
+            expired++;
+            console.log(`[expiration] ❌ Expirée: "${opp.title.slice(0, 50)}"`);
+          }
+        } catch { /* continue silently */ }
+      }
+      if (expired > 0) {
+        console.log(`[expiration] ${expired}/${toCheck.length} opportunités expirées retirées`);
+      }
+    } catch { /* non-bloquant */ }
   }
+
+  // ─── Axe 4: Enrichissement proactif des prix marché ─────────────────────
+  // Tous les 2 scans, enrichit les produits avec peu d'observations marché
+  if (_scanCounter % 2 === 0) {
+    try {
+      const toEnrich = getUnderPricedProducts(5);
+      if (toEnrich.length > 0) {
+        console.log(`[enrichment] Enrichissement proactif de ${toEnrich.length} produit(s)...`);
+        for (const product of toEnrich) {
+          try {
+            const routerResult = await getPriceViaRouter(product.name, product.category, config);
+            if (routerResult && routerResult.marketPrice > 0) {
+              console.log(`[enrichment] ✅ ${product.name.slice(0, 40)} → ${routerResult.marketPrice.toFixed(2)}€ (${routerResult.source})`);
+            }
+          } catch { /* continue silently */ }
+        }
+      }
+    } catch { /* non-bloquant */ }
+  }
+
+  // ─── Axe 8: Digest quotidien Telegram (une fois par jour) ──────────────
+  try {
+    const now = new Date();
+    const todayKey = now.toISOString().slice(0, 10);
+    if (todayKey !== _lastDigestDate && now.getHours() >= 20) {
+      _lastDigestDate = todayKey;
+      const { sendDailyDigest } = require('./notifier');
+      sendDailyDigest(merged).catch(() => {});
+    }
+  } catch { /* non-bloquant */ }
 
   return merged;
 }
@@ -309,13 +743,32 @@ async function runOnce() {
 const loopEnabled = process.argv.includes('--loop');
 const loopIntervalMs = (function parseInterval() {
   const flag = process.argv.find((arg) => arg.startsWith('--interval='));
-  return flag ? Number(flag.split('=')[1]) * 60 * 1000 : 30 * 60 * 1000;
+  return flag ? Number(flag.split('=')[1]) * 60 * 1000 : 10 * 60 * 1000;
 })();
+
+// ─── Country rotation (loop mode) ─────────────────────────────────────────
+// Snapshot the full country list once at startup (before runOnce mutates it)
+const _allVintedCountries = [...config.vintedCountries];
+let _countryRotationIndex = 0;
+
+const _COUNTRY_FLAGS = { be: '🇧🇪', fr: '🇫🇷', de: '🇩🇪', es: '🇪🇸', it: '🇮🇹', nl: '🇳🇱', pl: '🇵🇱', uk: '🇬🇧' };
+const _COUNTRY_NAMES = { be: 'Belgique', fr: 'France', de: 'Allemagne', es: 'Espagne', it: 'Italie', nl: 'Pays-Bas', pl: 'Pologne', uk: 'Royaume-Uni' };
+
+// Axe 5: compteur de scans pour la vérification d'expiration (tous les 3 scans)
+let _scanCounter = 0;
+// Axe 8: date du dernier digest quotidien envoyé
+let _lastDigestDate = '';
 
 async function main() {
   // Launch dashboard server automatically
   const { broadcastSSE } = require('./server');
   global._broadcastSSE = broadcastSSE;
+
+  // Start Telegram callback polling (handles inline keyboard button presses)
+  if (process.env.TELEGRAM_BOT_TOKEN) {
+    const telegramHandler = require('./telegram-handler');
+    telegramHandler.start();
+  }
 
   if (!loopEnabled) {
     await runOnce();

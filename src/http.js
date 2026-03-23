@@ -5,6 +5,26 @@ const { sleep } = require('./utils');
 
 const lastRequestByHost = new Map();
 
+// ─── User-Agent rotation pool ──────────────────────────────────────────────
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0',
+  'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:133.0) Gecko/20100101 Firefox/133.0',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+];
+
+function getRandomUserAgent() {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+}
+
 function buildCachePath(cacheDir, url) {
   const hash = crypto.createHash('sha1').update(url).digest('hex');
   return path.join(cacheDir, `${hash}.json`);
@@ -95,7 +115,12 @@ function detectBlockedPage(body) {
 // Supports: PROXY_URL=http://user:pass@host:port (HTTP/HTTPS proxy)
 //           SCRAPER_API_KEY=xxx (ScraperAPI fallback)
 function getProxyUrl() {
-  return process.env.PROXY_URL || process.env.HTTP_PROXY || null;
+  const url = process.env.PROXY_URL || process.env.HTTP_PROXY || null;
+  // Rejeter les placeholders non configurés (USER:PASS, user:pass, etc.)
+  if (url && /USER:PASS|user:pass|<user>|<pass>/i.test(url)) {
+    return null;
+  }
+  return url;
 }
 
 function buildScraperApiUrl(url) {
@@ -110,8 +135,95 @@ function buildScraperApiUrl(url) {
 function shouldProxy(url) {
   try {
     const hostname = new URL(url).hostname;
-    return hostname.includes('ebay');
+    return hostname.includes('ebay') || hostname.includes('cardmarket');
   } catch { return false; }
+}
+
+// ─── Decodo Web Scraping API ─────────────────────────────────────────────────
+let scrapingApiRequestCount = 0;
+
+function resetScrapingApiCounter() {
+  scrapingApiRequestCount = 0;
+}
+
+function isScrapingApiEnabled() {
+  return ['1', 'true', 'yes', 'on'].includes((process.env.DECODO_SCRAPING_API || '').toLowerCase());
+}
+
+function getScrapingApiAuth() {
+  // Priorité 1 : token explicite DECODO_AUTH_TOKEN (déjà en base64)
+  const token = process.env.DECODO_AUTH_TOKEN || '';
+  if (token) return token;
+
+  // Priorité 2 : dériver depuis PROXY_URL (user:pass)
+  const proxyUrl = process.env.PROXY_URL || '';
+  if (!proxyUrl) return null;
+  try {
+    const parsed = new URL(proxyUrl);
+    const user = decodeURIComponent(parsed.username || '');
+    const pass = decodeURIComponent(parsed.password || '');
+    if (!user || !pass) return null;
+    return Buffer.from(`${user}:${pass}`).toString('base64');
+  } catch {
+    return null;
+  }
+}
+
+function shouldUseScrapingApi(url) {
+  if (!isScrapingApiEnabled()) return false;
+  try {
+    const hostname = new URL(url).hostname;
+    // Exclure les endpoints API officiels (pas du HTML scraping)
+    if (hostname.includes('svcs.ebay') || hostname === 'api.ebay.com') return false;
+    return hostname.includes('ebay') || hostname.includes('cardmarket') || hostname.includes('leboncoin');
+  } catch { return false; }
+}
+
+async function fetchViaScrapingApi(url) {
+  const maxRequests = Number(process.env.MAX_SCRAPING_REQUESTS || 100);
+  if (scrapingApiRequestCount >= maxRequests) {
+    throw new Error(`[SCRAPING-API] Budget épuisé: ${maxRequests} requêtes max atteint pour ce scan`);
+  }
+
+  const auth = getScrapingApiAuth();
+  if (!auth) {
+    throw new Error('[SCRAPING-API] Credentials manquants dans PROXY_URL');
+  }
+
+  scrapingApiRequestCount++;
+  const cumulativeCost = (scrapingApiRequestCount * 0.0005).toFixed(4);
+  const hostname = new URL(url).hostname.replace('www.', '');
+  console.log(`    [SCRAPING-API] Requête #${scrapingApiRequestCount} ce scan → ${hostname} (coût estimé: $${cumulativeCost})`);
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60000);
+
+  try {
+    const response = await fetch('https://scraper-api.decodo.com/v2/scrape', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${auth}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ url, headless: 'html', proxy_pool: 'premium' }),
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      throw new Error(`Scraping API HTTP ${response.status} pour ${url}`);
+    }
+
+    const data = await response.json();
+    const html = data.body || data.html || data.content || '';
+
+    if (!html) {
+      throw new Error(`Scraping API: réponse vide pour ${url}`);
+    }
+
+    return html;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function fetchText(url, options = {}) {
@@ -125,6 +237,18 @@ async function fetchText(url, options = {}) {
   }
 
   await paceRequest(url, options);
+
+  // ─── Decodo Web Scraping API (DECODO_SCRAPING_API=true) ───────────────────
+  if (shouldUseScrapingApi(url)) {
+    const body = await fetchViaScrapingApi(url);
+    if (detectBlockedPage(body)) {
+      throw new Error(`Blocked page detected for ${url}`);
+    }
+    if (!options.skipCache) {
+      await writeToCache(options.cacheDir, url, body);
+    }
+    return body;
+  }
 
   const controller = new AbortController();
   const timeoutMs = options.timeoutMs || 60000;
@@ -143,24 +267,27 @@ async function fetchText(url, options = {}) {
       'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       'accept-language': 'en-US,en;q=0.9,fr;q=0.8',
       'cache-control': 'no-cache',
-      'user-agent': options.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      'user-agent': options.userAgent || getRandomUserAgent(),
       ...(options.headers || {})
     },
     signal: controller.signal
   };
 
-  // Use HTTP proxy if configured (for residential proxy services like Codos, Happify etc.)
+  // Use HTTP proxy if configured (for residential proxy services like Decodo, SmartProxy etc.)
   if (useProxy) {
     try {
       const { ProxyAgent } = require('undici');
       fetchOptions.dispatcher = new ProxyAgent(proxyUrl);
-    } catch {
+      console.log(`    [PROXY] ${new URL(url).hostname} → via proxy`);
+    } catch (proxyErr) {
       // undici ProxyAgent not available, try https-proxy-agent
       try {
         const { HttpsProxyAgent } = require('https-proxy-agent');
         fetchOptions.agent = new HttpsProxyAgent(proxyUrl);
+        console.log(`    [PROXY] ${new URL(url).hostname} → via https-proxy-agent`);
       } catch {
-        // No proxy library available — fall through to direct fetch
+        // No proxy library available — log warning and fall through to direct fetch
+        console.warn(`    [PROXY] ATTENTION: aucune lib proxy disponible (undici: ${proxyErr.message}). Requête directe!`);
       }
     }
   }
@@ -188,6 +315,34 @@ async function fetchText(url, options = {}) {
   }
 }
 
+// Purge blocked/captcha pages from cache directory so next scan retries them
+async function purgeBlockedCache(cacheDir) {
+  if (!cacheDir) return 0;
+  try {
+    const files = await fs.promises.readdir(cacheDir);
+    let purged = 0;
+    for (const file of files) {
+      if (!file.endsWith('.json')) continue;
+      const filePath = path.join(cacheDir, file);
+      try {
+        const raw = await fs.promises.readFile(filePath, 'utf8');
+        const payload = JSON.parse(raw);
+        if (payload.body && detectBlockedPage(payload.body)) {
+          await fs.promises.unlink(filePath);
+          purged++;
+        }
+      } catch { /* skip unreadable files */ }
+    }
+    if (purged > 0) {
+      console.log(`Cache ${path.basename(cacheDir)}: ${purged} page(s) bloquee(s) purgee(s).`);
+    }
+    return purged;
+  } catch { return 0; }
+}
+
 module.exports = {
-  fetchText
+  fetchText,
+  fetchViaScrapingApi,
+  resetScrapingApiCounter,
+  purgeBlockedCache
 };
