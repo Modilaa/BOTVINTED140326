@@ -301,7 +301,8 @@ body {
 }
 
 /* ─── Opportunities table ───────────────── */
-.table-container { overflow-x: auto; }
+.table-container { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table-container table { min-width: 900px; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th {
   text-align: left;
@@ -1389,15 +1390,13 @@ async function updateStatus() {
 async function updateStats() {
   var data = await fetchJson('/api/stats');
   if (!data) return;
-  // Freeze profit/niche/rate stats during scan — scan data is partial and would show wrong values
-  if (lastScanningState !== 'scanning') {
-    currentTotalProfit = data.totalEstimatedProfit;
-    document.getElementById('statProfit').textContent = euro(data.totalEstimatedProfit);
-    document.getElementById('statProfitSub').textContent = data.topNiche ? 'Meilleure niche: ' + data.topNiche : '';
-    document.getElementById('statRate').textContent = pct(data.successRate);
-    document.getElementById('statRateSub').textContent = data.nicheStats && data.nicheStats.length > 0 ? data.nicheStats.length + ' niche(s) actives' : '';
-    renderNiches(data.nicheStats || []);
-  }
+  // KPIs are computed from stable history on the server, safe to always update
+  currentTotalProfit = data.totalEstimatedProfit;
+  document.getElementById('statProfit').textContent = euro(data.totalEstimatedProfit);
+  document.getElementById('statProfitSub').textContent = data.topNiche ? 'Meilleure niche: ' + data.topNiche : '';
+  document.getElementById('statRate').textContent = pct(data.successRate);
+  document.getElementById('statRateSub').textContent = data.nicheStats && data.nicheStats.length > 0 ? data.nicheStats.length + ' niche(s) actives' : '';
+  renderNiches(data.nicheStats || []);
   // statOpps is managed by updateOpportunities() to stay in sync with history
   document.getElementById('statScanned').textContent = data.totalScanned || 0;
   // Afficher la repartition par plateforme si disponible
@@ -1505,7 +1504,7 @@ async function updateOpportunities() {
   // Filtre par score minimum de confiance (ignoré pour l'onglet "Toutes")
   var minConf = parseInt(document.getElementById('minConfidence') ? document.getElementById('minConfidence').value : '0', 10) || 0;
   if (minConf > 0 && currentOppFilter !== 'all') {
-    opps = opps.filter(function(o) { return (o.confidenceScore != null ? o.confidenceScore : 0) >= minConf; });
+    opps = opps.filter(function(o) { return o.confidenceScore == null || o.confidenceScore >= minConf; });
   }
 
   // Filtre par score minimum de liquidité
@@ -2452,6 +2451,7 @@ var verifyImageInFlight = new Set();
 async function verifyImage(id) {
   if (verifyImageInFlight.has(id)) return;
   verifyImageInFlight.add(id);
+  oppInteracting = true; // Prevent table re-render while GPT Vision is running
   var btn = document.getElementById('verifybtn-' + id);
   if (btn) {
     btn.disabled = true;
@@ -2506,6 +2506,12 @@ async function verifyImage(id) {
     showVerifyToast('\u26A0\uFE0F Erreur v\u00e9rification\u00a0: ' + esc(e.message), 'toast-warn');
   } finally {
     verifyImageInFlight.delete(id);
+    oppInteracting = false;
+    if (pendingOppsData) {
+      var c = document.getElementById('oppTableContainer');
+      if (c) { c.innerHTML = pendingOppsData; applyFeedbackStates(); }
+      pendingOppsData = null;
+    }
   }
 }
 
@@ -2970,6 +2976,9 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 });
 </script>
+
+<!-- ─── Verify Toast Container ─────────────────────────────── -->
+<div id="verify-toast-container"></div>
 
 <!-- ─── Feedback Modal Overlay ──────────────────────────────── -->
 <div id="feedbackModal" class="hidden" onclick="if(event.target===this)closeFeedbackModal()">
