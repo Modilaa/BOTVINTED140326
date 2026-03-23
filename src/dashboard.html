@@ -1503,7 +1503,7 @@ async function updateOpportunities() {
   // Filtre par score minimum de confiance (ignoré pour l'onglet "Toutes")
   var minConf = parseInt(document.getElementById('minConfidence') ? document.getElementById('minConfidence').value : '0', 10) || 0;
   if (minConf > 0 && currentOppFilter !== 'all') {
-    opps = opps.filter(function(o) { return (o.confidenceScore != null ? o.confidenceScore : 0) >= minConf; });
+    opps = opps.filter(function(o) { return o.confidenceScore == null || o.confidenceScore >= minConf; });
   }
 
   // Filtre par score minimum de liquidité
