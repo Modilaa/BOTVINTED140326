@@ -1232,10 +1232,11 @@ tr:hover td { background: rgba(108,92,231,0.04); }
               <th onclick="sortPriceDb('marketObservations')" style="cursor:pointer;text-align:right;">Obs. Marché <span id="pdbsort-marketObservations"></span></th>
               <th onclick="sortPriceDb('lastSeen')" style="cursor:pointer;">Dernière vue <span id="pdbsort-lastSeen"></span></th>
               <th>Tendance</th>
+              <th>Liens</th>
             </tr>
           </thead>
           <tbody id="priceDatabaseTableBody">
-            <tr><td colspan="9" style="text-align:center;color:var(--text2);padding:24px;">Cliquez pour charger...</td></tr>
+            <tr><td colspan="10" style="text-align:center;color:var(--text2);padding:24px;">Cliquez pour charger...</td></tr>
           </tbody>
         </table>
       </div>
@@ -2679,7 +2680,7 @@ function togglePriceDatabase() {
 
 async function loadPriceDatabaseData() {
   var tbody = document.getElementById('priceDatabaseTableBody');
-  tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text2);padding:24px;">Chargement...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text2);padding:24px;">Chargement...</td></tr>';
   var data = await fetchJson('/api/price-database/browse');
   if (!data || !data.products) return;
   priceDatabaseState.data = data.products;
@@ -2763,6 +2764,16 @@ function applyPriceDatabaseFilter() {
   renderPriceDatabaseTable();
 }
 
+function togglePdbDropdown(id) {
+  var all = document.querySelectorAll('.pdb-links-drop');
+  all.forEach(function(d) { if (d.id !== id) d.style.display = 'none'; });
+  var el = document.getElementById(id);
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+document.addEventListener('click', function() {
+  document.querySelectorAll('.pdb-links-drop').forEach(function(d) { d.style.display = 'none'; });
+});
+
 function renderPriceDatabaseTable() {
   var f = priceDatabaseState.sortField;
   var asc = priceDatabaseState.sortAsc;
@@ -2774,7 +2785,7 @@ function renderPriceDatabaseTable() {
   });
   var tbody = document.getElementById('priceDatabaseTableBody');
   if (sorted.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text2);padding:24px;">Aucun résultat</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text2);padding:24px;">Aucun résultat</td></tr>';
     return;
   }
   var html = '';
@@ -2785,6 +2796,32 @@ function renderPriceDatabaseTable() {
     var catLabel = pdbCatLabel(p.category);
     var spreadStr = p.spread != null ? (p.spread > 0 ? '+' : '') + p.spread + '%' : '&mdash;';
     var spreadColor = p.spread != null && p.spread > 50 ? 'var(--green)' : p.spread != null && p.spread > 20 ? 'var(--orange)' : 'var(--text2)';
+    var linksCell;
+    var pListings = p.listings && p.listings.length > 0 ? p.listings : [];
+    if (pListings.length > 0) {
+      var dropId = 'pdb-drop-' + p.key.replace(/[^a-z0-9]/g, '');
+      var btnLabel = '&#128206; ' + pListings.length + ' lien' + (pListings.length > 1 ? 's' : '');
+      var dropItems = '';
+      pListings.forEach(function(l, i) {
+        var lPrice = l.price ? l.price.toFixed(2) + '&euro;' : '?&euro;';
+        var lDate = l.date ? l.date.slice(5) : '';
+        var lSrc = (l.source || '').replace('ebay-browse-api','eBay API').replace('apify-ebay','Apify').replace('ebay-scrape','eBay scrape');
+        var lTitle = (l.title || '').replace(/"/g, '&quot;');
+        var border = i < pListings.length - 1 ? '1px solid var(--border)' : 'none';
+        dropItems += '<div style="display:flex;align-items:center;gap:8px;padding:5px 10px;font-size:12px;border-bottom:' + border + ';">' +
+          '<span style="color:var(--green);font-weight:600;min-width:50px;">' + lPrice + '</span>' +
+          '<span style="color:var(--text3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + lTitle + '">' + lSrc + (lDate ? ' &middot; ' + lDate : '') + '</span>' +
+          '<a href="' + l.url + '" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--accent);text-decoration:none;font-size:11px;flex-shrink:0;">Voir &#8599;</a>' +
+          '</div>';
+      });
+      linksCell = '<div style="position:relative;display:inline-block;">' +
+        '<button onclick="event.stopPropagation();togglePdbDropdown(\'' + dropId + '\')" style="background:var(--surface3);color:var(--text2);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;">' + btnLabel + '</button>' +
+        '<div id="' + dropId + '" class="pdb-links-drop" style="display:none;position:absolute;right:0;top:100%;margin-top:2px;z-index:1000;background:var(--surface2);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.6);min-width:300px;">' +
+        dropItems +
+        '</div></div>';
+    } else {
+      linksCell = '<span style="color:var(--text3);">&mdash;</span>';
+    }
     html += '<tr>' +
       '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + p.name + '">' + p.name + '</td>' +
       '<td><span style="background:var(--surface3);padding:2px 6px;border-radius:4px;font-size:11px;">' + catLabel + '</span></td>' +
@@ -2795,6 +2832,7 @@ function renderPriceDatabaseTable() {
       '<td style="text-align:right;color:var(--text2);">' + (p.marketObservations || 0) + '</td>' +
       '<td style="color:var(--text2);">' + (p.lastSeen || '&mdash;') + '</td>' +
       '<td style="color:' + trendColor + ';font-weight:600;">' + trendIcon + ' ' + trendLabel + '</td>' +
+      '<td>' + linksCell + '</td>' +
       '</tr>';
   });
   tbody.innerHTML = html;

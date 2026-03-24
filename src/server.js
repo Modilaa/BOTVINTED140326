@@ -220,6 +220,8 @@ function appendOpportunitiesToHistory(scanOpportunities, scannedAt) {
       if (opp.sellerScore != null) existing.sellerScore = opp.sellerScore;
       if (opp.visionVerified != null) existing.visionVerified = opp.visionVerified;
       if (opp.visionSameCard != null) existing.visionSameCard = opp.visionSameCard;
+      if (opp.visionResult) existing.visionFullResponse = opp.visionResult;
+      if (opp.visionResult && opp.visionResult.visionReason) existing.visionReason = opp.visionResult.visionReason;
       // Re-activate expired items, but never overwrite accepted/rejected decisions
       if (existing.status === 'expired') existing.status = 'active';
     } else {
@@ -251,6 +253,8 @@ function appendOpportunitiesToHistory(scanOpportunities, scannedAt) {
         sellerScore: opp.sellerScore != null ? opp.sellerScore : null,
         visionVerified: opp.visionVerified || false,
         visionSameCard: opp.visionSameCard != null ? opp.visionSameCard : null,
+        visionFullResponse: opp.visionResult || null,
+        visionReason: (opp.visionResult && opp.visionResult.visionReason) || null,
         status: 'active', // active, sold, expired, archived
         firstSeenAt: scannedAt,
         lastSeenAt: scannedAt
@@ -843,7 +847,16 @@ app.get('/api/price-database/browse', (_req, res) => {
         marketObservations: entry.marketObservations || 0,
         spread,
         lastSeen: entry.lastSeen || null,
-        trend
+        trend,
+        listings: (entry.marketPrices || [])
+          .filter(mp => mp.url)
+          .map(mp => ({
+            url: mp.url,
+            price: mp.price,
+            source: mp.source,
+            title: mp.listingTitle || '',
+            date: mp.date
+          }))
       });
     }
 

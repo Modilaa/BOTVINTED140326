@@ -43,8 +43,14 @@ Respond ONLY with valid JSON, no markdown, no extra text:
  * @param {string} ebayImageUrl   - Image URL from eBay reference
  * @returns {Promise<object|null>} Parsed JSON result or null on failure
  */
+function toHdEbayUrl(url) {
+  if (!url) return url;
+  return url.replace(/s-l\d+\.(jpg|png|webp)/i, 's-l1600.$1');
+}
+
 async function compareCardImages(vintedImageUrl, ebayImageUrl) {
   if (!vintedImageUrl || !ebayImageUrl) return null;
+  ebayImageUrl = toHdEbayUrl(ebayImageUrl);
 
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -63,8 +69,8 @@ async function compareCardImages(vintedImageUrl, ebayImageUrl) {
           role: 'user',
           content: [
             { type: 'text', text: VISION_PROMPT },
-            { type: 'image_url', image_url: { url: vintedImageUrl, detail: 'low' } },
-            { type: 'image_url', image_url: { url: ebayImageUrl, detail: 'low' } }
+            { type: 'image_url', image_url: { url: vintedImageUrl, detail: 'high' } },
+            { type: 'image_url', image_url: { url: ebayImageUrl, detail: 'high' } }
           ]
         }
       ]
@@ -87,6 +93,7 @@ async function compareCardImages(vintedImageUrl, ebayImageUrl) {
     parsed.sameCard = allTrue;
     parsed.confidence = allTrue ? 90 : 0;
     parsed.summary = parsed.reason || '';
+    parsed.visionReason = (parsed.report && parsed.report.suggestion) || parsed.reason || '';
 
     return parsed;
   } catch (err) {
