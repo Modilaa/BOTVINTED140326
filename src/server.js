@@ -202,6 +202,7 @@ function appendOpportunitiesToHistory(scanOpportunities, scannedAt) {
       existing.imageSimilarityScore = getBestImageSimilarity(opp.matchedSales) ?? existing.imageSimilarityScore ?? null;
       existing.sourceQuery = opp.sourceQuery || existing.sourceQuery || null;
       existing.sourceUrls = opp.sourceUrls || existing.sourceUrls || [];
+      if (opp.priceDetails) existing.priceDetails = opp.priceDetails;
       // Mettre à jour les scores si re-scannés (données fraîches)
       if (opp.confidence != null) existing.confidence = opp.confidence;
       if (opp.liquidity != null) existing.liquidity = opp.liquidity;
@@ -226,6 +227,7 @@ function appendOpportunitiesToHistory(scanOpportunities, scannedAt) {
         profitPercent: opp.profit ? opp.profit.profitPercent : null,
         imageUrl: opp.imageUrl,
         pricingSource: opp.pricingSource,
+        priceDetails: opp.priceDetails || null,
         matchedSalesCount: (opp.matchedSales || []).length,
         ebayMatchTitle: (opp.matchedSales && opp.matchedSales[0] && opp.matchedSales[0].title) || null,
         ebayMatchImageUrl: (opp.matchedSales && opp.matchedSales[0] && opp.matchedSales[0].imageUrl) || null,
@@ -389,10 +391,12 @@ app.get('/api/opportunities', (req, res) => {
       ebayMatchImageUrl: opp.ebayMatchImageUrl || null,
       imageSimilarityScore: opp.imageSimilarityScore != null ? opp.imageSimilarityScore : null,
       pricingSource: opp.pricingSource,
+      priceDetails: opp.priceDetails || null,
       matchedSalesCount: opp.matchedSalesCount || 0,
       ebayMatchTitle: opp.ebayMatchTitle || null,
       sourceQuery: opp.sourceQuery || null,
       sourceUrls: opp.sourceUrls || [],
+      confidenceBreakdown: opp.confidenceBreakdown || null,
       sellerScore: opp.sellerScore != null ? opp.sellerScore : null,
       claim: claims[itemKey] || null,
       stale: opp.status === 'expired',

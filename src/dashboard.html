@@ -1487,6 +1487,68 @@ function esc(str) {
 var NICHE_COLORS = ['#6c5ce7', '#00d2a0', '#ffa94d', '#74b9ff', '#ff6b6b', '#a29bfe', '#fdcb6e', '#55efc4', '#fab1a0', '#81ecec'];
 
 // ─── Liquidity cell builder ────────────────────────────────
+function buildPriceCellHtml(opp) {
+  if (!opp.estimatedSalePrice) return '<span style="color:var(--text3)">\u2014</span>';
+  var priceHtml = euro(opp.estimatedSalePrice);
+  var src = opp.pricingSource || '';
+  var obs = (opp.priceDetails && opp.priceDetails.observations != null)
+    ? opp.priceDetails.observations
+    : (opp.matchedSalesCount || 0);
+  var pd = opp.priceDetails || null;
+
+  // Labels lisibles par source
+  var srcLabels = {
+    'ebay-browse-api': 'eBay API',
+    'ebay-html': 'eBay scraping',
+    'apify-ebay': 'Apify eBay',
+    'local-database': 'Base locale',
+    'pokemon-tcg-api': 'Pok\u00e9TCG.io',
+    'pokemontcg-api': 'Pok\u00e9TCG.io',
+    'ygoprodeck': 'YGOPRODeck',
+    'ygoprodeck-set': 'YGOPRODeck',
+    'rebrickable': 'Rebrickable',
+    'cardmarket': 'Cardmarket',
+    'discogs': 'Discogs',
+    'sneaks-api': 'StockX/GOAT'
+  };
+  var srcLabel = srcLabels[src] || (src ? src : 'Source inconnue');
+
+  // Code couleur fiabilit\u00e9
+  var badgeColor, badgeBg;
+  var isNicheApi = (src === 'pokemon-tcg-api' || src === 'pokemontcg-api' || src === 'ygoprodeck' || src === 'ygoprodeck-set' || src === 'cardmarket' || src === 'discogs');
+  if (!src) {
+    badgeColor = '#888'; badgeBg = 'rgba(128,128,128,0.12)';
+  } else if (src === 'local-database') {
+    badgeColor = '#ffa94d'; badgeBg = 'rgba(255,169,77,0.14)'; // orange = moins fiable (moyenne accumul\u00e9e)
+  } else if (isNicheApi || obs >= 5) {
+    badgeColor = '#00d2a0'; badgeBg = 'rgba(0,210,160,0.10)'; // vert = tr\u00e8s fiable
+  } else if (obs >= 3) {
+    badgeColor = '#00d2a0'; badgeBg = 'rgba(0,210,160,0.10)'; // vert
+  } else if (obs >= 2) {
+    badgeColor = '#ffa94d'; badgeBg = 'rgba(255,169,77,0.14)'; // orange
+  } else if (obs === 1) {
+    badgeColor = '#ff6b6b'; badgeBg = 'rgba(255,107,107,0.12)'; // rouge = 1 seule obs
+  } else {
+    badgeColor = '#ffa94d'; badgeBg = 'rgba(255,169,77,0.14)';
+  }
+
+  // Tooltip d\u00e9taill\u00e9
+  var tooltip = 'Source: ' + srcLabel;
+  if (obs > 0) tooltip += ' \u2014 ' + obs + ' vente(s) observ\u00e9e(s)';
+  if (pd) {
+    if (pd.lowestPrice != null && pd.highestPrice != null && pd.lowestPrice !== pd.highestPrice) {
+      tooltip += ' \u2014 Fourchette\u00a0: ' + pd.lowestPrice.toFixed(2) + '\u20ac \u2192 ' + pd.highestPrice.toFixed(2) + '\u20ac';
+    }
+    if (pd.lastUpdated) {
+      try { tooltip += ' \u2014 MAJ\u00a0: ' + new Date(pd.lastUpdated).toLocaleDateString('fr-BE'); } catch(e) {}
+    }
+  }
+
+  var obsText = obs > 0 ? ' \u00b7 ' + obs + (obs > 1 ? ' ventes' : ' vente') : '';
+  var badge = '<div style="display:inline-flex;align-items:center;padding:1px 5px;border-radius:6px;font-size:9px;font-weight:700;color:' + badgeColor + ';background:' + badgeBg + ';border:1px solid ' + badgeColor + '33;margin-top:2px;cursor:help;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + esc(tooltip) + '">' + esc(srcLabel) + esc(obsText) + '</div>';
+  return '<div style="display:flex;flex-direction:column;align-items:flex-end;">' + priceHtml + badge + '</div>';
+}
+
 function buildLiquidityCell(opp) {
   if (!opp.liquidityScore && opp.liquidityScore !== 0) return '\u2014';
   var score = opp.liquidityScore;
@@ -1749,10 +1811,21 @@ async function updateOpportunities() {
     var vintedImgHtml = opp.imageUrl
       ? '<img class="opp-img" src="' + API_BASE + '/api/proxy-image?url=' + encodeURIComponent(opp.imageUrl) + '" alt="Vinted" loading="lazy" title="Image Vinted" onerror="this.outerHTML=\'<div class=opp-img-placeholder style=width:42px;height:42px>&#127183;</div>\'">'
       : '<div class="opp-img-placeholder" style="width:42px;height:42px">&#127183;</div>';
-    // Image eBay comparable
-    var ebayImgHtml = opp.ebayMatchImageUrl
-      ? '<img class="opp-img" src="' + esc(opp.ebayMatchImageUrl) + '" alt="eBay" loading="lazy" title="Image eBay comparable" onerror="this.style.display=\'none\'">'
-      : '';
+    // Image eBay comparable — cherche un lien spécifique pour la rendre cliquable
+    var firstEbayUrl = '';
+    var srcUrlsTmp = opp.sourceUrls || [];
+    for (var si = 0; si < srcUrlsTmp.length; si++) {
+      if (srcUrlsTmp[si].platform === 'ebay' && srcUrlsTmp[si].url) { firstEbayUrl = srcUrlsTmp[si].url; break; }
+    }
+    var ebayImgHtml = '';
+    if (opp.ebayMatchImageUrl) {
+      var ebayImgInner = '<img class="opp-img" src="' + esc(opp.ebayMatchImageUrl) + '" alt="eBay" loading="lazy" onerror="this.style.display=\'none\'">';
+      if (firstEbayUrl) {
+        ebayImgHtml = '<a href="' + esc(firstEbayUrl) + '" target="_blank" rel="noopener" title="Voir ce listing eBay spécifique">' + ebayImgInner + '</a>';
+      } else {
+        ebayImgHtml = '<span title="Image de référence eBay — prix basé sur la base locale, pas de listing direct">' + ebayImgInner + '</span>';
+      }
+    }
     // Badge similarité image / Vision IA
     var simScore = opp.imageSimilarityScore;
     var simBadgeHtml;
@@ -1765,11 +1838,14 @@ async function updateOpportunities() {
     } else {
       simBadgeHtml = '<div class="img-sim-badge img-sim-none" title="Pas de comparaison image disponible">\u26a0 Non v\u00e9rifi\u00e9e</div>';
     }
+    var noEbayImgBadge = (!opp.ebayMatchImageUrl)
+      ? '<div style="font-size:9px;color:var(--orange);font-weight:700;margin-top:2px;text-align:center;" title="Pas d\'image eBay disponible — vérification visuelle impossible">&#9888; Sans photo eBay</div>'
+      : '';
     var imgHtml;
     if (ebayImgHtml) {
       imgHtml = '<div class="opp-img-pair"><div class="opp-img-row">' + vintedImgHtml + '<span class="opp-img-sep">&#8596;</span>' + ebayImgHtml + '</div>' + simBadgeHtml + '</div>';
     } else {
-      imgHtml = '<div class="opp-img-pair">' + vintedImgHtml + simBadgeHtml + '</div>';
+      imgHtml = '<div class="opp-img-pair">' + vintedImgHtml + simBadgeHtml + noEbayImgBadge + '</div>';
     }
 
     var confHtml = '<span style="color:var(--text3);font-size:13px;" title="Score de confiance non calcul\u00e9">?</span>';
@@ -1777,8 +1853,20 @@ async function updateOpportunities() {
       var confScore = opp.confidenceScore;
       var confColor = confidenceColor(confScore);
       var confLabel = confScore >= 70 ? 'Bon' : (confScore >= 50 ? 'Moyen' : null);
-      var imgCapNote = (opp.imageSimilarityScore != null) ? ' | Vision IA: ' + opp.imageSimilarityScore + '%' : ' | Vision IA: non calcul\u00e9e';
-      confHtml = '<div style="display:flex;flex-direction:column;gap:2px;" title="Confiance: ' + confScore + '/100 — Match texte (0-40) + Source (0-20) + Vision IA (0-40)' + imgCapNote + '">' +
+      // Build detailed tooltip from breakdown if available
+      var confTooltip;
+      var bd = opp.confidenceBreakdown;
+      if (bd) {
+        confTooltip = 'D\u00e9tail score ' + confScore + '/100\n'
+          + '\u2022 Match texte : ' + bd.textScore + '/40\n'
+          + '\u2022 Fiabilit\u00e9 source : ' + bd.sourceScore + '/20\n'
+          + '\u2022 Vision IA : ' + bd.visionScore + '/40 (' + (bd.visionLabel || 'non v\u00e9rifi\u00e9') + ')'
+          + (bd.belowAvgBoost > 0 ? '\n\u2022 Prix sous moyenne Vinted : boost \u2192 ' + bd.belowAvgBoost : '');
+      } else {
+        var imgCapNote = (opp.imageSimilarityScore != null) ? ' | Sim. image: ' + opp.imageSimilarityScore + '%' : '';
+        confTooltip = 'Confiance: ' + confScore + '/100 \u2014 Match texte (0-40) + Source (0-20) + Vision IA (0-40)' + imgCapNote;
+      }
+      confHtml = '<div style="display:flex;flex-direction:column;gap:2px;" title="' + esc(confTooltip) + '">' +
         '<span class="confidence-bar"><span class="confidence-fill" style="width:' + confScore + '%; background:' + confColor + ';"></span></span>' +
         '<span style="font-size:12px;color:' + confColor + ';font-weight:600;">' + confScore + '<span style="font-size:10px;opacity:0.7;"> / 100</span></span>' +
         (confScore < 50 ? '<span style="font-size:10px;color:var(--red);font-weight:700;background:var(--red-bg);padding:1px 5px;border-radius:4px;">\u26a0 Douteux</span>' : '<span style="font-size:10px;color:var(--text3);">' + confLabel + '</span>') +
@@ -1829,14 +1917,16 @@ async function updateOpportunities() {
       if (sellerBadgeHtml) sourceLinksHtml += ' ' + sellerBadgeHtml;
     }
     var srcUrls = opp.sourceUrls || [];
+    var hasSpecificEbayLink = false;
     if (srcUrls.length > 0) {
       var srcLabels = { pokemontcg: 'PokeTCG', tcgplayer: 'TCGPlayer', ygoprodeck: 'YGO', cardmarket: 'Cardmarket', ebay: 'eBay' };
       for (var s = 0; s < srcUrls.length; s++) {
         var src = srcUrls[s];
         var srcLabel = srcLabels[src.platform] || src.platform;
         var srcClass = 'src-' + (src.platform || 'unknown');
-        var srcTitle = esc((src.title || '').slice(0, 60)) + (src.price > 0 ? ' — ' + src.price.toFixed(2) + ' EUR' : '');
-        sourceLinksHtml += ' <a class="source-btn ' + srcClass + '" href="' + esc(src.url) + '" target="_blank" rel="noopener" title="' + srcTitle + '">' + esc(srcLabel) + ' &#8599;</a>';
+        var srcTitle = esc((src.title || '').slice(0, 80)) + (src.price > 0 ? ' — ' + src.price.toFixed(2) + ' EUR' : '');
+        sourceLinksHtml += ' <a class="source-btn ' + srcClass + '" href="' + esc(src.url) + '" target="_blank" rel="noopener" title="Listing sp\u00e9cifique : ' + srcTitle + '">' + esc(srcLabel) + ' &#8599;</a>';
+        if (src.platform === 'ebay') hasSpecificEbayLink = true;
       }
     }
 
@@ -1844,8 +1934,11 @@ async function updateOpportunities() {
     // Build verify button with saved verification state (persists across refresh)
     var verifyBtnHtml;
     var verif = opp.verification;
+    var canVerify = !!(opp.imageUrl && opp.ebayMatchImageUrl); // les deux images nécessaires
     if (!verif) {
-      verifyBtnHtml = '<button class="btn-action btn-verify" id="verifybtn-' + safeId + '" onclick="verifyImage(\'' + safeId + '\')" title="V\u00e9rifier via GPT Vision">\uD83D\uDD0D</button>';
+      verifyBtnHtml = canVerify
+        ? '<button class="btn-action btn-verify" id="verifybtn-' + safeId + '" onclick="verifyImage(\'' + safeId + '\')" title="V\u00e9rifier via GPT Vision">\uD83D\uDD0D</button>'
+        : '<button class="btn-action btn-verify" id="verifybtn-' + safeId + '" disabled style="opacity:0.35;cursor:not-allowed;" title="V\u00e9rification impossible \u2014 image eBay manquante">\uD83D\uDD0D</button>';
     } else if (verif.vision && verif.vision.sameCard === false) {
       verifyBtnHtml = '<button class="btn-action btn-verify wrong" id="verifybtn-' + safeId + '" onclick="verifyOpportunity(\'' + safeId + '\')" title="\u26A0 Images diff\u00e9rentes: ' + esc((verif.vision && verif.vision.summary) || '') + '">\u26A0</button>';
     } else if (verif.confirmed) {
@@ -1874,13 +1967,13 @@ async function updateOpportunities() {
       ebayTitleHtml = '<div style="font-size:10px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px;" title="Comparable eBay : ' + esc(opp.ebayMatchTitle) + '">\u2934 ' + esc(opp.ebayMatchTitle.slice(0, 60)) + (opp.ebayMatchTitle.length > 60 ? '\u2026' : '') + '</div>';
     }
 
-    // Lien recherche eBay (badge cliquable)
-    if (opp.sourceQuery) {
+    // Lien recherche eBay — affiché seulement si pas de lien spécifique déjà présent
+    if (opp.sourceQuery && !hasSpecificEbayLink) {
       var ebaySearchUrl = 'https://www.ebay.co.uk/sch/i.html?_nkw=' + encodeURIComponent(opp.sourceQuery) + '&LH_Sold=1&LH_Complete=1';
-      sourceLinksHtml += ' <a class="source-btn" href="' + esc(ebaySearchUrl) + '" target="_blank" rel="noopener" style="background:rgba(0,114,198,0.15);color:#74b9ff;border-color:rgba(0,114,198,0.3);" title="Rechercher \u00ab ' + esc(opp.sourceQuery) + ' \u00bb sur eBay.co.uk (ventes sold)">&#128269; eBay</a>';
+      sourceLinksHtml += ' <a class="source-btn" href="' + esc(ebaySearchUrl) + '" target="_blank" rel="noopener" style="background:rgba(255,165,0,0.12);color:#ffa94d;border-color:rgba(255,165,0,0.3);" title="Recherche g\u00e9n\u00e9rique eBay \u2014 prix bas\u00e9 sur la moyenne du march\u00e9, pas un listing sp\u00e9cifique">&#128269; Recherche eBay</a>';
     }
 
-    html += '<tr data-opp-id="' + esc(safeId) + '"><td>' + imgHtml + '</td><td><div class="opp-title" title="' + esc(opp.title) + '">' + esc(opp.title) + '</div>' + ebayTitleHtml + '<div style="font-size:10px;color:var(--text3)">' + timeAgo(opp.firstSeenAt) + '</div></td><td><span style="font-size:12px;color:var(--text2)">' + esc(opp.search || '\u2014') + '</span></td><td>' + platBadge + (routeBadge ? ' ' + routeBadge : '') + '</td><td title="' + esc(buyLabel) + '">' + euro(opp.vintedPrice) + '</td><td title="' + esc(sellLabel) + '">' + euro(opp.estimatedSalePrice) + '</td><td class="' + profitClass + '">' + euro(opp.profit) + (opp.profitPercent != null ? ' <span style="font-size:11px;opacity:0.7">(' + pct(opp.profitPercent) + ')</span>' : '') + profitWarnHtml + '</td><td>' + buildLiquidityCell(opp) + '</td><td>' + confHtml + '</td><td>' + statusHtml + '</td><td><div class="source-links">' + sourceLinksHtml + '</div></td><td style="white-space:nowrap">' + actionsHtml + '</td></tr>';
+    html += '<tr data-opp-id="' + esc(safeId) + '"><td>' + imgHtml + '</td><td><div class="opp-title" title="' + esc(opp.title) + '">' + esc(opp.title) + '</div>' + ebayTitleHtml + '<div style="font-size:10px;color:var(--text3)">' + timeAgo(opp.firstSeenAt) + '</div></td><td><span style="font-size:12px;color:var(--text2)">' + esc(opp.search || '\u2014') + '</span></td><td>' + platBadge + (routeBadge ? ' ' + routeBadge : '') + '</td><td title="' + esc(buyLabel) + '">' + euro(opp.vintedPrice) + '</td><td title="' + esc(sellLabel) + '">' + buildPriceCellHtml(opp) + '</td><td class="' + profitClass + '">' + euro(opp.profit) + (opp.profitPercent != null ? ' <span style="font-size:11px;opacity:0.7">(' + pct(opp.profitPercent) + ')</span>' : '') + profitWarnHtml + '</td><td>' + buildLiquidityCell(opp) + '</td><td>' + confHtml + '</td><td>' + statusHtml + '</td><td><div class="source-links">' + sourceLinksHtml + '</div></td><td style="white-space:nowrap">' + actionsHtml + '</td></tr>';
     // Render saved vision banner (persists across refresh)
     if (opp.verification && opp.verification.vision) {
       var sv = opp.verification.vision;

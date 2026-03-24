@@ -417,20 +417,35 @@ async function getPrice(listing, pricingSource, config, search) {
   const dbResult = priceDatabase.lookupPrice(listing.title, category);
   if (dbResult && dbResult.confidence === 'high' && dbResult.scanCount >= 3) {
     console.log(`  [price-db] Cache local: "${listing.title.slice(0, 50)}" → ${dbResult.price}€ (${dbResult.scanCount} scans, ${dbResult.ageDays}j)`);
+    const localSale = {
+      title: dbResult.ebayListingTitle || listing.title,
+      price: dbResult.price,
+      url: dbResult.ebayUrl || '',
+      imageUrl: dbResult.ebayImageUrl || '',
+      source: 'local-database',
+      marketplace: dbResult.ebayUrl ? 'ebay' : 'local-database'
+    };
     const localResult = {
-      matchedSales: [{
-        title: listing.title,
-        price: dbResult.price,
-        source: 'local-database',
-        marketplace: 'local-database'
-      }],
+      matchedSales: [localSale],
       pricingSource: 'local-database',
-      bestMatch: listing.title,
+      bestMatch: localSale.title,
       marketPrice: dbResult.price,
       confidence: 'high',
       scanCount: dbResult.scanCount,
+      dbListings: dbResult.listings || [],
       sourceUrls: []
     };
+    // Build sourceUrls from stored eBay listings
+    localResult.sourceUrls = buildSourceUrls(localResult);
+    // If still empty but we have a URL from the DB, add it manually
+    if (localResult.sourceUrls.length === 0 && dbResult.ebayUrl) {
+      localResult.sourceUrls = [{
+        url: dbResult.ebayUrl,
+        title: dbResult.ebayListingTitle || listing.title,
+        price: dbResult.price,
+        platform: 'ebay'
+      }];
+    }
     setCachedPrice(listing, localResult);
     return localResult;
   }
@@ -466,11 +481,19 @@ async function getPrice(listing, pricingSource, config, search) {
 
   // ── Record price in local database ──────────────────────────────────────
   if (result && result.marketPrice > 0) {
+    // Pass the first matched eBay listing data for traceability
+    const firstSale = result.matchedSales && result.matchedSales[0];
+    const listingData = (firstSale && firstSale.url) ? {
+      url: firstSale.url,
+      listingTitle: firstSale.title || '',
+      imageUrl: firstSale.imageUrl || ''
+    } : null;
     priceDatabase.recordPrice(
       listing.title,
       category,
       result.marketPrice,
-      result.pricingSource || pricingSource
+      result.pricingSource || pricingSource,
+      listingData
     );
   }
 
@@ -534,8 +557,8 @@ function buildSourceUrls(result) {
       });
     }
 
-    // 4. eBay URL (for eBay-sourced results)
-    if (sale.url && (sale.marketplace || '').includes('ebay') && !seen.has(sale.url)) {
+    // 4. eBay URL (for eBay-sourced results or local-database with stored eBay URL)
+    if (sale.url && ((sale.marketplace || '').includes('ebay') || sale.source === 'local-database') && !seen.has(sale.url)) {
       seen.add(sale.url);
       urls.push({
         url: sale.url,

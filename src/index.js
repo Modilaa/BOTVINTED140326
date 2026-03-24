@@ -352,7 +352,17 @@ async function runScan(previousListings) {
           matchedSales,
           ebayMatchImageUrl: (matchedSales[0] && matchedSales[0].imageUrl) || null,
           sourceUrls,
-          profit
+          profit,
+          priceDetails: routerResult ? (() => {
+            const salePrices = matchedSales.map(s => s.price || s.totalPrice || 0).filter(p => p > 0);
+            return {
+              source: actualPricingSource,
+              observations: salePrices.length,
+              lowestPrice: salePrices.length > 0 ? Math.min(...salePrices) : null,
+              highestPrice: salePrices.length > 0 ? Math.max(...salePrices) : null,
+              lastUpdated: new Date().toISOString()
+            };
+          })() : null
         };
 
         // Seller score (données vendeur Vinted si disponibles)
@@ -410,14 +420,15 @@ async function runScan(previousListings) {
           const _failsProfit = !profit || profit.profit < _minProfitEur;
           const _failsMargin = !profit || profit.profitPercent < _minProfitPct;
           const _failsConfidence = row.confidence < 50;
-          const _failsLiquidity = _liquidityScore < 40;
+          const _minLiquidity = actualPricingSource === 'local-database' ? 25 : 40;
+          const _failsLiquidity = _liquidityScore < _minLiquidity;
 
           if (_failsProfit || _failsMargin || _failsConfidence || _failsLiquidity) {
             const _reasons = [];
             if (_failsProfit) _reasons.push(`profit ${profit ? profit.profit.toFixed(2) : '0.00'}€ < ${_minProfitEur}€`);
             if (_failsMargin) _reasons.push(`marge ${profit ? profit.profitPercent.toFixed(1) : '0.0'}% < ${_minProfitPct}%`);
             if (_failsConfidence) _reasons.push(`confiance ${row.confidence}/100 < 50`);
-            if (_failsLiquidity) _reasons.push(`liquidité ${_liquidityScore}/100 < 40`);
+            if (_failsLiquidity) _reasons.push(`liquidité ${_liquidityScore}/100 < ${_minLiquidity}`);
             console.log(`  [no-opportunity] ${listing.title.slice(0, 50)}: ${_reasons.join(', ')}`);
             _seenResult = 'no-match';
           } else {

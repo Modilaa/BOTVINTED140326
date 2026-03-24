@@ -331,12 +331,13 @@ function recordVintedPrice(title, category, vintedPrice, vintedId, country) {
  * Enregistre un prix marché (eBay, API, Cardmarket, etc.).
  * Les doublons sont permis (sources/dates différentes — tout est utile).
  *
- * @param {string} title    - Titre du listing
- * @param {string} category - Catégorie ou source
- * @param {number} price    - Prix marché en EUR
- * @param {string} source   - Source (pokemontcg-api, apify-ebay, ebay-browse-api, …)
+ * @param {string} title       - Titre du listing
+ * @param {string} category    - Catégorie ou source
+ * @param {number} price       - Prix marché en EUR
+ * @param {string} source      - Source (pokemontcg-api, apify-ebay, ebay-browse-api, …)
+ * @param {object} [listingData] - Données du listing source {url, listingTitle, imageUrl}
  */
-function recordMarketPrice(title, category, price, source) {
+function recordMarketPrice(title, category, price, source, listingData) {
   if (!price || price <= 0) return;
   if (!title || !category) return;
 
@@ -356,11 +357,20 @@ function recordMarketPrice(title, category, price, source) {
     entry.category = productCat;
   }
 
-  entry.marketPrices.push({
+  const marketEntry = {
     price: Math.round(price * 100) / 100,
     source: source || 'unknown',
     date: today
-  });
+  };
+
+  // Store eBay listing data for traceability (url, exact title, image)
+  if (listingData) {
+    if (listingData.url) marketEntry.url = listingData.url;
+    if (listingData.listingTitle) marketEntry.listingTitle = listingData.listingTitle;
+    if (listingData.imageUrl) marketEntry.imageUrl = listingData.imageUrl;
+  }
+
+  entry.marketPrices.push(marketEntry);
 
   // Garder max 20 observations marché
   if (entry.marketPrices.length > MAX_MARKET_PRICES) {
@@ -380,8 +390,8 @@ function recordMarketPrice(title, category, price, source) {
 }
 
 // Alias pour compatibilité avec l'ancien code (price-router.js)
-function recordPrice(title, category, price, source) {
-  return recordMarketPrice(title, category, price, source);
+function recordPrice(title, category, price, source, listingData) {
+  return recordMarketPrice(title, category, price, source, listingData);
 }
 
 /**
@@ -402,6 +412,9 @@ function lookupPrice(title, category) {
   const ageDays = daysBetween(entry.lastSeen);
   const isStale = ageDays > STALE_THRESHOLD_DAYS;
 
+  // Find the most recent market price entry that has a stored URL
+  const latestWithUrl = [...(entry.marketPrices || [])].reverse().find(p => p.url);
+
   return {
     price: entry.avgMarketPrice,
     minPrice: entry.minMarketPrice,
@@ -412,7 +425,16 @@ function lookupPrice(title, category) {
     ageDays,
     key,
     avgVintedPrice: entry.avgVintedPrice || 0,
-    vintedObservations: entry.vintedObservations || 0
+    vintedObservations: entry.vintedObservations || 0,
+    // eBay listing data from stored observations (for traceability)
+    ebayUrl: latestWithUrl ? latestWithUrl.url : null,
+    ebayListingTitle: latestWithUrl ? (latestWithUrl.listingTitle || null) : null,
+    ebayImageUrl: latestWithUrl ? (latestWithUrl.imageUrl || null) : null,
+    // All listings with URLs for display in dashboard
+    listings: (entry.marketPrices || [])
+      .filter(p => p.url)
+      .slice(-5)
+      .map(p => ({ url: p.url, title: p.listingTitle || '', price: p.price, imageUrl: p.imageUrl || '', source: p.source, date: p.date }))
   };
 }
 

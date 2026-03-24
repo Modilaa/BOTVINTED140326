@@ -116,10 +116,13 @@ function computeConfidence(opp) {
   // === TIER 3 : Vérification Vision (0-40) ===
   // GPT-4o mini confirme = gros bonus. GPT dit non = rejet immédiat.
   let visionScore = 0;
+  let visionLabel = 'non vérifié';
   if (opp.visionVerified && opp.visionResult) {
     if (opp.visionResult.sameCard === true) {
       visionScore = 40; // GPT confirme — c'est la bonne carte
+      visionLabel = 'GPT confirmé ✅';
     } else if (opp.visionResult.sameCard === false) {
+      opp.confidenceBreakdown = { textScore, sourceScore, visionScore: 0, visionLabel: 'GPT rejeté ❌', belowAvgBoost: 0, total: 0 };
       return 0; // GPT dit carte différente — rejet immédiat
     }
   } else {
@@ -127,11 +130,12 @@ function computeConfidence(opp) {
     const salesWithImage = matchedSales.filter(s => s.imageMatch && s.imageMatch.score !== null);
     if (salesWithImage.length > 0) {
       const bestImg = Math.max(...salesWithImage.map(s => s.imageMatch.score));
-      if (bestImg >= 0.85)      visionScore = 25; // Hash local très confiant
-      else if (bestImg >= 0.75) visionScore = 15; // Hash local assez confiant
+      if (bestImg >= 0.85)      { visionScore = 25; visionLabel = `hash local ${Math.round(bestImg*100)}% ✓`; }
+      else if (bestImg >= 0.75) { visionScore = 15; visionLabel = `hash local ${Math.round(bestImg*100)}% ~`; }
       // else visionScore = 0 — hash faible
     } else if (src === 'local-database') {
       visionScore = 15; // DB locale pré-vérifiée — bénéfice du doute
+      visionLabel = 'base locale (bénéfice du doute)';
     }
     // Pas d'image du tout + pas local-db → visionScore = 0
   }
@@ -187,10 +191,15 @@ function computeConfidence(opp) {
   // Hard gate assoupli : sans GPT Vision ET sans signal Chemin B fort, on plafonne à 49
   // Mais si match texte + source fiable + image hash suffisants, on laisse passer
   const gptConfirmed = opp.visionVerified && opp.visionResult && opp.visionResult.sameCard === true;
-  const hasStrongSignal = belowAvgBoost >= 75 || (textScore >= 30 && sourceScore >= 15 && visionScore >= 15);
+  const hasStrongSignal = belowAvgBoost >= 75 ||
+    (textScore >= 30 && sourceScore >= 15 && visionScore >= 15) ||
+    (src === 'local-database' && textScore >= 30 && visionScore >= 15);
   if (!gptConfirmed && !hasStrongSignal) {
     total = Math.min(total, 49);
   }
+
+  // Stocker le breakdown sur l'objet opportunité (effet de bord non-cassant)
+  opp.confidenceBreakdown = { textScore, sourceScore, visionScore, visionLabel, belowAvgBoost, total };
 
   return total;
 }
