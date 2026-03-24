@@ -923,6 +923,12 @@ tr:hover td { background: rgba(108,92,231,0.04); }
   background: transparent;
   line-height: 1;
 }
+.btn-accept {
+  background: rgba(0,210,160,0.1);
+  color: var(--green);
+  border-color: rgba(0,210,160,0.25);
+}
+.btn-accept:hover { background: var(--green); color: #0b0d14; }
 .btn-validate {
   background: rgba(0,210,160,0.1);
   color: var(--green);
@@ -937,12 +943,6 @@ tr:hover td { background: rgba(108,92,231,0.04); }
 }
 .btn-reject:hover { background: var(--red); color: #fff; }
 .btn-reject.open { background: var(--red); color: #fff; }
-.btn-dismiss {
-  background: rgba(90,96,128,0.1);
-  color: var(--text3);
-  border-color: rgba(90,96,128,0.2);
-  font-size: 14px;
-}
 .btn-dismiss:hover { background: rgba(90,96,128,0.3); color: var(--text2); }
 .btn-verify {
   background: rgba(116,185,255,0.1);
@@ -1131,11 +1131,8 @@ tr:hover td { background: rgba(108,92,231,0.04); }
         <span class="panel-badge" id="oppCount">0</span>
       </div>
       <div class="filter-tabs" id="oppFilterTabs">
-        <button class="filter-tab active" data-filter="active" onclick="setOppFilter('active')">Actives <span class="count" id="countActive">0</span></button>
-        <button class="filter-tab" data-filter="all" onclick="setOppFilter('all')">Toutes <span class="count" id="countAll">0</span></button>
-        <button class="filter-tab" data-filter="expired" onclick="setOppFilter('expired')">Expir&eacute;es <span class="count" id="countExpired">0</span></button>
-        <button class="filter-tab" data-filter="archived" onclick="setOppFilter('archived')">Archiv&eacute;es <span class="count" id="countArchived">0</span></button>
-        <button class="filter-tab" data-filter="dismissed" onclick="setOppFilter('dismissed')">Ignor&eacute;es <span class="count" id="countDismissed">0</span></button>
+        <button class="filter-tab active" data-filter="active" onclick="setOppFilter('active')">En attente <span class="count" id="countActive">0</span></button>
+        <button class="filter-tab" data-filter="accepted" onclick="setOppFilter('accepted')">Accept&eacute;es <span class="count" id="countAccepted">0</span></button>
         <span style="margin-left:12px;border-left:1px solid var(--border);padding-left:12px">
           <select id="platformFilter" onchange="updateOpportunities()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer">
             <option value="all">Toutes plateformes</option>
@@ -1242,6 +1239,20 @@ tr:hover td { background: rgba(108,92,231,0.04); }
           </tbody>
         </table>
       </div>
+    </div>
+  </div>
+
+  <!-- Apprentissage -->
+  <div class="panel" id="learningPanel">
+    <div class="panel-header" onclick="toggleLearning()" style="cursor:pointer;user-select:none;">
+      <div class="panel-title">
+        🧠 Apprentissage
+        <span class="panel-badge" id="learningTotal">0</span>
+      </div>
+      <span id="learningChevron" style="color:var(--text2);font-size:14px;transition:transform 0.2s;">▶</span>
+    </div>
+    <div class="panel-body" id="learningBody" style="display:none;padding:16px;">
+      <div id="learningContent"><div style="color:var(--text3);font-size:13px;">Chargement...</div></div>
     </div>
   </div>
 
@@ -1710,12 +1721,9 @@ async function updateOpportunities() {
   countBadge.textContent = opps.length;
   // Sync stat card "Opportunités actives" with history-based count
   document.getElementById('statOpps').textContent = counts.active || 0;
-  document.getElementById('statOppsSub').textContent = (counts.dismissed || 0) > 0 ? (counts.dismissed) + ' ignor\u00e9e(s)' : '';
+  document.getElementById('statOppsSub').textContent = (counts.accepted || 0) > 0 ? (counts.accepted) + ' accept\u00e9e(s)' : '';
   document.getElementById('countActive').textContent = counts.active || 0;
-  document.getElementById('countAll').textContent = (counts.total || 0) - (counts.dismissed || 0) - (counts.bought || 0);
-  document.getElementById('countExpired').textContent = counts.expired || 0;
-  document.getElementById('countArchived').textContent = counts.archived || 0;
-  document.getElementById('countDismissed').textContent = counts.dismissed || 0;
+  document.getElementById('countAccepted').textContent = counts.accepted || 0;
 
   if (opps.length === 0) {
     container.innerHTML = '<div class="empty-state" id="oppEmpty"><div class="empty-state-icon">&#128269;</div><div class="empty-state-title">Aucune opportunite pour ce filtre</div><div class="empty-state-text">Lance un scan pour decouvrir des opportunites.</div></div>';
@@ -1733,9 +1741,9 @@ async function updateOpportunities() {
     opps = opps.filter(function(o) { return (o.route || 'vinted→ebay') === routeFilterVal; });
   }
 
-  // Filtre par score minimum de confiance (ignoré pour l'onglet "Toutes")
+  // Filtre par score minimum de confiance
   var minConf = parseInt(document.getElementById('minConfidence') ? document.getElementById('minConfidence').value : '0', 10) || 0;
-  if (minConf > 0 && currentOppFilter !== 'all') {
+  if (minConf > 0) {
     opps = opps.filter(function(o) { return o.confidenceScore == null || o.confidenceScore >= minConf; });
   }
 
@@ -1755,8 +1763,7 @@ async function updateOpportunities() {
   });
 
   // Déduplication : même joueur/entité ET prix revente à ±5% → garder la meilleure confiance
-  // (skipped for dismissed/archived — on veut voir tous les items individuels)
-  if (currentOppFilter !== 'dismissed' && currentOppFilter !== 'archived') {
+  if (currentOppFilter !== 'accepted') {
     (function dedup() {
       var seen = [];
       var result = [];
@@ -1791,10 +1798,8 @@ async function updateOpportunities() {
     document.getElementById('statOpps').textContent = opps.length;
     document.getElementById('countActive').textContent = opps.length;
   }
-  if (currentOppFilter === 'dismissed') {
-    document.getElementById('countDismissed').textContent = opps.length;
-    var statOppsSubEl2 = document.getElementById('statOppsSub');
-    if (statOppsSubEl2 && opps.length > 0) statOppsSubEl2.textContent = opps.length + ' ignor\u00e9e(s)';
+  if (currentOppFilter === 'accepted') {
+    document.getElementById('countAccepted').textContent = opps.length;
   }
   // Update profit card to sum only visible/filtered items (skip during scan — data is partial)
   if (lastScanningState !== 'scanning') {
@@ -1946,14 +1951,16 @@ async function updateOpportunities() {
     } else {
       verifyBtnHtml = '<button class="btn-action btn-verify wrong" id="verifybtn-' + safeId + '" onclick="verifyOpportunity(\'' + safeId + '\')" title="Prix diff\u00e9rent (' + ((verif.priceCheck && verif.priceCheck.diff) || 0) + '%): ' + euro(verif.priceCheck && verif.priceCheck.newPrice) + ' via ' + esc((verif.priceCheck && verif.priceCheck.source) || '') + '">\u26A0</button>';
     }
-    var actionsHtml =
-      '<div class="opp-action-btns">' +
-        '<button class="btn-action btn-validate" id="vbtn-' + safeId + '" onclick="submitFeedback(\'' + safeId + '\', true)" title="Bonne opportunit\u00e9">\u2713</button>' +
-        '<button class="btn-action btn-reject" id="rbtn-' + safeId + '" onclick="showFeedbackNote(\'' + safeId + '\')" title="Signaler une erreur">\u2717</button>' +
-        verifyBtnHtml +
-        '<button class="btn-action btn-dismiss" id="dbtn-' + safeId + '" onclick="archiveOpportunity(\'' + safeId + '\')" title="Archiver cette opportunit\u00e9">&#128465;</button>' +
-        '<button class="btn-action" id="portbtn-' + safeId + '" onclick="addToPortfolio(\'' + safeId + '\')" title="Marquer comme achet\u00e9 \u2014 ajoute au portfolio" style="font-size:13px;">&#128176;</button>' +
-      '</div>';
+    var actionsHtml = '<div class="opp-action-btns">';
+    if (opp.status === 'active') {
+      actionsHtml +=
+        '<button class="btn-action btn-accept" id="abtn-' + safeId + '" onclick="acceptOpportunity(\'' + safeId + '\')" title="Accepter \u2014 opportunit\u00e9 valid\u00e9e">\u2705</button>' +
+        '<button class="btn-action btn-reject" id="rbtn-' + safeId + '" onclick="rejectOpportunity(\'' + safeId + '\')" title="Rejeter \u2014 supprimer cette opportunit\u00e9">\u274C</button>' +
+        verifyBtnHtml;
+    }
+    actionsHtml +=
+      '<button class="btn-action" id="portbtn-' + safeId + '" onclick="addToPortfolio(\'' + safeId + '\')" title="Marquer comme achet\u00e9 \u2014 ajoute au portfolio" style="font-size:13px;">&#128176;</button>' +
+    '</div>';
 
     // Badge alerte profit suspect (> 500%)
     var profitWarnHtml = '';
@@ -2491,6 +2498,57 @@ var priceDatabaseState = {
   search: ''
 };
 
+// ─── Apprentissage (feedback report) ───────────────────────
+var learningOpen = false;
+
+function toggleLearning() {
+  learningOpen = !learningOpen;
+  var body = document.getElementById('learningBody');
+  var chevron = document.getElementById('learningChevron');
+  body.style.display = learningOpen ? '' : 'none';
+  chevron.textContent = learningOpen ? '\u25BC' : '\u25B6';
+  if (learningOpen) loadFeedbackReport();
+}
+
+async function loadFeedbackReport() {
+  var container = document.getElementById('learningContent');
+  if (!container) return;
+  var data = await fetchJson('/api/feedback-report');
+  if (!data) { container.innerHTML = '<div style="color:var(--text3);font-size:13px;">Erreur chargement</div>'; return; }
+  document.getElementById('learningTotal').textContent = data.total || 0;
+  if (data.total === 0) {
+    container.innerHTML = '<div style="color:var(--text3);font-size:13px;">Aucune d\u00e9cision enregistr\u00e9e pour le moment.</div>';
+    return;
+  }
+  var acceptColor = data.acceptRate >= 50 ? 'var(--green)' : 'var(--orange)';
+  var html = '<div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:16px;">';
+  html += '<div style="text-align:center"><div style="font-size:28px;font-weight:700;color:' + acceptColor + '">' + data.acceptRate + '%</div><div style="font-size:11px;color:var(--text3)">Taux d\u2019acceptation</div></div>';
+  html += '<div style="text-align:center"><div style="font-size:28px;font-weight:700;color:var(--green)">' + data.accepted + '</div><div style="font-size:11px;color:var(--text3)">Accept\u00e9es</div></div>';
+  html += '<div style="text-align:center"><div style="font-size:28px;font-weight:700;color:var(--red)">' + data.rejected + '</div><div style="font-size:11px;color:var(--text3)">Rejet\u00e9es</div></div>';
+  if (data.gptAccepted != null || data.gptRejected != null) {
+    html += '<div style="text-align:center"><div style="font-size:18px;font-weight:600;color:var(--blue)">' + (data.gptAccepted || 0) + ' / ' + (data.gptRejected || 0) + '</div><div style="font-size:11px;color:var(--text3)">GPT accept\u00e9 / rejet\u00e9</div></div>';
+  }
+  html += '</div>';
+  if (data.topRejectReasons && data.topRejectReasons.length > 0) {
+    html += '<div style="margin-bottom:12px;"><div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px;">Top raisons de rejet</div>';
+    data.topRejectReasons.slice(0, 3).forEach(function(r) {
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:12px;">' +
+        '<span style="background:rgba(255,107,107,0.15);color:var(--red);border-radius:10px;padding:1px 8px;font-weight:600;white-space:nowrap;">' + r.count + 'x</span>' +
+        '<span style="color:var(--text2)">' + esc(r.reason) + '</span></div>';
+    });
+    html += '</div>';
+  }
+  if (data.suggestions && data.suggestions.length > 0) {
+    html += '<div style="background:rgba(108,92,231,0.08);border:1px solid rgba(108,92,231,0.2);border-radius:8px;padding:10px 14px;">';
+    html += '<div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:6px;">\uD83D\uDCA1 Suggestions d\u2019am\u00e9lioration</div>';
+    data.suggestions.forEach(function(s) {
+      html += '<div style="font-size:12px;color:var(--text2);margin-bottom:3px;">\u2022 ' + esc(s) + '</div>';
+    });
+    html += '</div>';
+  }
+  container.innerHTML = html;
+}
+
 function togglePriceDatabase() {
   var body = document.getElementById('priceDatabaseBody');
   var chevron = document.getElementById('priceDatabaseChevron');
@@ -2693,44 +2751,87 @@ function connectSSE() {
 }
 
 // ─── Immediate count & profit update (called on every user action) ───
-function adjustCounts(deltaActive, deltaDismissed, deltaProfit) {
+function adjustCounts(deltaActive, deltaAccepted, deltaProfit) {
   var statOppsEl = document.getElementById('statOpps');
   var countActiveEl = document.getElementById('countActive');
-  var countAllEl = document.getElementById('countAll');
-  var countDismissedEl = document.getElementById('countDismissed');
+  var countAcceptedEl = document.getElementById('countAccepted');
   var oppCountEl = document.getElementById('oppCount');
   var statOppsSubEl = document.getElementById('statOppsSub');
   if (deltaActive !== 0) {
     if (statOppsEl) statOppsEl.textContent = Math.max(0, (parseInt(statOppsEl.textContent) || 0) + deltaActive);
     if (countActiveEl) countActiveEl.textContent = Math.max(0, (parseInt(countActiveEl.textContent) || 0) + deltaActive);
-    if (countAllEl) countAllEl.textContent = Math.max(0, (parseInt(countAllEl.textContent) || 0) + deltaActive);
     if (oppCountEl) oppCountEl.textContent = Math.max(0, (parseInt(oppCountEl.textContent) || 0) + deltaActive);
   }
-  if (deltaDismissed !== 0 && countDismissedEl) {
-    countDismissedEl.textContent = Math.max(0, (parseInt(countDismissedEl.textContent) || 0) + deltaDismissed);
+  if (deltaAccepted !== 0 && countAcceptedEl) {
+    countAcceptedEl.textContent = Math.max(0, (parseInt(countAcceptedEl.textContent) || 0) + deltaAccepted);
   }
   if (deltaProfit !== 0 && currentTotalProfit !== null) {
     currentTotalProfit = Math.max(0, currentTotalProfit + deltaProfit);
     var profitEl = document.getElementById('statProfit');
     if (profitEl) profitEl.textContent = euro(currentTotalProfit);
   }
-  var dismissedCount = parseInt((countDismissedEl || {}).textContent || '') || 0;
-  if (statOppsSubEl) statOppsSubEl.textContent = dismissedCount > 0 ? dismissedCount + ' ignor\u00e9e(s)' : '';
+  var acceptedCount = parseInt((countAcceptedEl || {}).textContent || '') || 0;
+  if (statOppsSubEl) statOppsSubEl.textContent = acceptedCount > 0 ? acceptedCount + ' accept\u00e9e(s)' : '';
 }
 
-// ─── Archive opportunity (🗑 button) ─────────────────────────────────
-async function archiveOpportunity(id) {
-  var archiveBtn = document.getElementById('dbtn-' + id);
-  if (archiveBtn) archiveBtn.disabled = true;
+// ─── Accept opportunity (✅ button) ──────────────────────────────────
+async function acceptOpportunity(id) {
+  var btn = document.getElementById('abtn-' + id);
+  if (btn) btn.disabled = true;
   try {
-    var res = await fetch(API_BASE + '/api/opportunities/' + id, { method: 'DELETE' });
+    var res = await fetch(API_BASE + '/api/opportunity/' + id + '/accept', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }
+    });
     var data = await res.json();
-    if (!data.success) { alert('Erreur: ' + (data.error || 'Inconnu')); return; }
-    var profit = currentOppsProfit[id] || 0;
-    delete currentOppsProfit[id];
-    adjustCounts(-1, 0, profit > 0 ? -profit : 0);
-    updateOpportunities();
+    if (!data.success) { if (btn) btn.disabled = false; alert('Erreur: ' + (data.error || 'Inconnu')); return; }
+    // Remove from En attente, update counts
+    var row = document.querySelector('tr[data-opp-id="' + id + '"]');
+    if (row) {
+      row.style.transition = 'opacity 0.3s';
+      row.style.opacity = '0';
+      setTimeout(function() { if (row.parentNode) row.parentNode.removeChild(row); }, 320);
+      var banner = row.nextElementSibling;
+      if (banner && banner.classList && banner.classList.contains('vision-banner')) {
+        banner.style.transition = 'opacity 0.3s'; banner.style.opacity = '0';
+        setTimeout(function() { if (banner.parentNode) banner.parentNode.removeChild(banner); }, 320);
+      }
+    }
+    adjustCounts(-1, 1, 0);
+    showVerifyToast('\u2705 Opportunit\u00e9 accept\u00e9e', 'toast-ok');
   } catch (e) {
+    if (btn) btn.disabled = false;
+    alert('Erreur: ' + e.message);
+  }
+}
+
+// ─── Reject opportunity (❌ button) ───────────────────────────────────
+async function rejectOpportunity(id) {
+  var btn = document.getElementById('rbtn-' + id);
+  if (btn) btn.disabled = true;
+  var profit = currentOppsProfit[id] || 0;
+  delete currentOppsProfit[id];
+  try {
+    var res = await fetch(API_BASE + '/api/opportunity/' + id + '/reject', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source: 'manual' })
+    });
+    var data = await res.json();
+    if (!data.success) { if (btn) btn.disabled = false; alert('Erreur: ' + (data.error || 'Inconnu')); return; }
+    var row = document.querySelector('tr[data-opp-id="' + id + '"]');
+    if (row) {
+      row.style.transition = 'opacity 0.3s';
+      row.style.opacity = '0';
+      setTimeout(function() { if (row.parentNode) row.parentNode.removeChild(row); }, 320);
+      var banner = row.nextElementSibling;
+      if (banner && banner.classList && banner.classList.contains('vision-banner')) {
+        banner.style.transition = 'opacity 0.3s'; banner.style.opacity = '0';
+        setTimeout(function() { if (banner.parentNode) banner.parentNode.removeChild(banner); }, 320);
+      }
+    }
+    adjustCounts(-1, 0, profit > 0 ? -profit : 0);
+    showVerifyToast('\u274C Opportunit\u00e9 rejet\u00e9e', 'toast-warn');
+  } catch (e) {
+    if (btn) btn.disabled = false;
     alert('Erreur: ' + e.message);
   }
 }
@@ -2773,7 +2874,7 @@ async function verifyImage(id) {
     }
     var confidence = (data.vision && data.vision.confidence) || data.confidence || '?';
     if (!data.match) {
-      // Masquer la ligne immédiatement (le SSE supprimera au prochain refresh)
+      // GPT rejette → auto-rejected, masquer la ligne
       var row = document.querySelector('tr[data-opp-id="' + id + '"]');
       if (row) {
         row.style.transition = 'opacity 0.4s';
@@ -2785,17 +2886,27 @@ async function verifyImage(id) {
           setTimeout(function() { if (banner.parentNode) banner.parentNode.removeChild(banner); }, 400);
         }
       }
-      showVerifyToast('\uD83D\uDDC4 <b>Archiv\u00e9e</b> \u2014 ' + esc(data.reason || 'Cartes diff\u00e9rentes'), 'toast-warn');
+      var profit2 = currentOppsProfit[id] || 0;
+      delete currentOppsProfit[id];
+      adjustCounts(-1, 0, profit2 > 0 ? -profit2 : 0);
+      showVerifyToast('\u274C <b>Rejet\u00e9 par GPT</b> \u2014 ' + esc(data.reason || 'Produits diff\u00e9rents'), 'toast-warn');
     } else {
+      // GPT accepte → auto-accepted, déplacer vers Acceptées
+      var row2 = document.querySelector('tr[data-opp-id="' + id + '"]');
+      if (row2) {
+        row2.style.transition = 'opacity 0.4s';
+        row2.style.opacity = '0';
+        setTimeout(function() { if (row2.parentNode) row2.parentNode.removeChild(row2); }, 400);
+      }
+      adjustCounts(-1, 1, 0);
       if (btn) {
         btn.classList.remove('verifying');
         btn.classList.add('confirmed');
         btn.textContent = '\u2713';
         btn.disabled = false;
-        btn.title = 'Confirm\u00e9e par GPT (' + confidence + '%)';
-        btn.setAttribute('onclick', 'verifyOpportunity(\'' + id + '\')');
+        btn.title = 'Accept\u00e9e par GPT (' + confidence + '%)';
       }
-      showVerifyToast('\u2705 <b>Confirm\u00e9e par GPT</b> (' + confidence + '%)', 'toast-ok');
+      showVerifyToast('\u2705 <b>Accept\u00e9e par GPT</b> (' + confidence + '%) \u2014 ' + esc(data.reason || ''), 'toast-ok');
     }
   } catch (e) {
     btn = getVerifyBtn(id);
@@ -3000,7 +3111,7 @@ async function submitFeedbackModal() {
     if (tr) tr.remove();
   }
   // Update all counts and profit total immediately
-  adjustCounts(-1, 1, profit > 0 ? -profit : 0);
+  adjustCounts(-1, 0, profit > 0 ? -profit : 0);
 }
 
 // ─── Portfolio ────────────────────────────────────────────

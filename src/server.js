@@ -55,6 +55,7 @@ const getAgentPath = (name) => path.join(config.outputDir, 'agents', `${name}-la
 const getScansHistoryPath = () => path.join(config.outputDir, 'scans-history.json');
 const getOpportunitiesHistoryPath = () => path.join(config.outputDir, 'opportunities-history.json');
 const getFeedbackPath = () => path.join(config.outputDir, 'feedback-reports.json');
+const getFeedbackLogPath = () => path.join(config.outputDir, 'feedback-log.json');
 
 function readJsonSafe(filePath) {
   try {
@@ -124,7 +125,7 @@ function saveOpportunitiesHistory(history) {
  * Among equal status, keep the most recently seen entry.
  */
 function deduplicateHistoryById(history) {
-  const statusRank = { dismissed: 1, archived: 2, sold: 3, active: 4, expired: 5 };
+  const statusRank = { rejected: 1, accepted: 2, dismissed: 3, archived: 4, sold: 5, bought: 6, active: 7, expired: 8 };
   const seenIds = new Map();
   for (const h of history) {
     if (!h.id) continue;
@@ -150,6 +151,16 @@ function readFeedback() {
 
 function writeFeedback(data) {
   writeJsonSafe(getFeedbackPath(), data);
+}
+
+function readFeedbackLog() {
+  return readJsonSafe(getFeedbackLogPath()) || [];
+}
+
+function appendFeedbackLog(entry) {
+  const log = readFeedbackLog();
+  log.push(entry);
+  writeJsonSafe(getFeedbackLogPath(), log.length > 1000 ? log.slice(-1000) : log);
 }
 
 /**
@@ -209,7 +220,8 @@ function appendOpportunitiesToHistory(scanOpportunities, scannedAt) {
       if (opp.sellerScore != null) existing.sellerScore = opp.sellerScore;
       if (opp.visionVerified != null) existing.visionVerified = opp.visionVerified;
       if (opp.visionSameCard != null) existing.visionSameCard = opp.visionSameCard;
-      if (existing.status === 'expired') existing.status = 'active'; // Re-activate if re-found
+      // Re-activate expired items, but never overwrite accepted/rejected decisions
+      if (existing.status === 'expired') existing.status = 'active';
     } else {
       // New opportunity
       const newItemKey = itemKey || `opp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -246,7 +258,7 @@ function appendOpportunitiesToHistory(scanOpportunities, scannedAt) {
     }
   }
 
-  // Auto-expire opportunities older than 7 days
+  // Auto-expire active opportunities older than 7 days (never expire accepted/rejected)
   const EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
   const now = Date.now();
   for (const h of history) {
@@ -258,8 +270,7 @@ function appendOpportunitiesToHistory(scanOpportunities, scannedAt) {
     }
   }
 
-  // Expire stale items created by older code versions with sub-threshold confidence
-  // (current pipeline requires GPT Vision confirmation → confidence always ≥ 50 for active opps)
+  // Expire stale active items with sub-threshold confidence
   for (const h of history) {
     if (h.status === 'active' && h.confidence != null && h.confidence < 50) {
       h.status = 'expired';
@@ -320,7 +331,7 @@ app.get('/api/status', (_req, res) => {
 
 // ─── API: Opportunities (reads from history, enriches with live data) ─
 app.get('/api/opportunities', (req, res) => {
-  const filter = req.query.filter || 'active'; // active, expired, archived, all
+  const filter = req.query.filter || 'active'; // active, accepted
   const scanData = readJsonSafe(getScanPath());
 
   // First, sync latest scan into history if available
@@ -331,11 +342,13 @@ app.get('/api/opportunities', (req, res) => {
   // Deduplicate by item ID: same Vinted item can appear on multiple country domains (fr/be/…)
   let history = deduplicateHistoryById(getOpportunitiesHistory());
 
-  // Apply filter (dismissed/bought excluded from 'all' — visible only via explicit filter)
-  if (filter === 'all') {
-    history = history.filter((h) => h.status !== 'dismissed' && h.status !== 'bought');
+  // Rejected items are NEVER returned to the frontend
+  // Only active (En attente) and accepted (Acceptées) are visible
+  if (filter === 'accepted') {
+    history = history.filter((h) => h.status === 'accepted');
   } else {
-    history = history.filter((h) => h.status === filter);
+    // Default: active only (En attente)
+    history = history.filter((h) => h.status === 'active');
   }
 
   const supervisorData = readJsonSafe(getAgentPath('supervisor'));
@@ -409,22 +422,12 @@ app.get('/api/opportunities', (req, res) => {
   // Sort by profit descending
   opportunities.sort((a, b) => (b.profit || 0) - (a.profit || 0));
 
-  // Filter by status query param if provided
-  const statusFilter = req.query.status;
-  if (statusFilter) {
-    opportunities = opportunities.filter((o) => o.status === statusFilter);
-  }
-
-  // Count by status for the badge (use deduplicated view — same dedup as the displayed list)
+  // Count by status for the badge (use deduplicated view)
   const allHistoryDeduped = deduplicateHistoryById(getOpportunitiesHistory());
   const counts = {
     active: allHistoryDeduped.filter((h) => h.status === 'active').length,
-    expired: allHistoryDeduped.filter((h) => h.status === 'expired').length,
-    sold: allHistoryDeduped.filter((h) => h.status === 'sold').length,
-    archived: allHistoryDeduped.filter((h) => h.status === 'archived').length,
-    dismissed: allHistoryDeduped.filter((h) => h.status === 'dismissed').length,
-    bought: allHistoryDeduped.filter((h) => h.status === 'bought').length,
-    total: allHistoryDeduped.length
+    accepted: allHistoryDeduped.filter((h) => h.status === 'accepted').length,
+    total: allHistoryDeduped.filter((h) => h.status === 'active' || h.status === 'accepted').length
   };
 
   res.json({
@@ -456,6 +459,119 @@ app.post('/api/opportunities/:id/status', (req, res) => {
 
   broadcastSSE({ type: 'opportunities-update' });
   res.json({ success: true, opportunity: opp });
+});
+
+// ─── API: Accept opportunity ──────────────────────────────────────────
+app.post('/api/opportunity/:id/accept', (req, res) => {
+  const { id } = req.params;
+  const history = getOpportunitiesHistory();
+  const opp = history.find((h) => h.id === id);
+  if (!opp) return res.status(404).json({ error: 'Opportunité non trouvée' });
+
+  opp.status = 'accepted';
+  opp.acceptedAt = new Date().toISOString();
+  saveOpportunitiesHistory(history);
+
+  appendFeedbackLog({
+    id: opp.id,
+    title: opp.title,
+    decision: 'accepted',
+    source: 'manual',
+    reason: null,
+    vintedPrice: opp.vintedPrice,
+    marketPrice: opp.estimatedSalePrice,
+    pricingSource: opp.pricingSource,
+    timestamp: new Date().toISOString()
+  });
+
+  broadcastSSE({ type: 'opportunities-update' });
+  res.json({ success: true });
+});
+
+// ─── API: Reject opportunity ──────────────────────────────────────────
+app.post('/api/opportunity/:id/reject', (req, res) => {
+  const { id } = req.params;
+  const { reason, source } = req.body || {};
+  const history = getOpportunitiesHistory();
+  const opp = history.find((h) => h.id === id);
+  if (!opp) return res.status(404).json({ error: 'Opportunité non trouvée' });
+
+  opp.status = 'rejected';
+  opp.rejectedAt = new Date().toISOString();
+  saveOpportunitiesHistory(history);
+
+  appendFeedbackLog({
+    id: opp.id,
+    title: opp.title,
+    decision: 'rejected',
+    source: source || 'manual',
+    reason: reason || null,
+    vintedPrice: opp.vintedPrice,
+    marketPrice: opp.estimatedSalePrice,
+    pricingSource: opp.pricingSource,
+    timestamp: new Date().toISOString()
+  });
+
+  broadcastSSE({ type: 'opportunities-update' });
+  res.json({ success: true });
+});
+
+// ─── API: Feedback report (stats apprentissage) ───────────────────────
+app.get('/api/feedback-report', (_req, res) => {
+  const log = readFeedbackLog();
+  if (log.length === 0) {
+    return res.json({ total: 0, accepted: 0, rejected: 0, acceptRate: 0, topRejectReasons: [], categoryStats: [], suggestions: [] });
+  }
+
+  const accepted = log.filter((e) => e.decision === 'accepted').length;
+  const rejected = log.filter((e) => e.decision === 'rejected').length;
+  const total = log.length;
+  const acceptRate = total > 0 ? Math.round((accepted / total) * 100) : 0;
+
+  // Top reject reasons
+  const reasonCounts = {};
+  log.filter((e) => e.decision === 'rejected' && e.reason).forEach((e) => {
+    const key = String(e.reason).slice(0, 80);
+    reasonCounts[key] = (reasonCounts[key] || 0) + 1;
+  });
+  const topRejectReasons = Object.entries(reasonCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([reason, count]) => ({ reason, count }));
+
+  // Source breakdown (manual vs gpt-vision)
+  const gptAccepted = log.filter((e) => e.decision === 'accepted' && e.source === 'gpt-vision').length;
+  const gptRejected = log.filter((e) => e.decision === 'rejected' && e.source === 'gpt-vision').length;
+
+  // Category stats (by pricingSource as proxy for category)
+  const catMap = {};
+  log.forEach((e) => {
+    const cat = e.pricingSource || 'unknown';
+    if (!catMap[cat]) catMap[cat] = { accepted: 0, rejected: 0 };
+    if (e.decision === 'accepted') catMap[cat].accepted++;
+    else if (e.decision === 'rejected') catMap[cat].rejected++;
+  });
+  const categoryStats = Object.entries(catMap).map(([cat, stats]) => {
+    const t = stats.accepted + stats.rejected;
+    return { category: cat, accepted: stats.accepted, rejected: stats.rejected, total: t, acceptRate: Math.round((stats.accepted / t) * 100) };
+  }).sort((a, b) => b.acceptRate - a.acceptRate);
+
+  // Auto-generated suggestions
+  const suggestions = [];
+  if (rejected > accepted * 2 && total >= 5) {
+    suggestions.push(`Taux de rejet élevé (${100 - acceptRate}%) — améliorer le matching de variantes dans scoring.js`);
+  }
+  if (topRejectReasons.length > 0 && topRejectReasons[0].count >= 3) {
+    suggestions.push(`Raison dominante : "${topRejectReasons[0].reason.slice(0, 60)}" (${topRejectReasons[0].count}×)`);
+  }
+  if (total >= 5 && (gptRejected + gptAccepted) > 0) {
+    const gptRejectRate = Math.round((gptRejected / (gptRejected + gptAccepted)) * 100);
+    if (gptRejectRate > 60) {
+      suggestions.push(`GPT Vision rejette ${gptRejectRate}% des vérifications — améliorer la qualité des images eBay`);
+    }
+  }
+
+  res.json({ total, accepted, rejected, acceptRate, topRejectReasons, categoryStats, suggestions, gptAccepted, gptRejected });
 });
 
 // ─── API: Scan history ───────────────────────────────────────────────
@@ -502,10 +618,10 @@ app.get('/api/stats', (_req, res) => {
 
   const allListings = scanData.searchedListings || [];
 
-  // Total estimated profit: use active opportunities from history so it matches the dashboard display
+  // Total estimated profit: active + accepted opportunities
   const totalEstimatedProfit = Math.round(
     deduplicateHistoryById(getOpportunitiesHistory())
-      .filter((h) => h.status === 'active')
+      .filter((h) => h.status === 'active' || h.status === 'accepted')
       .reduce((sum, h) => sum + (h.profit || 0), 0) * 100
   ) / 100;
 
@@ -516,8 +632,8 @@ app.get('/api/stats', (_req, res) => {
   const today = new Date().toISOString().slice(0, 10);
   const scansToday = history.filter((h) => h.scannedAt && h.scannedAt.startsWith(today)).length;
 
-  // Success rate: from history (stable data) — active opps with confidence >= 50 / total active opps
-  const activeHistory = deduplicateHistoryById(getOpportunitiesHistory()).filter((h) => h.status === 'active');
+  // Success rate: from history (stable data) — active+accepted opps with confidence >= 50 / total
+  const activeHistory = deduplicateHistoryById(getOpportunitiesHistory()).filter((h) => h.status === 'active' || h.status === 'accepted');
   const successRate = activeHistory.length > 0
     ? Math.round((activeHistory.filter((h) => (h.confidence || 0) >= 50).length / activeHistory.length) * 10000) / 100
     : 0;
@@ -1465,22 +1581,47 @@ app.post('/api/verify-image', async (req, res) => {
     };
 
     if (vision.verdict === 'no_match') {
-      // Manual verification (dashboard button) → archived so user can still see it
-      // Auto-verify (during scan) → dismissed to filter it out
-      opp.status = manual ? 'archived' : 'dismissed';
-      opp.dismissedAt = new Date().toISOString();
-      opp.dismissReason = 'gpt-vision-mismatch';
-      opp.gptVerdict = vision.reason || 'Cartes différentes';
+      opp.status = 'rejected';
+      opp.rejectedAt = new Date().toISOString();
+      opp.rejectReason = 'gpt-vision-mismatch';
+      opp.gptVerdict = vision.reason || 'Produits différents';
+
+      appendFeedbackLog({
+        id: opp.id,
+        title: opp.title,
+        decision: 'rejected',
+        source: 'gpt-vision',
+        reason: vision.reason || (vision.report || ''),
+        vintedPrice: opp.vintedPrice,
+        marketPrice: opp.estimatedSalePrice,
+        pricingSource: opp.pricingSource,
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      // GPT confirms match → auto-accept
+      opp.status = 'accepted';
+      opp.acceptedAt = new Date().toISOString();
+
+      appendFeedbackLog({
+        id: opp.id,
+        title: opp.title,
+        decision: 'accepted',
+        source: 'gpt-vision',
+        reason: vision.reason || (vision.report || ''),
+        vintedPrice: opp.vintedPrice,
+        marketPrice: opp.estimatedSalePrice,
+        pricingSource: opp.pricingSource,
+        timestamp: new Date().toISOString()
+      });
     }
 
     saveOpportunitiesHistory(history);
-    if (vision.verdict === 'no_match') {
-      broadcastSSE({ type: 'opportunities-update' });
-    }
+    broadcastSSE({ type: 'opportunities-update' });
 
     return res.json({
       success: true,
       match: vision.verdict === 'match',
+      accepted: vision.verdict === 'match',
       verdict: vision.verdict,
       reason: vision.reason || '',
       sameProduct: vision.sameProduct,
