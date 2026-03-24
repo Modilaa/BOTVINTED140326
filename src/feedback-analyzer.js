@@ -16,11 +16,14 @@ const fs = require('fs');
 const path = require('path');
 
 const OUTPUT_DIR = path.join(__dirname, '..', 'output');
-const FEEDBACK_LOG_PATH   = path.join(OUTPUT_DIR, 'feedback-log.json');
-const HISTORY_PATH        = path.join(OUTPUT_DIR, 'opportunities-history.json');
-const ADJUSTMENTS_PATH    = path.join(OUTPUT_DIR, 'auto-adjustments.json');
+const FEEDBACK_LOG_PATH    = path.join(OUTPUT_DIR, 'feedback-log.json');
+const HISTORY_PATH         = path.join(OUTPUT_DIR, 'opportunities-history.json');
+const ADJUSTMENTS_PATH     = path.join(OUTPUT_DIR, 'auto-adjustments.json');
 const ADJUSTMENTS_LOG_PATH = path.join(OUTPUT_DIR, 'auto-adjustments-log.json');
-const REPORT_PATH         = path.join(OUTPUT_DIR, 'last-analysis-report.json');
+const REPORT_PATH          = path.join(OUTPUT_DIR, 'last-analysis-report.json');
+const GPT_ANALYSIS_PATH    = path.join(OUTPUT_DIR, 'gpt-analysis.json');
+
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 // Seuils conservateurs
 const MIN_DECISIONS_FOR_DISABLE = 20;   // Au moins 20 décisions avant de désactiver
@@ -455,6 +458,197 @@ function buildSuggestions(analysis, adjustments) {
   return suggestions;
 }
 
+// ─── Analyse GPT-4o-mini ──────────────────────────────────────────────────────
+
+async function callGptAnalysis(analysis, enrichedFeedback, historyById) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    console.warn('[feedback-analyzer] OPENAI_API_KEY manquante, analyse GPT ignorée');
+    return null;
+  }
+
+  let OpenAI;
+  try { OpenAI = require('openai'); } catch {
+    console.warn('[feedback-analyzer] Module openai non disponible');
+    return null;
+  }
+
+  const client = new OpenAI({ apiKey });
+
+  // 20 derniers rejets avec détails
+  const rejects = enrichedFeedback
+    .filter(e => e.decision === 'rejected')
+    .slice(-20)
+    .map(e => {
+      const opp = historyById.get(e.id);
+      return {
+        titre: (opp && opp.title) || '?',
+        catégorie: e.search || '?',
+        raison: e.reason || '?',
+        source: (opp && opp.source) || '?',
+        prix: (opp && opp.price) != null ? `${opp.price}€` : '?',
+        date: e.timestamp ? new Date(e.timestamp).toLocaleDateString('fr-BE') : '?'
+      };
+    });
+
+  // 10 dernières acceptations
+  const accepts = enrichedFeedback
+    .filter(e => e.decision === 'accepted')
+    .slice(-10)
+    .map(e => {
+      const opp = historyById.get(e.id);
+      return {
+        titre: (opp && opp.title) || '?',
+        catégorie: e.search || '?',
+        source: (opp && opp.source) || '?',
+        prix: (opp && opp.price) != null ? `${opp.price}€` : '?'
+      };
+    });
+
+  // Stats catégories
+  const catStats = analysis.categoryAnalysis.map(c => ({
+    catégorie: c.cat,
+    acceptées: c.accepted,
+    rejetées: c.rejected,
+    tauxAccept: `${c.acceptRate}%`,
+    problématique: c.problematic
+  }));
+
+  // Paramètres actuels
+  const adj = loadAdjustments();
+  const currentParams = {
+    categoriesDésactivées: adj.disabledCategories || [],
+    minObservations: adj.minObservations || 1,
+    boostVariante: adj.variantWeightBoost || 0,
+    seuilConfiance: 50,
+    scoring: 'Tier1(matching 0-40) + Tier2(source 0-20) + Tier3(GPT vision 0-40)'
+  };
+
+  const prompt = `Tu es un expert en arbitrage e-commerce (Vinted→eBay, cartes TCG, LEGO, sport cards).
+
+Analyse ces feedbacks de notre bot de détection d'opportunités.
+
+[20 DERNIERS REJETS]
+${JSON.stringify(rejects, null, 2)}
+
+[10 DERNIÈRES ACCEPTATIONS]
+${JSON.stringify(accepts, null, 2)}
+
+[STATS PAR CATÉGORIE]
+${JSON.stringify(catStats, null, 2)}
+
+[PARAMÈTRES ACTUELS DU SCORING]
+${JSON.stringify(currentParams, null, 2)}
+
+Réponds UNIQUEMENT avec du JSON valide (pas de markdown, pas de backticks), avec cette structure exacte :
+{
+  "healthScore": <entier 0-10>,
+  "analysis": "<texte en français, 200-350 mots, concret et actionnable : patterns de rejet, catégories à ajuster, suggestions matching>",
+  "topPatterns": ["<pattern rejet 1>", "<pattern rejet 2>", "<pattern rejet 3>"],
+  "prioritiesThisWeek": ["<action 1>", "<action 2>", "<action 3>"],
+  "actions": []
+}
+
+Pour le champ "actions", inclus UNIQUEMENT les ajustements dont tu es sûr à plus de 80%, parmi :
+- { "type": "disable_category", "category": "<nom exact>", "reason": "<raison courte>" }
+- { "type": "enable_category", "category": "<nom exact>", "reason": "<raison courte>" }
+- { "type": "increase_min_observations", "value": <2 ou 3>, "reason": "<raison courte>" }
+- { "type": "boost_variant_weight", "value": <10 ou 20>, "reason": "<raison courte>" }
+
+Si pas assez de données pour une action, laisse "actions" vide.`;
+
+  try {
+    const response = await client.chat.completions.create({
+      model: 'gpt-4o-mini',
+      max_tokens: 1200,
+      temperature: 0.3,
+      messages: [{ role: 'user', content: prompt }]
+    });
+
+    const raw = (response.choices?.[0]?.message?.content || '').trim();
+    let parsed;
+    try {
+      const cleaned = raw.replace(/^```(?:json)?\n?|\n?```$/g, '').trim();
+      parsed = JSON.parse(cleaned);
+    } catch {
+      parsed = { analysis: raw, healthScore: null, actions: [], topPatterns: [], prioritiesThisWeek: [] };
+    }
+
+    const result = { ...parsed, generatedAt: new Date().toISOString(), model: 'gpt-4o-mini' };
+    writeJsonSafe(GPT_ANALYSIS_PATH, result);
+    console.log('[feedback-analyzer] ✅ Analyse GPT sauvegardée (score santé: ' + result.healthScore + '/10)');
+    return result;
+  } catch (err) {
+    console.error(`[feedback-analyzer] Erreur GPT: ${err.message}`);
+    return null;
+  }
+}
+
+// ─── Application des actions suggérées par GPT ────────────────────────────────
+
+function applyGptActions(actions, analysis) {
+  if (!Array.isArray(actions) || actions.length === 0) return;
+
+  const currentAdjustments = loadAdjustments();
+  const appliedLog = [];
+  let changed = false;
+
+  for (const action of actions) {
+    try {
+      if (action.type === 'disable_category' && action.category) {
+        if (!currentAdjustments.disabledCategories) currentAdjustments.disabledCategories = [];
+        if (!currentAdjustments.disabledCategories.includes(action.category)) {
+          currentAdjustments.disabledCategories.push(action.category);
+          appliedLog.push({ ...action, source: 'gpt', appliedAt: new Date().toISOString() });
+          changed = true;
+          console.log(`[feedback-analyzer] 🤖 GPT désactive: ${action.category} — ${action.reason}`);
+        }
+      } else if (action.type === 'enable_category' && action.category) {
+        if (currentAdjustments.disabledCategories) {
+          const idx = currentAdjustments.disabledCategories.indexOf(action.category);
+          if (idx !== -1) {
+            currentAdjustments.disabledCategories.splice(idx, 1);
+            appliedLog.push({ ...action, source: 'gpt', appliedAt: new Date().toISOString() });
+            changed = true;
+            console.log(`[feedback-analyzer] 🤖 GPT réactive: ${action.category} — ${action.reason}`);
+          }
+        }
+      } else if (action.type === 'increase_min_observations' && action.value) {
+        const newVal = Math.min(Math.max(1, Number(action.value)), 5);
+        if (newVal !== (currentAdjustments.minObservations || 1)) {
+          currentAdjustments.minObservations = newVal;
+          appliedLog.push({ ...action, source: 'gpt', appliedAt: new Date().toISOString() });
+          changed = true;
+          console.log(`[feedback-analyzer] 🤖 GPT minObservations → ${newVal}`);
+        }
+      } else if (action.type === 'boost_variant_weight' && action.value !== undefined) {
+        const newVal = Math.min(Math.max(0, Number(action.value)), 30);
+        if (newVal !== (currentAdjustments.variantWeightBoost || 0)) {
+          currentAdjustments.variantWeightBoost = newVal;
+          appliedLog.push({ ...action, source: 'gpt', appliedAt: new Date().toISOString() });
+          changed = true;
+          console.log(`[feedback-analyzer] 🤖 GPT variantBoost → ${newVal}`);
+        }
+      }
+    } catch (e) {
+      console.warn(`[feedback-analyzer] GPT action ignorée (${action.type}): ${e.message}`);
+    }
+  }
+
+  if (changed) {
+    currentAdjustments.appliedAt = new Date().toISOString();
+    writeJsonSafe(ADJUSTMENTS_PATH, currentAdjustments);
+    const log = loadAdjustmentsLog();
+    log.push({
+      appliedAt: new Date().toISOString(),
+      source: 'gpt',
+      adjustments: appliedLog,
+      analysisSnapshot: { totalFeedback: analysis.totalFeedback, globalAcceptRate: analysis.globalAcceptRate }
+    });
+    writeJsonSafe(ADJUSTMENTS_LOG_PATH, log.length > 100 ? log.slice(-100) : log);
+  }
+}
+
 // ─── Envoi Telegram ──────────────────────────────────────────────────────────
 
 async function sendReportToTelegram(reportText) {
@@ -484,7 +678,7 @@ async function sendReportToTelegram(reportText) {
 
 // ─── Point d'entrée principal ─────────────────────────────────────────────────
 
-async function runAnalysis({ sendTelegram = true } = {}) {
+async function runAnalysis({ sendTelegram = true, forceGpt = false } = {}) {
   console.log('[feedback-analyzer] Démarrage de l\'analyse...');
 
   try {
@@ -494,31 +688,61 @@ async function runAnalysis({ sendTelegram = true } = {}) {
     const analysis = analyzePatterns();
     console.log(`[feedback-analyzer] ${analysis.totalFeedback} feedbacks analysés, ${analysis.categoryAnalysis.length} catégories`);
 
-    // 2. Calculer les ajustements
+    // 2. Calculer les ajustements statistiques
     const { adjustmentsToApply, newlyDisabled } = computeAdjustments(analysis);
 
-    // 3. Appliquer les ajustements
+    // 3. Appliquer les ajustements statistiques
     const { applied, adjustments } = applyAdjustments(adjustmentsToApply, newlyDisabled, analysis);
 
-    // 4. Générer le rapport
-    const reportText  = generateReport(analysis, applied, adjustments, new Date().toISOString());
+    // 4. Analyse GPT (1x/jour ou si forcée)
+    let gptAnalysis = readJsonSafe(GPT_ANALYSIS_PATH);
+    const lastGptAt = gptAnalysis && gptAnalysis.generatedAt ? new Date(gptAnalysis.generatedAt).getTime() : 0;
+    const shouldRunGpt = forceGpt || (Date.now() - lastGptAt > ONE_DAY_MS);
+
+    if (shouldRunGpt && analysis.totalFeedback >= 3) {
+      console.log('[feedback-analyzer] Lancement analyse GPT...');
+      const feedbackLog = loadFeedbackLog();
+      const history = loadHistory();
+      const historyById = new Map();
+      for (const h of history) { if (h.id) historyById.set(h.id, h); }
+      const enrichedFeedback = feedbackLog.map(entry => {
+        const opp = historyById.get(entry.id);
+        return { ...entry, search: (opp && opp.search) || entry.search || null };
+      });
+      gptAnalysis = await callGptAnalysis(analysis, enrichedFeedback, historyById);
+      // Appliquer les actions suggérées par GPT
+      if (gptAnalysis && gptAnalysis.actions && gptAnalysis.actions.length > 0) {
+        applyGptActions(gptAnalysis.actions, analysis);
+      }
+    } else if (!shouldRunGpt) {
+      console.log('[feedback-analyzer] Analyse GPT récente, réutilisation du cache');
+    }
+
+    // 5. Générer le rapport texte
+    const reportText = generateReport(analysis, applied, adjustments, new Date().toISOString());
     const reportData = {
       generatedAt: new Date().toISOString(),
       reportText,
       analysis,
       applied,
-      adjustments
+      adjustments,
+      gptAnalysis: gptAnalysis || null,
+      gptAnalysisDate: gptAnalysis && gptAnalysis.generatedAt ? gptAnalysis.generatedAt : null
     };
 
     writeJsonSafe(REPORT_PATH, reportData);
     console.log('[feedback-analyzer] Rapport sauvegardé');
 
-    // 5. Envoyer sur Telegram si des changements ou si planifié
+    // 6. Envoyer sur Telegram si des changements ou si planifié
     const hasChanges = applied.length > 0;
     const hasSignificantInsights = analysis.totalFeedback >= 5;
 
     if (sendTelegram && (hasChanges || hasSignificantInsights)) {
-      await sendReportToTelegram(reportText);
+      let telegramText = reportText;
+      if (gptAnalysis && gptAnalysis.healthScore != null) {
+        telegramText += `\n\n🤖 Score de santé GPT : ${gptAnalysis.healthScore}/10`;
+      }
+      await sendReportToTelegram(telegramText);
       console.log('[feedback-analyzer] Rapport envoyé sur Telegram');
     }
 
@@ -567,10 +791,18 @@ function getAdjustmentsLog() {
   return loadAdjustmentsLog();
 }
 
+/**
+ * Retourne la dernière analyse GPT.
+ */
+function getGptAnalysis() {
+  return readJsonSafe(GPT_ANALYSIS_PATH);
+}
+
 module.exports = {
   runAnalysis,
   getDisabledCategories,
   getAdjustedParams,
   getLastReport,
-  getAdjustmentsLog
+  getAdjustmentsLog,
+  getGptAnalysis
 };

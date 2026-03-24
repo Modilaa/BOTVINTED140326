@@ -43,7 +43,7 @@ process.on('beforeExit', async () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // Cache helpers
 // ─────────────────────────────────────────────────────────────────────────────
-const FINGERPRINT_VERSION = 2; // bump to invalidate old v1 caches
+const FINGERPRINT_VERSION = 3; // v3: center-crop 65% before fingerprinting (reduces background influence)
 
 function buildCachePath(cacheDir, url) {
   const hash = crypto.createHash('sha1').update(url).digest('hex');
@@ -113,6 +113,26 @@ async function downloadImageBuffer(url) {
   });
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
   return Buffer.from(await res.arrayBuffer());
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Center crop helper — reduces background influence on perceptual hashes.
+// Products (cards, LEGO) are usually centered; background is on the edges.
+// Vinted: photo on a desk/bed. eBay: white studio background.
+// fraction = portion to keep (0.65 = central 65%, removes 17.5% each side)
+// ─────────────────────────────────────────────────────────────────────────────
+async function cropCenterBuffer(buffer, fraction = 0.65) {
+  const meta = await sharp(buffer).rotate().metadata();
+  const W = meta.width;
+  const H = meta.height;
+  const cropW = Math.max(16, Math.round(W * fraction));
+  const cropH = Math.max(16, Math.round(H * fraction));
+  const left = Math.round((W - cropW) / 2);
+  const top = Math.round((H - cropH) / 2);
+  return sharp(buffer)
+    .rotate()
+    .extract({ left, top, width: cropW, height: cropH })
+    .toBuffer();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -335,12 +355,17 @@ async function generateFingerprint(url, config) {
   await sleep(Math.max(150, Math.floor(config.httpMinDelayMs / 3)));
   const buffer = await downloadImageBuffer(url);
 
+  // Pre-crop center 65% to reduce background influence before fingerprinting.
+  // On Vinted, vendors shoot on tables/beds (background = 60-70% of image).
+  // On eBay, studio white background. Without crop, background dominates the hash.
+  const croppedBuffer = await cropCenterBuffer(buffer, 0.65);
+
   // Run all analyses in parallel for speed
   const [phash, borderFeatures, gridBrightness, ocrFeatures] = await Promise.all([
-    computePhash(buffer),
-    computeBorderFeatures(buffer),
-    computeGridBrightness(buffer),
-    computeOcrFeatures(buffer)
+    computePhash(croppedBuffer),          // crop isolates product from table/bed background
+    computeBorderFeatures(croppedBuffer), // crop helps isolate card border from image background
+    computeGridBrightness(croppedBuffer), // crop focuses brightness grid on product
+    computeOcrFeatures(buffer)            // OCR needs full image: crops bottom 22% for card number
   ]);
 
   const fingerprint = {
@@ -423,6 +448,8 @@ async function compareListingImages(vintedImageUrl, ebayImageUrl, config) {
     // ── Hard caps for definitive mismatches ────────────────────────────────
     if (borderMismatch) score = Math.min(score, 0.35);
     if (numberMismatch) score = Math.min(score, 0.20);
+
+    console.log(`[image-match] Score: ${(score * 100).toFixed(0)}% (crop central) [border:${L.borderColor}→${R.borderColor}${numberMatch ? ' num:✓' : numberMismatch ? ' num:✗' : ''}]`);
 
     return {
       score,

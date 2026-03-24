@@ -527,7 +527,7 @@ module.exports = {
   ebayFindingApiEnabled: parseBoolean(process.env.EBAY_FINDING_API_ENABLED, false),
   usdToEurRate: parseNumber(process.env.USD_TO_EUR_RATE, 0.865),
   gbpToEurRate: parseNumber(process.env.GBP_TO_EUR_RATE, 1.153),
-  minImageSimilarity: parseNumber(process.env.MIN_IMAGE_SIMILARITY, 0.60),
+  minImageSimilarity: parseNumber(process.env.MIN_IMAGE_SIMILARITY, 0.40),
   ebayAppId: process.env.EBAY_APP_ID || '',
   ebayClientSecret: process.env.EBAY_CLIENT_SECRET || '',
   pricingStrategy: process.env.PRICING_STRATEGY || 'api',

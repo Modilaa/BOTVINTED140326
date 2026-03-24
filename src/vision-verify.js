@@ -85,13 +85,19 @@ async function compareCardImages(vintedImageUrl, ebayImageUrl) {
 
     const parsed = JSON.parse(match[0]);
 
-    // Enforce strict verdict: "match" only if all 3 are true
-    const allTrue = parsed.sameProduct === true && parsed.sameVariant === true && parsed.conditionComparable === true;
-    parsed.verdict = allTrue ? 'match' : 'no_match';
+    // Product + variant match = what matters for arbitrage authenticity.
+    // Condition differences affect the price estimate but don't disqualify the opportunity.
+    // Only reject (confidence=0) if the product or variant is wrong.
+    const productVariantMatch = parsed.sameProduct === true && parsed.sameVariant === true;
+    const fullMatch = productVariantMatch && parsed.conditionComparable === true;
+
+    parsed.verdict = fullMatch ? 'match' : (productVariantMatch ? 'match_condition_diff' : 'no_match');
 
     // Compat fields — consumed by scoring.js, index.js, notifier.js, server.js
-    parsed.sameCard = allTrue;
-    parsed.confidence = allTrue ? 90 : 0;
+    // sameCard=true if same product+variant (condition mismatch is not a disqualifier)
+    parsed.sameCard = productVariantMatch;
+    // 90 = full match, 60 = same product/variant but condition differs, 0 = wrong product/variant
+    parsed.confidence = fullMatch ? 90 : (productVariantMatch ? 60 : 0);
     parsed.summary = parsed.reason || '';
     parsed.visionReason = (parsed.report && parsed.report.suggestion) || parsed.reason || '';
 
