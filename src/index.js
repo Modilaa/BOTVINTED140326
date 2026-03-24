@@ -118,6 +118,20 @@ async function runScan(previousListings) {
   const underpricedAlerts = [];
   const minPrice = config.minListingPriceEur || 2;
 
+  // ─── Filtrer les catégories désactivées par le feedback-analyzer ──────────
+  try {
+    const { getDisabledCategories } = require('./feedback-analyzer');
+    const disabled = getDisabledCategories();
+    if (disabled.length > 0) {
+      const before = config.searches.length;
+      config.searches = config.searches.filter(s => !disabled.includes(s.name));
+      const skipped = before - config.searches.length;
+      if (skipped > 0) {
+        console.log(`[feedback-analyzer] ${skipped} catégorie(s) désactivée(s) ignorée(s): ${disabled.join(', ')}`);
+      }
+    }
+  } catch { /* non-bloquant */ }
+
   // ─── Log quota eBay Browse API avant le scan ───────────────────────────────
   if (config.ebayAppId && config.ebayClientSecret) {
     try {
@@ -756,6 +770,18 @@ async function runOnce() {
     }
   } catch { /* non-bloquant */ }
 
+  // ─── Auto-amélioration: analyse feedback quotidienne (à minuit) ──────────
+  try {
+    const now = new Date();
+    const todayKey = now.toISOString().slice(0, 10);
+    if (todayKey !== _lastAnalysisDate && now.getHours() >= 0 && now.getHours() < 4) {
+      _lastAnalysisDate = todayKey;
+      const { runAnalysis } = require('./feedback-analyzer');
+      console.log('[feedback-analyzer] Analyse quotidienne déclenchée...');
+      runAnalysis({ sendTelegram: true }).catch(err => console.error('[feedback-analyzer] Erreur analyse:', err.message));
+    }
+  } catch { /* non-bloquant */ }
+
   return merged;
 }
 
@@ -777,6 +803,8 @@ const _COUNTRY_NAMES = { be: 'Belgique', fr: 'France', de: 'Allemagne', es: 'Esp
 let _scanCounter = 0;
 // Axe 8: date du dernier digest quotidien envoyé
 let _lastDigestDate = '';
+// Auto-amélioration: date de la dernière analyse feedback (1x/jour à minuit)
+let _lastAnalysisDate = '';
 
 async function main() {
   // Launch dashboard server automatically

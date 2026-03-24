@@ -1249,10 +1249,29 @@ tr:hover td { background: rgba(108,92,231,0.04); }
         🧠 Apprentissage
         <span class="panel-badge" id="learningTotal">0</span>
       </div>
-      <span id="learningChevron" style="color:var(--text2);font-size:14px;transition:transform 0.2s;">▶</span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span id="learningLastAnalysis" style="font-size:11px;color:var(--text3);"></span>
+        <span id="learningChevron" style="color:var(--text2);font-size:14px;transition:transform 0.2s;">▶</span>
+      </div>
     </div>
     <div class="panel-body" id="learningBody" style="display:none;padding:16px;">
+      <!-- Toolbar -->
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
+        <div style="font-size:12px;color:var(--text3);" id="learningAnalysisDate">Aucune analyse effectuée</div>
+        <button id="learningRunBtn" class="btn btn-sm" onclick="runFeedbackAnalysis()" style="background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;">🔄 Relancer l'analyse</button>
+      </div>
+      <!-- Stats feedbacks -->
       <div id="learningContent"><div style="color:var(--text3);font-size:13px;">Chargement...</div></div>
+      <!-- Rapport auto-amélioration -->
+      <div id="learningAutoReport" style="margin-top:16px;display:none;">
+        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px;">📊 Dernier rapport d'auto-amélioration</div>
+        <pre id="learningReportText" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:11px;color:var(--text2);white-space:pre-wrap;word-break:break-word;max-height:300px;overflow-y:auto;"></pre>
+      </div>
+      <!-- Historique ajustements -->
+      <div id="learningAdjustmentsSection" style="margin-top:16px;display:none;">
+        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px;">🔧 Historique des ajustements</div>
+        <div id="learningAdjustmentsList" style="font-size:11px;"></div>
+      </div>
     </div>
   </div>
 
@@ -2498,7 +2517,7 @@ var priceDatabaseState = {
   search: ''
 };
 
-// ─── Apprentissage (feedback report) ───────────────────────
+// ─── Apprentissage (feedback report + auto-amélioration) ────────────
 var learningOpen = false;
 
 function toggleLearning() {
@@ -2507,7 +2526,10 @@ function toggleLearning() {
   var chevron = document.getElementById('learningChevron');
   body.style.display = learningOpen ? '' : 'none';
   chevron.textContent = learningOpen ? '\u25BC' : '\u25B6';
-  if (learningOpen) loadFeedbackReport();
+  if (learningOpen) {
+    loadFeedbackReport();
+    loadAutoImprovementReport();
+  }
 }
 
 async function loadFeedbackReport() {
@@ -2547,6 +2569,101 @@ async function loadFeedbackReport() {
     html += '</div>';
   }
   container.innerHTML = html;
+}
+
+async function loadAutoImprovementReport() {
+  var data = await fetchJson('/api/feedback-analyzer/report');
+  if (!data) return;
+
+  // Rapport textuel
+  if (data.report && data.report.reportText) {
+    var reportSection = document.getElementById('learningAutoReport');
+    var reportText = document.getElementById('learningReportText');
+    if (reportSection && reportText) {
+      reportText.textContent = data.report.reportText;
+      reportSection.style.display = '';
+    }
+    // Indicateur "Dernière analyse"
+    var dateEl = document.getElementById('learningAnalysisDate');
+    var headerEl = document.getElementById('learningLastAnalysis');
+    if (data.report.generatedAt) {
+      var ago = formatAgo(new Date(data.report.generatedAt).getTime());
+      var dateStr = 'Dernière analyse : ' + ago;
+      if (dateEl) dateEl.textContent = dateStr;
+      if (headerEl) headerEl.textContent = dateStr;
+    }
+  }
+
+  // Historique des ajustements
+  if (data.adjustmentsLog && data.adjustmentsLog.length > 0) {
+    var adjSection = document.getElementById('learningAdjustmentsSection');
+    var adjList = document.getElementById('learningAdjustmentsList');
+    if (adjSection && adjList) {
+      var html = '';
+      data.adjustmentsLog.slice(0, 5).forEach(function(entry) {
+        var d = entry.appliedAt ? new Date(entry.appliedAt).toLocaleDateString('fr-BE') : '?';
+        html += '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:6px;">';
+        html += '<div style="font-size:11px;color:var(--text3);margin-bottom:4px;">' + esc(d) + '</div>';
+        (entry.adjustments || []).forEach(function(adj) {
+          var icon = adj.type === 'disable_category' ? '\uD83D\uDEAB' : (adj.type === 'increase_min_observations' ? '\uD83D\uDCCA' : '\uD83C\uDFAF');
+          html += '<div style="font-size:11px;color:var(--text2);">' + icon + ' ' + esc(adj.reason || adj.type) + '</div>';
+        });
+        html += '</div>';
+      });
+      adjList.innerHTML = html;
+      adjSection.style.display = '';
+    }
+  }
+}
+
+async function runFeedbackAnalysis() {
+  var btn = document.getElementById('learningRunBtn');
+  if (!btn) return;
+  btn.textContent = '\u23F3 Analyse en cours...';
+  btn.disabled = true;
+  try {
+    var resp = await fetch('/api/feedback-analyzer/run');
+    if (resp.ok) {
+      var data = await resp.json();
+      if (data.report && data.report.reportText) {
+        var reportSection = document.getElementById('learningAutoReport');
+        var reportText = document.getElementById('learningReportText');
+        if (reportSection && reportText) {
+          reportText.textContent = data.report.reportText;
+          reportSection.style.display = '';
+        }
+        var dateEl = document.getElementById('learningAnalysisDate');
+        if (dateEl) dateEl.textContent = 'Analyse terminée à l\'instant';
+        var headerEl = document.getElementById('learningLastAnalysis');
+        if (headerEl) headerEl.textContent = 'Analysé à l\'instant';
+      }
+      // Reload adjustments history
+      await loadAutoImprovementReport();
+      // Reload feedback stats
+      await loadFeedbackReport();
+      btn.textContent = '\u2705 Analyse terminée';
+    } else {
+      var err = await resp.json().catch(function() { return {}; });
+      btn.textContent = '\u274C ' + (err.error || 'Erreur');
+    }
+  } catch(e) {
+    btn.textContent = '\u274C Erreur réseau';
+  }
+  setTimeout(function() {
+    btn.textContent = '\uD83D\uDD04 Relancer l\'analyse';
+    btn.disabled = false;
+  }, 3000);
+}
+
+function formatAgo(ts) {
+  var diffMs = Date.now() - ts;
+  var diffMin = Math.floor(diffMs / 60000);
+  var diffH = Math.floor(diffMin / 60);
+  var diffD = Math.floor(diffH / 24);
+  if (diffD > 0) return 'il y a ' + diffD + 'j';
+  if (diffH > 0) return 'il y a ' + diffH + 'h';
+  if (diffMin > 0) return 'il y a ' + diffMin + 'min';
+  return 'à l\'instant';
 }
 
 function togglePriceDatabase() {

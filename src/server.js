@@ -1282,6 +1282,33 @@ app.get('/api/proxy-image', async (req, res) => {
   }
 });
 
+// ─── API: Feedback Analyzer (auto-amélioration) ──────────────────────
+let _analyzerRunning = false;
+
+app.get('/api/feedback-analyzer/run', async (_req, res) => {
+  if (_analyzerRunning) {
+    return res.status(409).json({ error: 'Analyse déjà en cours.' });
+  }
+  _analyzerRunning = true;
+  try {
+    const { runAnalysis } = require('./feedback-analyzer');
+    const result = await runAnalysis({ sendTelegram: false });
+    res.json({ success: true, report: result });
+  } catch (err) {
+    console.error('[API] feedback-analyzer erreur:', err.message);
+    res.status(500).json({ error: err.message });
+  } finally {
+    _analyzerRunning = false;
+  }
+});
+
+app.get('/api/feedback-analyzer/report', (_req, res) => {
+  const { getLastReport, getAdjustmentsLog } = require('./feedback-analyzer');
+  const report = getLastReport();
+  const log = getAdjustmentsLog();
+  res.json({ report, adjustmentsLog: log.slice(-20).reverse() });
+});
+
 // ─── SSE: Server-Sent Events ─────────────────────────────────────────
 app.get('/api/events', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
