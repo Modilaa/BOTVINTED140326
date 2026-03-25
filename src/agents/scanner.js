@@ -33,6 +33,107 @@ const { extractCardLanguage }                       = require('./supervisor');
 const { findUnderpricedListings }                   = require('../underpriced');
 const { checkAndAlert }                             = require('../api-monitor');
 
+// ─── Sprint Contract & Query Corrections — Pattern 4 ─────────────────────────
+
+/**
+ * Lit output/sprint-contract.json écrit par l'Orchestrateur.
+ */
+function loadSprintContract(outputDir) {
+  try {
+    const p = path.join(outputDir, 'sprint-contract.json');
+    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8'));
+  } catch { /* ignore */ }
+  return null;
+}
+
+/**
+ * Lit output/evaluator-feedback.json pour les rejets récents de l'Évaluateur.
+ * Retourne uniquement les feedbacks des dernières 48h.
+ */
+function loadRecentEvaluatorFeedbacks(outputDir) {
+  try {
+    const p = path.join(outputDir, 'evaluator-feedback.json');
+    if (!fs.existsSync(p)) return [];
+    const raw = JSON.parse(fs.readFileSync(p, 'utf8'));
+    const feedbacks = Array.isArray(raw.feedbacks) ? raw.feedbacks : [];
+    const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    return feedbacks.filter(f => {
+      try { return new Date(f.timestamp) > cutoff; } catch { return false; }
+    });
+  } catch { return []; }
+}
+
+/**
+ * Lit output/query-corrections.json (historique des corrections appliquées).
+ */
+function loadQueryCorrections(outputDir) {
+  try {
+    const p = path.join(outputDir, 'query-corrections.json');
+    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8'));
+  } catch { /* ignore */ }
+  return { corrections: [], updatedAt: null };
+}
+
+/**
+ * Sauvegarde les corrections de query dans output/query-corrections.json.
+ * Pattern 4 : historique des améliorations appliquées au Scanner.
+ */
+async function saveQueryCorrections(outputDir, corrections) {
+  try {
+    await fs.promises.mkdir(outputDir, { recursive: true });
+    await fs.promises.writeFile(
+      path.join(outputDir, 'query-corrections.json'),
+      JSON.stringify({ corrections, updatedAt: new Date().toISOString() }, null, 2)
+    );
+  } catch { /* non-bloquant */ }
+}
+
+/**
+ * Analyse les feedbacks récents de l'Évaluateur et construit une map de corrections
+ * à appliquer par catégorie.
+ *
+ * Pattern 4 : Scanner réessaye avec une query corrigée au prochain scan.
+ *
+ * @returns {Object} { lego: { forceSetNumber: boolean }, cards: { addVariantTokens: boolean } }
+ */
+function buildQueryCorrectionRules(recentFeedbacks, sprintContract) {
+  const rules = {
+    lego:  { forceSetNumber: false },
+    cards: { addVariantTokens: false, requireMinObservations: false }
+  };
+
+  // Depuis l'evaluator-feedback
+  const legoSetRejections    = recentFeedbacks.filter(f => f.suggestion === 'query_should_include_set_number').length;
+  const variantRejections    = recentFeedbacks.filter(f => f.suggestion === 'query_should_add_variant_tokens').length;
+  const priceRejections      = recentFeedbacks.filter(f => f.suggestion === 'require_more_observations').length;
+
+  if (legoSetRejections >= 2) rules.lego.forceSetNumber = true;
+  if (variantRejections >= 2) rules.cards.addVariantTokens = true;
+  if (priceRejections   >= 2) rules.cards.requireMinObservations = true;
+
+  // Depuis le sprint-contract (renforce les règles)
+  if (sprintContract && sprintContract.queryAdjustments) {
+    for (const adj of sprintContract.queryAdjustments) {
+      if (adj.type === 'force_set_number_search') rules.lego.forceSetNumber = true;
+      if (adj.type === 'add_variant_tokens')      rules.cards.addVariantTokens = true;
+      if (adj.type === 'add_rarity_tokens')       rules.cards.addVariantTokens = true;
+      if (adj.type === 'require_min_observations') rules.cards.requireMinObservations = true;
+    }
+  }
+
+  return rules;
+}
+
+/**
+ * Tente d'extraire le numéro de set LEGO d'un titre Vinted.
+ * Les sets LEGO ont généralement 4-6 chiffres.
+ * @returns {string|null}
+ */
+function extractLegoSetNumber(title) {
+  const match = (title || '').match(/\b(\d{4,6})\b/);
+  return match ? match[1] : null;
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const MANGA_BOOK_WORDS = ['tome', 'manga', 'livre', 'roman', 'volume', 'coffret', 'book'];
@@ -108,6 +209,24 @@ async function run(previousListings = []) {
   const errors            = [];
   const countries         = config.vintedCountries ? [...config.vintedCountries] : [];
   const minPrice          = config.minListingPriceEur || 2;
+
+  // ─── Pattern 4 : Chargement sprint-contract + corrections de query ─────────
+  const outputDir         = config.outputDir;
+  const sprintContract    = loadSprintContract(outputDir);
+  const recentFeedbacks   = loadRecentEvaluatorFeedbacks(outputDir);
+  const qcData            = loadQueryCorrections(outputDir);
+  const queryRules        = buildQueryCorrectionRules(recentFeedbacks, sprintContract);
+  const queryCorrections  = Array.isArray(qcData.corrections) ? [...qcData.corrections] : [];
+
+  if (sprintContract) {
+    console.log(`[Scanner] Sprint contract: ${sprintContract.sprintId}`);
+    if (queryRules.lego.forceSetNumber) {
+      console.log('[Scanner] Règle active: LEGO → recherche forcée par numéro de set');
+    }
+    if (queryRules.cards.addVariantTokens) {
+      console.log('[Scanner] Règle active: Cartes → tokens variante requis dans la query');
+    }
+  }
 
   // ─── Filtrer catégories désactivées par feedback-analyzer ──────────────────
   try {
@@ -348,6 +467,47 @@ async function run(previousListings = []) {
 
           row.sellerScore = evaluateSeller(listing);
 
+          // ─── Pattern 4 : Application des corrections de query ─────────────
+          const isLegoSearch = (search.name || '').toUpperCase().includes('LEGO');
+          const isCardSearch = !isLegoSearch;
+
+          if (isLegoSearch && queryRules.lego.forceSetNumber) {
+            const setNumber = extractLegoSetNumber(listing.title);
+            if (setNumber) {
+              row.legoSetNumber = setNumber;
+              // Vérifier que le match eBay contient aussi ce numéro
+              const ebayTitle = (matchedSales[0] && matchedSales[0].title) || '';
+              const ebayHasSetNum = ebayTitle.includes(setNumber);
+              if (!ebayHasSetNum && ebayTitle) {
+                row.legoSetMismatch = true;
+                console.log(`    [query-correction] LEGO set ${setNumber} absent du match eBay "${ebayTitle.slice(0, 50)}"`);
+                // Enregistrer une correction pour cet item
+                queryCorrections.push({
+                  appliedAt:  new Date().toISOString(),
+                  category:   'LEGO',
+                  rule:       'force_set_number_search',
+                  vintedTitle: listing.title,
+                  setNumber,
+                  ebayTitle,
+                  outcome:    'mismatch_detected'
+                });
+              }
+            } else {
+              console.log(`    [query-correction] LEGO sans numéro de set: "${listing.title.slice(0, 50)}"`);
+            }
+          }
+
+          if (isCardSearch && queryRules.cards.addVariantTokens && matchedSales.length === 0) {
+            // Quand pas de match et que les tokens variante sont requis → log pour historique
+            queryCorrections.push({
+              appliedAt:  new Date().toISOString(),
+              category:   search.name,
+              rule:       'add_variant_tokens',
+              vintedTitle: listing.title,
+              outcome:    'no_match_variant_tokens_required'
+            });
+          }
+
           // ─── Décisions définitives : le Scanner peut marquer comme seen ───
           // (no-price, no-match pur) — les décisions d'opportunité → Évaluateur
           if (!routerResult) {
@@ -434,8 +594,14 @@ async function run(previousListings = []) {
     durationMs
   };
 
-  const outputDir = config.outputDir;
   await fs.promises.mkdir(outputDir, { recursive: true });
+
+  // Pattern 4 : sauvegarder les corrections de query (garder 500 entrées max)
+  if (queryCorrections.length > 0) {
+    const trimmed = queryCorrections.slice(0, 500);
+    await saveQueryCorrections(outputDir, trimmed);
+    console.log(`[Scanner] ${queryCorrections.length} correction(s) de query enregistrée(s)`);
+  }
 
   await fs.promises.writeFile(
     path.join(outputDir, 'scanner-results.json'),

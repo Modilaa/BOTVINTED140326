@@ -91,6 +91,178 @@ function shouldSkipVisionBudget(row, budget) {
   return { skip: false, reason: null };
 }
 
+// ─── Sprint Contract ──────────────────────────────────────────────────────────
+
+/**
+ * Lit output/sprint-contract.json écrit par l'Orchestrateur.
+ * @returns {Object|null}
+ */
+function loadSprintContract(outputDir) {
+  try {
+    const p = path.join(outputDir, 'sprint-contract.json');
+    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8'));
+  } catch { /* ignore */ }
+  return null;
+}
+
+// ─── Feedback Évaluateur — Pattern 2 ─────────────────────────────────────────
+
+/**
+ * Ajoute une entrée dans output/evaluator-feedback.json.
+ * Appelé pour chaque rejet afin de donner un feedback ACTIONNABLE au Scanner.
+ *
+ * Pattern 2 : Feedback spécifique Évaluateur → Scanner
+ */
+function writeEvaluatorFeedback(outputDir, entry) {
+  const feedbackPath = path.join(outputDir, 'evaluator-feedback.json');
+
+  let existing = { feedbacks: [], updatedAt: null };
+  try {
+    if (fs.existsSync(feedbackPath)) {
+      const raw = JSON.parse(fs.readFileSync(feedbackPath, 'utf8'));
+      existing = raw;
+      if (!Array.isArray(existing.feedbacks)) existing.feedbacks = [];
+    }
+  } catch { existing = { feedbacks: [] }; }
+
+  existing.feedbacks.unshift(entry);
+  if (existing.feedbacks.length > 200) existing.feedbacks = existing.feedbacks.slice(0, 200);
+  existing.updatedAt = new Date().toISOString();
+
+  try {
+    fs.writeFileSync(feedbackPath, JSON.stringify(existing, null, 2));
+  } catch { /* non-bloquant */ }
+}
+
+/**
+ * Détermine la suggestion actionnable pour le Scanner en fonction de la raison de rejet.
+ */
+function getSuggestion(failedKey, isLego) {
+  if (failedKey === 'legoSetNumber')   return 'query_should_include_set_number';
+  if (failedKey === 'noVariantMismatch') return 'query_should_add_variant_tokens';
+  if (failedKey === 'priceReliable')   return 'require_more_observations';
+  return null;
+}
+
+// ─── Évaluation par critères (Pattern 5 — Seuils durs) ────────────────────────
+
+/**
+ * Évalue chaque critère individuellement avec un seuil dur.
+ * Si UN SEUL critère échoue → rejet avec raison précise.
+ *
+ * Pattern 5 : Seuils durs par critère
+ *
+ * @returns {{ checks: Array, failedCriteria: Array, passed: boolean }}
+ */
+function evaluateCriteria(row, sprintContract, minConfidence, minProfEur, minProfPct, minLiq) {
+  const ct       = (sprintContract && sprintContract.criteria) || {};
+  const category = (row.category || row.search || '').toUpperCase();
+  const isLego   = category.includes('LEGO');
+
+  const profitSeuil      = isLego ? (ct.minProfitLego || 50) : (ct.minProfitOther || 15);
+  const itemProfit       = row.profit ? row.profit.profit : 0;
+  const itemMargin       = row.profit ? row.profit.profitPercent : 0;
+  const priceObs         = (row.priceDetails && row.priceDetails.observations) ||
+                           (row.matchedSales ? row.matchedSales.length : 0);
+  const isPriceFromApi   = ['pokemon-tcg', 'ygoprodeck', 'rebrickable', 'pokemon-tcg-api'].includes(row.pricingSource);
+  const liqScore         = (row.liquidity && typeof row.liquidity === 'object') ? row.liquidity.score : 0;
+
+  const checks = [
+    {
+      key:       'profitMinCategory',
+      label:     `Profit minimum ${isLego ? 'LEGO' : 'catégorie'}`,
+      passed:    itemProfit >= profitSeuil,
+      value:     itemProfit,
+      threshold: profitSeuil,
+      reason:    'profit_below_category_min',
+      suggestion: null
+    },
+    {
+      key:       'profitEur',
+      label:     'Profit EUR',
+      passed:    !!row.profit && itemProfit >= minProfEur,
+      value:     itemProfit,
+      threshold: minProfEur,
+      reason:    'profit_insufficient',
+      suggestion: null
+    },
+    {
+      key:       'profitPct',
+      label:     'Marge %',
+      passed:    !!row.profit && itemMargin >= minProfPct,
+      value:     itemMargin,
+      threshold: minProfPct,
+      reason:    'margin_insufficient',
+      suggestion: null
+    },
+    {
+      key:       'priceReliable',
+      label:     'Prix fiable',
+      passed:    isPriceFromApi || priceObs >= 2,
+      value:     priceObs,
+      threshold: 2,
+      reason:    'price_unreliable',
+      suggestion: 'require_more_observations'
+    },
+    {
+      key:       'confidence',
+      label:     'Confiance',
+      passed:    row.confidence >= minConfidence,
+      value:     row.confidence,
+      threshold: minConfidence,
+      reason:    'confidence_too_low',
+      suggestion: null
+    },
+    {
+      key:       'liquidity',
+      label:     'Liquidité',
+      passed:    liqScore >= minLiq,
+      value:     liqScore,
+      threshold: minLiq,
+      reason:    'liquidity_insufficient',
+      suggestion: null
+    }
+  ];
+
+  // Variante correcte (si sprint contract exige)
+  if (ct.cardsRequireVariantMatch && !isLego) {
+    checks.push({
+      key:       'noVariantMismatch',
+      label:     'Variante correcte',
+      passed:    !row.variantMismatch,
+      value:     !row.variantMismatch,
+      threshold: true,
+      reason:    'variant_mismatch',
+      suggestion: 'query_should_add_variant_tokens'
+    });
+  }
+
+  // Numéro de set LEGO (si sprint contract exige)
+  if (ct.legoRequiresSetNumber && isLego) {
+    const setNumInVinted = /\b\d{4,6}\b/.test(row.title || '');
+    const ebayTitle      = (row.matchedSales && row.matchedSales[0] && row.matchedSales[0].title) || '';
+    const setNumInEbay   = /\b\d{4,6}\b/.test(ebayTitle);
+    // Bloquant seulement si Vinted a un numéro mais eBay a un numéro différent
+    const hasConflict = setNumInVinted && setNumInEbay && (() => {
+      const vintedNums = (row.title || '').match(/\b\d{4,6}\b/g) || [];
+      const ebayNums   = ebayTitle.match(/\b\d{4,6}\b/g) || [];
+      return !vintedNums.some(n => ebayNums.includes(n));
+    })();
+    checks.push({
+      key:       'legoSetNumber',
+      label:     'Numéro set LEGO',
+      passed:    !hasConflict,
+      value:     !hasConflict,
+      threshold: true,
+      reason:    'lego_set_number_mismatch',
+      suggestion: 'query_should_include_set_number'
+    });
+  }
+
+  const failedCriteria = checks.filter(c => !c.passed);
+  return { checks, failedCriteria, passed: failedCriteria.length === 0 };
+}
+
 // ─── Décisions actives de l'Orchestrateur ────────────────────────────────────
 
 function getActiveDecisions(outputDir) {
@@ -132,6 +304,12 @@ async function run(candidates = null) {
   // ─── Budget Vision du jour ─────────────────────────────────────────────────
   const budget = loadVisionBudget(outputDir);
   const dailyBudget = config.visionDailyBudgetCents || 100;
+
+  // ─── Sprint Contract (Pattern 1) ──────────────────────────────────────────
+  const sprintContract = loadSprintContract(outputDir);
+  if (sprintContract) {
+    console.log(`[Evaluator] Sprint contract: ${sprintContract.sprintId} (${(sprintContract.queryAdjustments || []).length} ajustements)`);
+  }
 
   // ─── Décisions de l'Orchestrateur ────────────────────────────────────────
   const activeDecisions      = getActiveDecisions(outputDir);
@@ -231,42 +409,54 @@ async function run(candidates = null) {
         continue;
       }
 
-      // ─── Filtres profit par catégorie ────────────────────────────────────
-      const itemCategory = (row.category || row.search || '').toUpperCase();
-      const itemProfit   = row.profit ? row.profit.profit : 0;
-      const profitSeuil  = itemCategory.includes('LEGO') ? 50 : 15;
-
-      if (itemProfit < profitSeuil) {
-        console.log(`[Evaluator] ${itemCategory || 'inconnu'} filtré: profit ${itemProfit.toFixed(2)}€ < ${profitSeuil}€ minimum`);
-        row.rejectionReasons = [`${itemCategory || 'inconnu'} profit ${itemProfit.toFixed(2)}€ < ${profitSeuil}€ minimum`];
-        rejected.push(row);
-        if (row.id) seenListings.markAsSeen(row.id, row.search, row.title, 'no-match', itemProfit);
-        allEvaluated.push(row);
-        continue;
-      }
-
+      // ─── Seuils par search config ─────────────────────────────────────────
       const search     = config.searches ? config.searches.find(s => s.name === row.search) : null;
       const minProfEur = Math.max(5,  search && search.minProfitEur     != null ? search.minProfitEur     : config.minProfitEur);
       const minProfPct = Math.max(20, search && search.minProfitPercent != null ? search.minProfitPercent : config.minProfitPercent);
-      const liqScore   = (row.liquidity && typeof row.liquidity === 'object') ? row.liquidity.score : 0;
       const src        = row.pricingSource || 'unknown';
       const minLiq     = src === 'local-database' ? 25 : 40;
 
-      const failsProfit     = !row.profit || row.profit.profit        < minProfEur;
-      const failsMargin     = !row.profit || row.profit.profitPercent < minProfPct;
-      const failsConfidence = row.confidence < minConfidence;
-      const failsLiquidity  = liqScore < minLiq;
+      // ─── Pattern 5 : Seuils durs par critère ─────────────────────────────
+      const { checks, failedCriteria, passed } = evaluateCriteria(
+        row, sprintContract, minConfidence, minProfEur, minProfPct, minLiq
+      );
 
-      if (failsProfit || failsMargin || failsConfidence || failsLiquidity) {
-        const reasons = [];
-        if (failsProfit)     reasons.push(`profit ${row.profit ? row.profit.profit.toFixed(2) : '0.00'}€ < ${minProfEur}€`);
-        if (failsMargin)     reasons.push(`marge ${row.profit ? row.profit.profitPercent.toFixed(1) : '0.0'}% < ${minProfPct}%`);
-        if (failsConfidence) reasons.push(`confiance ${row.confidence}/100 < ${minConfidence}`);
-        if (failsLiquidity)  reasons.push(`liquidité ${liqScore}/100 < ${minLiq}`);
+      // Stocker le détail des critères sur la row (pour le dashboard)
+      row.criteriaChecks = checks.map(c => ({
+        key:      c.key,
+        label:    c.label,
+        passed:   c.passed,
+        value:    typeof c.value === 'number' ? parseFloat(c.value.toFixed(2)) : c.value,
+        threshold: c.threshold
+      }));
+
+      if (!passed) {
+        const reasons = failedCriteria.map(c => {
+          if (typeof c.value === 'number') {
+            return `${c.label}: ${c.value.toFixed ? c.value.toFixed(2) : c.value} < ${c.threshold}`;
+          }
+          return `${c.label} non satisfait`;
+        });
 
         console.log(`  [rejeté] ${row.title.slice(0, 50)}: ${reasons.join(', ')}`);
         row.rejectionReasons = reasons;
         rejected.push(row);
+
+        // ─── Pattern 2 : Feedback actionnable pour le Scanner ────────────
+        for (const fc of failedCriteria) {
+          if (!fc.suggestion) continue;
+          const ebayTitle = (row.matchedSales && row.matchedSales[0] && row.matchedSales[0].title) || '';
+          writeEvaluatorFeedback(outputDir, {
+            timestamp:   new Date().toISOString(),
+            itemKey:     row.id || row.url || row.title,
+            category:    (row.category || row.search || '').toUpperCase(),
+            reason:      fc.reason,
+            detail:      `"${(row.title || '').slice(0, 60)}" matché avec "${ebayTitle.slice(0, 60)}" — ${fc.label}`,
+            suggestion:  fc.suggestion,
+            vintedTitle: row.title || '',
+            ebayTitle:   ebayTitle
+          });
+        }
 
         if (row.id) {
           seenListings.markAsSeen(row.id, row.search, row.title, 'no-match',

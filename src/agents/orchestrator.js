@@ -24,6 +24,175 @@ const { strategize } = require('./strategist');
 const { assessLiquidity } = require('./liquidity');
 const { buildTelegramMessage, sendTelegramMessage } = require('../notifier');
 
+// ─── Chemins fichiers sprint ──────────────────────────────────────────────────
+
+const SPRINT_CONTRACT_PATH   = path.join(config.outputDir, 'sprint-contract.json');
+const EVALUATOR_FEEDBACK_PATH = path.join(config.outputDir, 'evaluator-feedback.json');
+
+// ─── Sprint Contract — Patterns 1 & 3 ────────────────────────────────────────
+
+/**
+ * Analyse feedback-log.json (feedbacks Justin) et evaluator-feedback.json
+ * (rejets Évaluateur) pour calculer les ajustements du prochain sprint.
+ *
+ * Pattern 3 : si > 70% rejets sur même raison dans une catégorie → ajuster
+ */
+function computeSprintAdjustments(cfg) {
+  const outputDir = (cfg || config).outputDir;
+
+  // Lire feedback-log.json (feedbacks utilisateur)
+  let userFeedbacks = [];
+  try {
+    const fbPath = path.join(outputDir, 'feedback-log.json');
+    if (fs.existsSync(fbPath)) {
+      const raw = JSON.parse(fs.readFileSync(fbPath, 'utf8'));
+      userFeedbacks = Array.isArray(raw) ? raw : [];
+    }
+  } catch { /* ignore */ }
+
+  // Lire evaluator-feedback.json (rejets récents de l'Évaluateur)
+  let evaluatorFeedbacks = [];
+  try {
+    if (fs.existsSync(EVALUATOR_FEEDBACK_PATH)) {
+      const raw = JSON.parse(fs.readFileSync(EVALUATOR_FEEDBACK_PATH, 'utf8'));
+      evaluatorFeedbacks = Array.isArray(raw.feedbacks) ? raw.feedbacks : [];
+    }
+  } catch { /* ignore */ }
+
+  // Critères de base (valeurs par défaut)
+  const criteria = {
+    minMatchScore: 4,
+    requiredFields: ['ebayMatchImageUrl'],
+    legoRequiresSetNumber: true,
+    cardsRequireVariantMatch: true,
+    minProfitLego: 50,
+    minProfitOther: 15,
+    maxAcceptableVisionErrorRate: 0.5
+  };
+
+  const queryAdjustments = [];
+
+  // ─── Analyser les feedbacks utilisateur par catégorie ─────────────────────
+  const rejectsByCategory = {};
+  for (const fb of userFeedbacks) {
+    const isReject = fb.action === 'reject' || fb.status === 'rejected' || fb.decision === 'reject';
+    if (!isReject) continue;
+    const cat = (fb.category || fb.search || 'unknown').toLowerCase();
+    if (!rejectsByCategory[cat]) rejectsByCategory[cat] = { total: 0, reasons: {} };
+    rejectsByCategory[cat].total++;
+    const reason = (fb.reason || fb.rejectionReason || '').toLowerCase();
+    if (reason) {
+      rejectsByCategory[cat].reasons[reason] = (rejectsByCategory[cat].reasons[reason] || 0) + 1;
+    }
+  }
+
+  // Pattern 3 : si > 70% de rejets pour même raison → ajuster le contrat
+  for (const [cat, stats] of Object.entries(rejectsByCategory)) {
+    if (stats.total < 3) continue;
+    for (const [reason, count] of Object.entries(stats.reasons)) {
+      const rate = count / stats.total;
+      if (rate <= 0.7) continue;
+
+      if (reason.includes('variant') || reason.includes('rarete') || reason.includes('rareté')) {
+        criteria.cardsRequireVariantMatch = true;
+        if (!queryAdjustments.find(a => a.type === 'add_rarity_tokens' && a.category === cat)) {
+          queryAdjustments.push({
+            type: 'add_rarity_tokens',
+            category: cat,
+            reason: `${Math.round(rate * 100)}% rejets "variant_mismatch" → tokens rareté requis`,
+            addedAt: new Date().toISOString()
+          });
+        }
+      }
+
+      if (reason.includes('prix') || reason.includes('price') || reason.includes('unreliable')) {
+        if (!queryAdjustments.find(a => a.type === 'require_min_observations' && a.category === cat)) {
+          queryAdjustments.push({
+            type: 'require_min_observations',
+            category: cat,
+            minObservations: 2,
+            reason: `${Math.round(rate * 100)}% rejets "prix_non_fiable" → min 2 observations exigées`,
+            addedAt: new Date().toISOString()
+          });
+        }
+      }
+    }
+  }
+
+  // ─── Analyser les rejets Évaluateur récents (< 48h) ───────────────────────
+  const cutoff48h = new Date(Date.now() - 48 * 60 * 60 * 1000);
+  const recentFeedbacks = evaluatorFeedbacks.filter(f => {
+    try { return new Date(f.timestamp) > cutoff48h; } catch { return false; }
+  });
+
+  const legoSetRejections = recentFeedbacks.filter(f =>
+    f.suggestion === 'query_should_include_set_number'
+  ).length;
+
+  if (legoSetRejections >= 2) {
+    criteria.legoRequiresSetNumber = true;
+    if (!queryAdjustments.find(a => a.type === 'force_set_number_search')) {
+      queryAdjustments.push({
+        type: 'force_set_number_search',
+        category: 'lego',
+        reason: `${legoSetRejections} rejets récents "numéro de set différent" → recherche par numéro de set forcée`,
+        addedAt: new Date().toISOString()
+      });
+    }
+  }
+
+  const cardVariantRejections = recentFeedbacks.filter(f =>
+    f.reason === 'variant_mismatch' && (f.category || '').toUpperCase() !== 'LEGO'
+  ).length;
+
+  if (cardVariantRejections >= 2) {
+    criteria.cardsRequireVariantMatch = true;
+    if (!queryAdjustments.find(a => a.type === 'add_variant_tokens')) {
+      queryAdjustments.push({
+        type: 'add_variant_tokens',
+        reason: `${cardVariantRejections} rejets récents "variant_mismatch" sur cartes → tokens variante requis`,
+        addedAt: new Date().toISOString()
+      });
+    }
+  }
+
+  return { criteria, queryAdjustments };
+}
+
+/**
+ * Écrit output/sprint-contract.json avant chaque cycle Scanner→Évaluateur.
+ *
+ * Pattern 1 : Contrat de sprint (Orchestrateur → Scanner + Évaluateur)
+ * Pattern 3 : Ajustements basés sur les feedbacks utilisateur
+ *
+ * @returns {Object} Le contrat écrit
+ */
+async function writeSprintContract(cfg) {
+  const outputDir = (cfg || config).outputDir;
+
+  const now  = new Date();
+  const pad  = n => String(n).padStart(2, '0');
+  const sprintId = `sprint-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+
+  const { criteria, queryAdjustments } = computeSprintAdjustments(cfg);
+
+  const contract = {
+    sprintId,
+    generatedAt: now.toISOString(),
+    criteria,
+    queryAdjustments
+  };
+
+  await fs.promises.mkdir(outputDir, { recursive: true });
+  await fs.promises.writeFile(
+    path.join(outputDir, 'sprint-contract.json'),
+    JSON.stringify(contract, null, 2)
+  );
+
+  console.log(`[Orchestrateur] Sprint contract: ${sprintId} (${queryAdjustments.length} ajustement(s) query)`);
+  return contract;
+}
+
 // ─── Résultats persistants ───────────────────────────────────────────
 
 const RESULTS_DIR = path.join(config.outputDir, 'agents');
@@ -686,6 +855,7 @@ module.exports = {
   runPipeline,
   runStandalone,
   runHealthCheck,
+  writeSprintContract,
   buildEnrichedTelegramMessage,
   saveAgentResult,
   loadAgentResult

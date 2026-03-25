@@ -21,7 +21,7 @@ const { detectTrends, getStats: getPriceDbStats, recordVintedPrice, getUnderPric
 const { checkAndAlert, errorCounts: apiErrorCounts } = require('./api-monitor');
 const { buildProfitAnalysis, isOpportunity } = require('./profit');
 const { findUnderpricedListings } = require('./underpriced');
-const { runPipeline, runHealthCheck } = require('./agents/orchestrator');
+const { runPipeline, runHealthCheck, writeSprintContract } = require('./agents/orchestrator');
 const { run: runScanner }  = require('./agents/scanner');
 const { run: runEvaluator } = require('./agents/evaluator');
 
@@ -620,6 +620,14 @@ async function runOnce() {
   const previousListings = (previousData && previousData.searchedListings) || [];
 
   // ─── V10: Pipeline multi-agents ─────────────────────────────────────────────
+  // 0. Orchestrateur écrit le contrat de sprint (critères + ajustements query)
+  //    Pattern 1 (contrat) + Pattern 3 (feedback utilisateur → ajustements auto)
+  try {
+    await writeSprintContract(config);
+  } catch (err) {
+    console.error(`[sprint-contract] Erreur écriture: ${err.message}`);
+  }
+
   // 1. Agent Scanner  : scrape + price-router (sans scoring ni vision)
   const scanResult = await runScanner(previousListings);
 
