@@ -188,14 +188,15 @@ function computeConfidence(opp) {
     total = Math.min(total, belowAvgBoost >= 90 ? 60 : 40);
   }
 
-  // Hard gate assoupli : sans GPT Vision ET sans signal Chemin B fort, on plafonne à 49
-  // Mais si match texte + source fiable + image hash suffisants, on laisse passer
+  // Hard gate assoupli : sans GPT Vision ET sans signal Chemin B fort, on plafonne à 59
+  // 50-59 = opportunité visible mais marquée "à vérifier manuellement"
+  // GPT confirmé → pas de plafond (score libre jusqu'à 100)
   const gptConfirmed = opp.visionVerified && opp.visionResult && opp.visionResult.sameCard === true;
   const hasStrongSignal = belowAvgBoost >= 75 ||
     (textScore >= 30 && sourceScore >= 15 && visionScore >= 15) ||
     (src === 'local-database' && textScore >= 30 && visionScore >= 15);
   if (!gptConfirmed && !hasStrongSignal) {
-    total = Math.min(total, 49);
+    total = Math.min(total, 59);
   }
 
   // Stocker le breakdown sur l'objet opportunité (effet de bord non-cassant)

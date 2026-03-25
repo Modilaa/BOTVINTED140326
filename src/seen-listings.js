@@ -12,7 +12,7 @@ const path = require('path');
 // ─── Config ─────────────────────────────────────────────────────────────────
 
 const CACHE_PATH = path.join(__dirname, '..', 'output', 'seen-listings.json');
-const MAX_AGE_HOURS = 24;
+const MAX_AGE_HOURS = 6; // Réduit de 24h à 6h : rescanner plus vite si le prix a baissé
 
 // Résultats définitifs — on peut les skipper
 const SKIP_RESULTS = new Set(['opportunity', 'no-profit', 'no-match', 'expired']);

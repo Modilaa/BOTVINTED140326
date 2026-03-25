@@ -73,7 +73,10 @@ const tcgSearches = [
       'topps f1 antonelli',
       'topps f1 bearman',
       'topps f1 refractor',
-      'topps f1 autograph'
+      'topps f1 autograph',
+      'topps f1 verstappen',
+      'topps f1 hamilton carte',
+      'topps f1 norris card'
     ],
     requiredAllTokens: ['topps'],
     requiredAnyTokens: ['f1', 'formula', 'turbo', 'attax'],
@@ -99,7 +102,11 @@ const tcgSearches = [
       'pokemon trainer gallery',
       'pokemon surging sparks',
       'pokemon stellar crown',
-      'pokemon twilight masquerade'
+      'pokemon twilight masquerade',
+      'pokemon charizard carte',
+      'pokemon temporal forces',
+      'pokemon scarlet violet rare',
+      'pokemon destinees de paldea'
     ],
     requiredAnyTokens: ['pokemon'],
     blockedTokens: ['yugioh', 'one piece', 'digimon', 'peluche', 'figurine', 'classeur', 'album', 'tapis', 'playmat', 'booster', 'display', 'coffret', 'tin'],
@@ -123,7 +130,10 @@ const tcgSearches = [
       'one piece card game leader',
       'one piece alt art carte',
       'one piece OP13 carte',
-      'one piece tcg rare'
+      'one piece tcg rare',
+      'one piece carte secret rare',
+      'one piece card game luffy',
+      'one piece OP anglais rare'
     ],
     requiredAnyTokens: ['one piece'],
     blockedTokens: ['pokemon', 'yugioh', 'figurine', 'poster', 'manga livre', 'tapis', 'playmat', 'tome', 'livre', 'roman', 'volume', 'coffret'],
@@ -145,7 +155,10 @@ const tcgSearches = [
       'yugioh ultimate rare',
       'yugioh collector rare',
       'yugioh prismatic',
-      'yugioh carte francaise rare'
+      'yugioh carte francaise rare',
+      'yugioh secret rare francais',
+      'yugioh accesscode talker',
+      'yugioh carte graded'
     ],
     requiredAnyTokens: ['yugioh', 'yu-gi-oh', 'yu gi oh'],
     blockedTokens: ['pokemon', 'one piece', 'digimon', 'classeur', 'album', 'tapis', 'playmat', 'deck box', 'sleeves'],
@@ -321,7 +334,12 @@ const legoSearches = parseBoolean(process.env.SEARCH_LEGO, false) ? [
       'lego creator complet',
       'lego city complet',
       'lego ideas',
-      'lego architecture'
+      'lego architecture',
+      'lego ninjago complet',
+      'lego marvel complet',
+      'lego speed champions',
+      'lego disney complet',
+      'lego star wars neuf'
     ],
     requiredAllTokens: ['lego'],
     blockedTokens: ['duplo', 'mega bloks', 'playmobil', 'notice seule', 'sticker seul', 'autocollant seul', 'piece seule', 'lot pieces'],

@@ -201,6 +201,35 @@ async function tryEbayHtmlScraping(listing, config, search) {
   return null;
 }
 
+// ─── Local DB reliability check ─────────────────────────────────────────────
+
+const VERIFIED_API_SOURCES = new Set([
+  'ebay-browse-api', 'pokemontcg-api', 'rebrickable', 'ygoprodeck'
+]);
+
+/**
+ * La base locale est fiable SEULEMENT si :
+ * - Condition B : au moins 1 observation marché d'une API vérifiée AVEC une URL directe
+ * - OU Condition A : 3+ observations Vinted distinctes (dédupliquées par vintedId)
+ * Si aucune condition n'est remplie → forcer un appel API en temps réel.
+ */
+function isLocalDbReliable(title, category) {
+  const entry = priceDatabase.getProductInfo(title, category);
+  if (!entry || !entry.marketPrices || entry.marketPrices.length === 0) return false;
+
+  // Condition B : au moins 1 observation API vérifiée avec URL directe
+  const hasVerifiedApi = entry.marketPrices.some(mp =>
+    mp.url && VERIFIED_API_SOURCES.has(mp.source)
+  );
+  if (hasVerifiedApi) return true;
+
+  // Condition A : 3+ observations Vinted distinctes (déjà dédupliquées par vintedId)
+  const distinctVinted = (entry.vintedPrices || []).length;
+  if (distinctVinted >= 3) return true;
+
+  return false;
+}
+
 // ─── Route Definitions ──────────────────────────────────────────────────────
 
 /**
@@ -415,8 +444,12 @@ async function getPrice(listing, pricingSource, config, search) {
 
   // ── Check local price database ──────────────────────────────────────────
   const dbResult = priceDatabase.lookupPrice(listing.title, category);
-  if (dbResult && dbResult.confidence === 'high' && dbResult.scanCount >= 3) {
-    console.log(`  [price-db] Cache local: "${listing.title.slice(0, 50)}" → ${dbResult.price}€ (${dbResult.scanCount} scans, ${dbResult.ageDays}j)`);
+  const dbReliable = dbResult && dbResult.source !== 'local-database-stale' && isLocalDbReliable(listing.title, category);
+  if (dbResult && !dbReliable) {
+    console.log(`  [price-db] Cache local ignoré (non fiable): "${listing.title.slice(0, 50)}" — ${dbResult.scanCount} obs marché, ${dbResult.vintedObservations || 0} obs Vinted`);
+  }
+  if (dbReliable) {
+    console.log(`  [price-db] Cache local fiable: "${listing.title.slice(0, 50)}" → ${dbResult.price}€ (${dbResult.scanCount} obs marché, ${dbResult.ageDays}j)`);
     const localSale = {
       title: dbResult.ebayListingTitle || listing.title,
       price: dbResult.price,

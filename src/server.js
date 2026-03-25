@@ -276,10 +276,15 @@ function appendOpportunitiesToHistory(scanOpportunities, scannedAt) {
     }
   }
 
-  // Expire stale active items with sub-threshold confidence (never expire manualOverride)
+  // Expire stale active items SEULEMENT si vieux (7j) ET confidence très basse (< 30)
+  // Ne jamais supprimer une opportunité juste parce que GPT n'a pas tourné (confidence 50-59)
+  const CONFIDENCE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
   for (const h of history) {
-    if (h.status === 'active' && !h.manualOverride && h.confidence != null && h.confidence < 50) {
-      h.status = 'expired';
+    if (h.status === 'active' && !h.manualOverride && h.confidence != null && h.confidence < 30) {
+      const age = Date.now() - new Date(h.firstSeenAt || h.lastSeenAt || 0).getTime();
+      if (age > CONFIDENCE_EXPIRY_MS) {
+        h.status = 'expired';
+      }
     }
   }
 
@@ -306,7 +311,18 @@ app.get('/api/status', (_req, res) => {
 
   const uptimeMs = Date.now() - botStartTime;
   const lastScanAt = scanData ? scanData.scannedAt : null;
-  const isScanning = scanData ? scanData.scanning === true : false;
+  let isScanning = scanData ? scanData.scanning === true : false;
+
+  // Watchdog : si scanning:true depuis plus de 10 min, le bot a crashé pendant le scan
+  if (isScanning && scanData && scanData.scannedAt) {
+    const scanAgeMs = Date.now() - new Date(scanData.scannedAt).getTime();
+    if (scanAgeMs > 10 * 60 * 1000) {
+      isScanning = false;
+      try {
+        writeJsonSafe(getScanPath(), { ...scanData, scanning: false });
+      } catch { /* ignore */ }
+    }
+  }
 
   let lastError = null;
   if (pipelineData && pipelineData.pipeline) {
@@ -632,7 +648,8 @@ app.get('/api/stats', (_req, res) => {
       .reduce((sum, h) => sum + (h.profit || 0), 0) * 100
   ) / 100;
 
-  // For per-niche stats and counts, use the latest scan's raw opportunities
+  // For per-niche stats: use full history (active+accepted) pour les stats complètes
+  // Plus fiable que le scan courant seul (1 scan = 1 pays, history = tous pays/scans)
   const opportunities = scanData.opportunities || [];
 
   // Scans today
@@ -656,14 +673,16 @@ app.get('/api/stats', (_req, res) => {
     stat.scanned++;
   }
 
-  for (const opp of opportunities) {
+  // Niche opportunities: utilise l'historique complet (active+accepted) pour stats cross-scans
+  for (const opp of activeHistory) {
     const niche = opp.search || 'unknown';
     if (!nicheMap.has(niche)) {
       nicheMap.set(niche, { scanned: 0, opportunities: 0, totalProfit: 0, profits: [] });
     }
     const stat = nicheMap.get(niche);
     stat.opportunities++;
-    const profit = opp.profit ? opp.profit.profit : 0;
+    // Dans l'historique, opp.profit est un nombre (pas un objet)
+    const profit = typeof opp.profit === 'number' ? opp.profit : (opp.profit && opp.profit.profit) ? opp.profit.profit : 0;
     stat.totalProfit += profit;
     stat.profits.push(profit);
   }
@@ -692,7 +711,7 @@ app.get('/api/stats', (_req, res) => {
 
   res.json({
     totalEstimatedProfit: Math.round(totalEstimatedProfit * 100) / 100,
-    totalOpportunities: opportunities.length,
+    totalOpportunities: activeHistory.length,
     totalScanned: allListings.length,
     scansToday,
     successRate,
