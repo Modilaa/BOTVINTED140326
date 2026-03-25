@@ -807,7 +807,7 @@ tr:hover td { background: rgba(108,92,231,0.04); }
   .opp-title { max-width: 120px; }
 
   /* Boutons d'action : taille tactile ≥ 44px */
-  .btn-action { width: 40px; height: 40px; font-size: 16px; }
+  .btn-action { width: 44px; height: 44px; font-size: 18px; }
   .opp-action-btns { gap: 6px; }
 
   /* Boutons généraux */
@@ -826,6 +826,22 @@ tr:hover td { background: rgba(108,92,231,0.04); }
 
   /* Toast : ajusté pour ne pas dépasser l'écran */
   #verify-toast-container { max-width: calc(100vw - 24px); right: 12px; }
+
+  /* Orchestrateur V10 : métriques Scanner/Évaluateur empilées verticalement */
+  #orchestratorHealthGrid { grid-template-columns: 1fr !important; }
+
+  /* Tableau opportunités : masquer colonnes non-essentielles */
+  #oppTableContainer table th:nth-child(3),
+  #oppTableContainer table th:nth-child(4),
+  #oppTableContainer table th:nth-child(8),
+  #oppTableContainer table th:nth-child(10),
+  #oppTableContainer table th:nth-child(11),
+  #oppTableContainer table tr:not(.vision-banner) td:nth-child(3),
+  #oppTableContainer table tr:not(.vision-banner) td:nth-child(4),
+  #oppTableContainer table tr:not(.vision-banner) td:nth-child(8),
+  #oppTableContainer table tr:not(.vision-banner) td:nth-child(10),
+  #oppTableContainer table tr:not(.vision-banner) td:nth-child(11) { display: none; }
+  #oppTableContainer table { min-width: 0; }
 }
 
 /* ─── Mobile ≤ 480px (iPhone SE, petit écran) ────────────────── */
@@ -861,15 +877,15 @@ tr:hover td { background: rgba(108,92,231,0.04); }
   .panel-title { font-size: 13px; }
   .panel-body { padding: 8px; }
 
-  /* Tableau : scroll horizontal forcé + colonnes compactes */
-  .table-container table { min-width: 700px; }
+  /* Tableau : scroll horizontal forcé + colonnes compactes (colonnes cachées à 768px) */
+  .table-container table { min-width: 0; }
   td, th { padding: 8px 8px; font-size: 11px; }
   .opp-title { max-width: 90px; font-size: 11px; }
   .opp-img { width: 34px; height: 34px; }
   .opp-img-placeholder { width: 34px; height: 34px; font-size: 14px; }
 
   /* Boutons d'action : taille tactile garantie */
-  .btn-action { width: 36px; height: 36px; font-size: 15px; }
+  .btn-action { width: 44px; height: 44px; font-size: 17px; }
   .opp-action-btns { gap: 4px; }
 
   /* Tabs : scrollable sans barre */
