@@ -301,7 +301,7 @@ body {
 }
 
 /* ─── Opportunities table ───────────────── */
-.table-container { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table-container { overflow-x: auto; -webkit-overflow-scrolling: touch; width: 100%; max-width: 100%; }
 .table-container table { min-width: 900px; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th {
@@ -467,8 +467,8 @@ tr:hover td { background: rgba(108,92,231,0.04); }
 .source-btn.src-ygoprodeck:hover { background: #9467BD; color: #fff; }
 .source-btn.src-cardmarket { background: rgba(29,52,97,0.25); color: #5B8DEF; border-color: rgba(91,141,239,0.3); }
 .source-btn.src-cardmarket:hover { background: #1D3461; color: #fff; }
-.source-btn.src-ebay { background: rgba(226,37,40,0.15); color: #E22528; border-color: rgba(226,37,40,0.3); }
-.source-btn.src-ebay:hover { background: #E22528; color: #fff; }
+.source-btn.src-ebay { background: rgba(74,158,255,0.15); color: #4a9eff; border-color: rgba(74,158,255,0.3); }
+.source-btn.src-ebay:hover { background: #4a9eff; color: #fff; }
 
 /* ─── Agent control cards ──────────────── */
 .agents-grid {
@@ -1844,7 +1844,7 @@ async function updateOpportunities() {
     }
     var ebayImgHtml = '';
     if (opp.ebayMatchImageUrl) {
-      var ebayImgInner = '<img class="opp-img" src="' + esc(opp.ebayMatchImageUrl) + '" alt="eBay" loading="lazy" onerror="this.style.display=\'none\'">';
+      var ebayImgInner = '<img class="opp-img" src="' + esc(opp.ebayMatchImageUrl) + '" alt="eBay" loading="lazy" onerror="this.style.display=\'none\';var p=this.closest(\'.opp-img-pair\');if(p&&!p.querySelector(\'.no-ebay-badge\')){var b=document.createElement(\'div\');b.className=\'no-ebay-badge\';b.style.cssText=\'font-size:9px;color:var(--orange);font-weight:700;margin-top:2px;text-align:center;\';b.title=\'Image eBay introuvable — vérification visuelle impossible\';b.textContent=\'⚠ Sans photo eBay\';p.appendChild(b);}">';
       if (firstEbayUrl) {
         ebayImgHtml = '<a href="' + esc(firstEbayUrl) + '" target="_blank" rel="noopener" title="Voir ce listing eBay spécifique">' + ebayImgInner + '</a>';
       } else {
@@ -1891,7 +1891,10 @@ async function updateOpportunities() {
         var imgCapNote = (opp.imageSimilarityScore != null) ? ' | Sim. image: ' + opp.imageSimilarityScore + '%' : '';
         confTooltip = 'Confiance: ' + confScore + '/100 \u2014 Match texte (0-40) + Source (0-20) + Vision IA (0-40)' + imgCapNote;
       }
-      confHtml = '<div style="display:flex;flex-direction:column;gap:2px;" title="' + esc(confTooltip) + '">' +
+      var bdAttrs = bd
+        ? 'data-total="' + confScore + '" data-text="' + bd.textScore + '" data-source="' + bd.sourceScore + '" data-vision="' + bd.visionScore + '" data-vlabel="' + esc(bd.visionLabel || '') + '"'
+        : 'data-total="' + confScore + '" data-text="-1" data-source="-1" data-vision="-1" data-vlabel=""';
+      confHtml = '<div style="display:flex;flex-direction:column;gap:2px;cursor:pointer;" ' + bdAttrs + ' onclick="showConfBreakdown(this,event)" title="' + esc(confTooltip) + '">' +
         '<span class="confidence-bar"><span class="confidence-fill" style="width:' + confScore + '%; background:' + confColor + ';"></span></span>' +
         '<span style="font-size:12px;color:' + confColor + ';font-weight:600;">' + confScore + '<span style="font-size:10px;opacity:0.7;"> / 100</span></span>' +
         (confScore < 50 ? '<span style="font-size:10px;color:var(--red);font-weight:700;background:var(--red-bg);padding:1px 5px;border-radius:4px;">\u26a0 Douteux</span>' : '<span style="font-size:10px;color:var(--text3);">' + confLabel + '</span>') +
@@ -3191,6 +3194,35 @@ async function verifyOpportunity(id) {
 
 // ─── Feedback Modal ────────────────────────────────────────
 var currentFeedbackId = null;
+
+// ─── Score breakdown popup ─────────────────────────────────
+function showConfBreakdown(el, evt) {
+  evt && evt.stopPropagation();
+  var existing = document.getElementById('confBreakdownPopup');
+  if (existing) { existing.remove(); return; }
+  var total   = parseInt(el.dataset.total, 10);
+  var text    = parseInt(el.dataset.text,   10);
+  var source  = parseInt(el.dataset.source, 10);
+  var vision  = parseInt(el.dataset.vision, 10);
+  var vLabel  = el.dataset.vlabel || '';
+  var popup = document.createElement('div');
+  popup.id = 'confBreakdownPopup';
+  popup.style.cssText = 'position:fixed;z-index:9999;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 18px;box-shadow:0 8px 32px rgba(0,0,0,0.45);min-width:220px;font-size:13px;color:var(--text);';
+  var rows = '';
+  if (!isNaN(text))   rows += '<div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:6px;"><span>Match texte</span><span style="font-weight:700;color:var(--accent2)">' + text + ' / 40</span></div>';
+  if (!isNaN(source)) rows += '<div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:6px;"><span>Fiabilité source</span><span style="font-weight:700;color:var(--accent2)">' + source + ' / 20</span></div>';
+  if (!isNaN(vision)) rows += '<div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:6px;"><span>Vision IA</span><span style="font-weight:700;color:' + (vision >= 40 ? 'var(--green)' : vision >= 20 ? 'var(--orange)' : 'var(--red)') + '">' + vision + ' / 40' + (vLabel ? ' <span style="font-size:10px;opacity:0.7">(' + vLabel + ')</span>' : '') + '</span></div>';
+  popup.innerHTML = '<div style="font-weight:700;font-size:14px;margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:8px;">Détail confiance — ' + total + '/100</div>' + rows;
+  document.body.appendChild(popup);
+  var rect = el.getBoundingClientRect();
+  var top = rect.bottom + 6;
+  var left = rect.left;
+  if (left + 240 > window.innerWidth) left = window.innerWidth - 248;
+  if (top + 160 > window.innerHeight) top = rect.top - 166;
+  popup.style.top = top + 'px';
+  popup.style.left = left + 'px';
+  setTimeout(function() { document.addEventListener('click', function h() { var p = document.getElementById('confBreakdownPopup'); if (p) p.remove(); document.removeEventListener('click', h); }); }, 0);
+}
 
 function showFeedbackNote(id) {
   oppInteracting = true;

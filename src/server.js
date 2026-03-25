@@ -197,33 +197,35 @@ function appendOpportunitiesToHistory(scanOpportunities, scannedAt) {
       // Update existing: refresh lastSeenAt and data
       existing.lastSeenAt = scannedAt;
       existing.title = opp.title;
-      existing.vintedPrice = opp.vintedBuyerPrice || opp.vintedListedPrice;
-      existing.estimatedSalePrice = opp.profit ? opp.profit.averageSoldPrice : existing.estimatedSalePrice;
-      existing.profit = opp.profit ? opp.profit.profit : existing.profit;
-      existing.profitPercent = opp.profit ? opp.profit.profitPercent : existing.profitPercent;
-      existing.search = opp.search;
       existing.imageUrl = opp.imageUrl;
-      existing.pricingSource = opp.pricingSource;
       existing.platform = opp.platform || existing.platform || 'vinted';
       if (opp.vintedCountry) existing.vintedCountry = opp.vintedCountry;
       if (opp.vintedCountryFlag) existing.vintedCountryFlag = opp.vintedCountryFlag;
-      existing.matchedSalesCount = (opp.matchedSales || []).length;
-      existing.ebayMatchTitle = (opp.matchedSales && opp.matchedSales[0] && opp.matchedSales[0].title) || existing.ebayMatchTitle || null;
-      existing.ebayMatchImageUrl = (opp.matchedSales && opp.matchedSales[0] && opp.matchedSales[0].imageUrl) || existing.ebayMatchImageUrl || null;
-      existing.imageSimilarityScore = getBestImageSimilarity(opp.matchedSales) ?? existing.imageSimilarityScore ?? null;
       existing.sourceQuery = opp.sourceQuery || existing.sourceQuery || null;
       existing.sourceUrls = opp.sourceUrls || existing.sourceUrls || [];
-      if (opp.priceDetails) existing.priceDetails = opp.priceDetails;
-      // Mettre à jour les scores si re-scannés (données fraîches)
-      if (opp.confidence != null) existing.confidence = opp.confidence;
-      if (opp.liquidity != null) existing.liquidity = opp.liquidity;
-      if (opp.sellerScore != null) existing.sellerScore = opp.sellerScore;
-      if (opp.visionVerified != null) existing.visionVerified = opp.visionVerified;
-      if (opp.visionSameCard != null) existing.visionSameCard = opp.visionSameCard;
-      if (opp.visionResult) existing.visionFullResponse = opp.visionResult;
-      if (opp.visionResult && opp.visionResult.visionReason) existing.visionReason = opp.visionResult.visionReason;
-      // Re-activate expired items, but never overwrite accepted/rejected decisions
-      if (existing.status === 'expired') existing.status = 'active';
+      // Never overwrite status/confidence/vision for manually accepted items
+      if (!existing.manualOverride) {
+        existing.vintedPrice = opp.vintedBuyerPrice || opp.vintedListedPrice;
+        existing.estimatedSalePrice = opp.profit ? opp.profit.averageSoldPrice : existing.estimatedSalePrice;
+        existing.profit = opp.profit ? opp.profit.profit : existing.profit;
+        existing.profitPercent = opp.profit ? opp.profit.profitPercent : existing.profitPercent;
+        existing.search = opp.search;
+        existing.pricingSource = opp.pricingSource;
+        existing.matchedSalesCount = (opp.matchedSales || []).length;
+        existing.ebayMatchTitle = (opp.matchedSales && opp.matchedSales[0] && opp.matchedSales[0].title) || existing.ebayMatchTitle || null;
+        existing.ebayMatchImageUrl = (opp.matchedSales && opp.matchedSales[0] && opp.matchedSales[0].imageUrl) || existing.ebayMatchImageUrl || null;
+        existing.imageSimilarityScore = getBestImageSimilarity(opp.matchedSales) ?? existing.imageSimilarityScore ?? null;
+        if (opp.priceDetails) existing.priceDetails = opp.priceDetails;
+        if (opp.confidence != null) existing.confidence = opp.confidence;
+        if (opp.liquidity != null) existing.liquidity = opp.liquidity;
+        if (opp.sellerScore != null) existing.sellerScore = opp.sellerScore;
+        if (opp.visionVerified != null) existing.visionVerified = opp.visionVerified;
+        if (opp.visionSameCard != null) existing.visionSameCard = opp.visionSameCard;
+        if (opp.visionResult) existing.visionFullResponse = opp.visionResult;
+        if (opp.visionResult && opp.visionResult.visionReason) existing.visionReason = opp.visionResult.visionReason;
+        // Re-activate expired items, but never overwrite accepted/rejected decisions
+        if (existing.status === 'expired') existing.status = 'active';
+      }
     } else {
       // New opportunity
       const newItemKey = itemKey || `opp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -262,11 +264,11 @@ function appendOpportunitiesToHistory(scanOpportunities, scannedAt) {
     }
   }
 
-  // Auto-expire active opportunities older than 7 days (never expire accepted/rejected)
+  // Auto-expire active opportunities older than 7 days (never expire accepted/rejected/manualOverride)
   const EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
   const now = Date.now();
   for (const h of history) {
-    if (h.status === 'active') {
+    if (h.status === 'active' && !h.manualOverride) {
       const lastSeen = new Date(h.lastSeenAt).getTime();
       if (now - lastSeen > EXPIRY_MS) {
         h.status = 'expired';
@@ -274,9 +276,9 @@ function appendOpportunitiesToHistory(scanOpportunities, scannedAt) {
     }
   }
 
-  // Expire stale active items with sub-threshold confidence
+  // Expire stale active items with sub-threshold confidence (never expire manualOverride)
   for (const h of history) {
-    if (h.status === 'active' && h.confidence != null && h.confidence < 50) {
+    if (h.status === 'active' && !h.manualOverride && h.confidence != null && h.confidence < 50) {
       h.status = 'expired';
     }
   }
@@ -474,6 +476,7 @@ app.post('/api/opportunity/:id/accept', (req, res) => {
 
   opp.status = 'accepted';
   opp.acceptedAt = new Date().toISOString();
+  opp.manualOverride = true;
   saveOpportunitiesHistory(history);
 
   appendFeedbackLog({

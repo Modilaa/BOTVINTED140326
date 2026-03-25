@@ -370,6 +370,12 @@ function recordMarketPrice(title, category, price, source, listingData) {
     if (listingData.imageUrl) marketEntry.imageUrl = listingData.imageUrl;
   }
 
+  // Skip duplicate URLs — same listing already recorded
+  if (marketEntry.url) {
+    const existingUrls = entry.marketPrices.map((mp) => mp.url).filter(Boolean);
+    if (existingUrls.includes(marketEntry.url)) return;
+  }
+
   entry.marketPrices.push(marketEntry);
 
   // Garder max 20 observations marché

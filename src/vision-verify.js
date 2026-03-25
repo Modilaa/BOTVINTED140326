@@ -18,6 +18,15 @@ Your task: verify 3 things STRICTLY:
 
 3. COMPARABLE CONDITION: mint/sealed ≠ damaged/opened, significant wear ≠ near-mint. If condition difference affects value significantly, mark false.
 
+IMPORTANT CONTEXT:
+- Image 1 is from Vinted (second-hand marketplace). The seller took the photo at home, so the BACKGROUND will be random (desk, table, bed, floor, etc.). IGNORE THE BACKGROUND COMPLETELY.
+- Image 2 is from eBay (reference listing). It usually has a clean/white background or professional photo.
+- The backgrounds will ALWAYS be different. This is NORMAL and NOT a reason to reject.
+- Focus ONLY on the PRODUCT/OBJECT in the image: the card, the LEGO set, the figurine, etc.
+- Compare: same player/character name, same card number, same set/collection, same variant (base, chrome, refractor, etc.)
+- A card photographed on a wooden desk is THE SAME CARD as one photographed on white background.
+- Physical condition differences (slight wear, no sleeve vs sleeved) should NOT cause rejection. Mark as match_condition_diff instead.
+
 verdict = "match" ONLY if ALL THREE are true. Otherwise "no_match".
 
 Respond ONLY with valid JSON, no markdown, no extra text:
@@ -72,8 +81,8 @@ async function compareCardImages(vintedImageUrl, ebayImageUrl) {
             role: 'user',
             content: [
               { type: 'text', text: VISION_PROMPT },
-              { type: 'image_url', image_url: { url: vintedImageUrl, detail: 'low' } },
-              { type: 'image_url', image_url: { url: ebayImageUrl, detail: 'low' } }
+              { type: 'image_url', image_url: { url: vintedImageUrl, detail: 'auto' } },
+              { type: 'image_url', image_url: { url: ebayImageUrl, detail: 'auto' } }
             ]
           }
         ]
