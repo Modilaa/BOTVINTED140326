@@ -1,10 +1,18 @@
 {
   "permissions": {
     "allow": [
-      "Bash(node --check src/index.js)",
-      "Bash(node src/index.js)",
-      "Bash(echo \"EXIT_CODE=$?\")",
-      "Bash(node -e \":*)"
+      "Bash(*)",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "WebFetch(*)",
+      "WebSearch(*)",
+      "Agent(*)"
     ]
+  },
+  "remote": {
+    "defaultEnvironmentId": "env_01WyAyLMqvquHHuthswsm7uV"
   }
 }

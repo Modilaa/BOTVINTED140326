@@ -3,3 +3,5 @@ output/
 .env
 *.log
 .DS_Store
+.env.bak
+.claude/worktrees/
