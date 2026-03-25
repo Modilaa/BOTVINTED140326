@@ -40,12 +40,11 @@ const broadcastSSE = (message) => {
 };
 
 // ─── Agent status tracking ──────────────────────────────────────────
+// V10: Discovery, Explorateur, Liquidité gérés automatiquement par le pipeline multi-agents.
+// Seuls Diagnostic (analyse manuelle des niches) et Stratégie (portfolio) restent en accès manuel.
 const agentStatus = {
   diagnostic: { status: 'idle', lastRun: null, lastResult: null, error: null },
-  discovery: { status: 'idle', lastRun: null, lastResult: null, error: null },
-  explore: { status: 'idle', lastRun: null, lastResult: null, error: null },
-  strategy: { status: 'idle', lastRun: null, lastResult: null, error: null },
-  liquidity: { status: 'idle', lastRun: null, lastResult: null, error: null }
+  strategy:   { status: 'idle', lastRun: null, lastResult: null, error: null }
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -1741,6 +1740,59 @@ app.post('/api/portfolio/sold', (req, res) => {
 app.post('/api/portfolio/update-prices', async (_req, res) => {
   const updated = portfolio.updateMarketPrices();
   res.json({ success: true, updatedCount: updated.length });
+});
+
+// ─── API: Orchestrateur V10 ───────────────────────────────────────────
+app.get('/api/orchestrator-status', (req, res) => {
+  const outputDir = config.outputDir;
+
+  function safeRead(file) {
+    const p = path.join(outputDir, file);
+    try {
+      if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8'));
+    } catch { /* ignore */ }
+    return null;
+  }
+
+  const scannerHealth   = safeRead('scanner-health.json');
+  const evaluatorHealth = safeRead('evaluator-health.json');
+  const rawDecisions    = safeRead('orchestrator-decisions.json') || [];
+  const now             = new Date();
+
+  const activeDecisions = rawDecisions.filter(d =>
+    d.active && (!d.expiresAt || new Date(d.expiresAt) > now)
+  );
+  const recentDecisions = rawDecisions
+    .slice()
+    .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0))
+    .slice(0, 10);
+
+  res.json({
+    scannerHealth,
+    evaluatorHealth,
+    activeDecisions,
+    recentDecisions
+  });
+});
+
+// ─── API: Budget Vision ───────────────────────────────────────────────
+app.get('/api/vision-budget', (req, res) => {
+  const outputDir = config.outputDir;
+  const filePath  = path.join(outputDir, 'vision-budget.json');
+  const dailyBudgetCents = config.visionDailyBudgetCents || 100;
+
+  try {
+    if (fs.existsSync(filePath)) {
+      const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      const today = new Date().toISOString().slice(0, 10);
+      if (data.date === today) {
+        return res.json({ ...data, dailyBudgetCents });
+      }
+    }
+  } catch { /* ignore */ }
+
+  // Reset ou fichier absent
+  res.json({ date: new Date().toISOString().slice(0, 10), callsToday: 0, estimatedCostCents: 0, dailyBudgetCents });
 });
 
 // ─── Export + Start ──────────────────────────────────────────────────

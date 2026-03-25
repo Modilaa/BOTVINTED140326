@@ -468,6 +468,198 @@ async function runPipeline(scanResult, options = {}) {
   return result;
 }
 
+// ─── Health Check — Analyse et décisions automatiques ────────────────────────
+
+/**
+ * Lit les fichiers health du Scanner et de l'Évaluateur, détecte les problèmes,
+ * et écrit des décisions correctrices dans output/orchestrator-decisions.json.
+ *
+ * Les décisions sont lues par l'Évaluateur à chaque run pour adapter son comportement.
+ *
+ * Patterns détectés :
+ *   1. vision_errors_high       → disable_vision (2h)
+ *   2. all_rejected_good_matches → lower_confidence_threshold (4h)
+ *   3. scanner_no_matches       → purge_seen_cache (one-shot)
+ */
+async function runHealthCheck(cfg) {
+  const outputDir       = (cfg || config).outputDir;
+  const decisionsPath   = path.join(outputDir, 'orchestrator-decisions.json');
+  const healthCheckAt   = new Date().toISOString();
+
+  console.log('\n[Orchestrateur] === Health Check ===');
+
+  // ─── Lecture des fichiers santé ─────────────────────────────────────────
+  function readHealth(fileName) {
+    try {
+      const p = path.join(outputDir, fileName);
+      if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8'));
+    } catch { /* ignore */ }
+    return null;
+  }
+
+  const scannerHealth   = readHealth('scanner-health.json');
+  const evaluatorHealth = readHealth('evaluator-health.json');
+
+  if (!scannerHealth && !evaluatorHealth) {
+    console.log('[Orchestrateur] Pas encore de données health — skip.');
+    return null;
+  }
+
+  // ─── Lecture des décisions existantes ──────────────────────────────────
+  let existingDecisions = [];
+  try {
+    if (fs.existsSync(decisionsPath)) {
+      existingDecisions = JSON.parse(fs.readFileSync(decisionsPath, 'utf8'));
+    }
+  } catch { existingDecisions = []; }
+
+  const now = new Date();
+
+  function hasActive(action) {
+    return existingDecisions.some(d =>
+      d.action === action && d.active && (!d.expiresAt || new Date(d.expiresAt) > now)
+    );
+  }
+
+  function expireAction(action) {
+    for (const d of existingDecisions) {
+      if (d.action === action && d.active) {
+        d.active     = false;
+        d.expiredAt  = now.toISOString();
+      }
+    }
+  }
+
+  const newDecisions = [];
+
+  // ─── Pattern 1 : Vision error rate > 50% ────────────────────────────────
+  if (
+    evaluatorHealth &&
+    evaluatorHealth.visionRuns >= 3 &&
+    evaluatorHealth.visionErrorRate > 0.5
+  ) {
+    if (!hasActive('disable_vision')) {
+      const dec = {
+        id:        `dec-${Date.now()}-vision`,
+        timestamp: healthCheckAt,
+        pattern:   'vision_errors_high',
+        action:    'disable_vision',
+        reason:    `Vision error rate ${(evaluatorHealth.visionErrorRate * 100).toFixed(0)}% > 50% (${evaluatorHealth.visionErrors}/${evaluatorHealth.visionRuns} erreurs)`,
+        active:    true,
+        expiresAt: new Date(now.getTime() + 2 * 60 * 60 * 1000).toISOString()
+      };
+      newDecisions.push(dec);
+      console.log(`[Orchestrateur] 🔧 DÉCISION: ${dec.reason} → vision désactivée 2h`);
+    }
+  } else {
+    // Error rate revenu normal → expirer la décision
+    expireAction('disable_vision');
+  }
+
+  // ─── Pattern 2 : Scanner trouve des matchs mais Évaluateur rejette tout ──
+  if (scannerHealth && evaluatorHealth && evaluatorHealth.evaluated >= 5) {
+    const rejectRate = evaluatorHealth.evaluated > 0
+      ? evaluatorHealth.rejected / evaluatorHealth.evaluated
+      : 0;
+    const matchRate = scannerHealth.itemsScanned > 0
+      ? scannerHealth.matchesFound / scannerHealth.itemsScanned
+      : 0;
+
+    if (matchRate > 0.1 && rejectRate > 0.95) {
+      if (!hasActive('lower_confidence_threshold')) {
+        const dec = {
+          id:        `dec-${Date.now()}-conf`,
+          timestamp: healthCheckAt,
+          pattern:   'all_rejected_good_matches',
+          action:    'lower_confidence_threshold',
+          threshold: 40,
+          reason:    `${(rejectRate * 100).toFixed(0)}% rejetés malgré ${(matchRate * 100).toFixed(0)}% match rate (confiance avg ${evaluatorHealth.avgConfidence}/100) → seuil abaissé à 40`,
+          active:    true,
+          expiresAt: new Date(now.getTime() + 4 * 60 * 60 * 1000).toISOString()
+        };
+        newDecisions.push(dec);
+        console.log(`[Orchestrateur] 🔧 DÉCISION: ${dec.reason}`);
+      }
+    } else {
+      expireAction('lower_confidence_threshold');
+    }
+  }
+
+  // ─── Pattern 3 : Scanner ne trouve rien du tout ──────────────────────────
+  if (
+    scannerHealth &&
+    scannerHealth.matchesFound === 0 &&
+    scannerHealth.itemsScanned > 10
+  ) {
+    if (!hasActive('purge_seen_cache')) {
+      console.log('[Orchestrateur] 🔧 DÉCISION: 0 match trouvé → purge cache seen-listings');
+
+      // Purge effective du cache
+      try {
+        const seenListingsModule = require('../seen-listings');
+        if (typeof seenListingsModule.pruneOld === 'function') {
+          seenListingsModule.pruneOld(0); // maxAgeHours=0 → tout supprimer
+        }
+      } catch (err) {
+        console.error(`[Orchestrateur] Erreur purge seen-listings: ${err.message}`);
+      }
+
+      const dec = {
+        id:        `dec-${Date.now()}-cache`,
+        timestamp: healthCheckAt,
+        pattern:   'scanner_no_matches',
+        action:    'purge_seen_cache',
+        reason:    `0 match sur ${scannerHealth.itemsScanned} items → cache seen-listings purgé`,
+        active:    false, // One-shot: déjà exécuté
+        appliedAt: now.toISOString()
+      };
+      newDecisions.push(dec);
+    }
+  }
+
+  // ─── Résumé ──────────────────────────────────────────────────────────────
+  const scannerSummary = scannerHealth
+    ? `Scanner: ${scannerHealth.itemsScanned} items, ${scannerHealth.matchesFound} matchs`
+    : 'Scanner: n/a';
+
+  const evaluatorSummary = evaluatorHealth
+    ? `Évaluateur: ${evaluatorHealth.evaluated} évalués, ${evaluatorHealth.accepted} OK, ${evaluatorHealth.rejected} rejetés, vision ${(evaluatorHealth.visionErrorRate * 100).toFixed(0)}% erreurs, confiance moy ${evaluatorHealth.avgConfidence}/100`
+    : 'Évaluateur: n/a';
+
+  console.log(`[Orchestrateur] ${scannerSummary}`);
+  console.log(`[Orchestrateur] ${evaluatorSummary}`);
+
+  if (newDecisions.length === 0) {
+    console.log('[Orchestrateur] ✅ Tout va bien, aucune intervention nécessaire.');
+  }
+
+  // ─── Sauvegarde des décisions ────────────────────────────────────────────
+  // Garder les décisions actives + les 24 dernières heures d'historique
+  const cutoff      = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const keepOld     = existingDecisions.filter(d =>
+    d.active || new Date(d.appliedAt || d.timestamp || 0) > cutoff
+  );
+  const allDecisions = [...keepOld, ...newDecisions];
+
+  await fs.promises.mkdir(outputDir, { recursive: true });
+  await fs.promises.writeFile(decisionsPath, JSON.stringify(allDecisions, null, 2));
+
+  const activeCount = allDecisions.filter(d => d.active).length;
+  if (activeCount > 0) {
+    console.log(`[Orchestrateur] ${activeCount} décision(s) active(s).`);
+  }
+
+  console.log('[Orchestrateur] === Health Check terminé ===\n');
+
+  return {
+    checkedAt:     healthCheckAt,
+    scannerHealth,
+    evaluatorHealth,
+    newDecisions,
+    activeDecisions: allDecisions.filter(d => d.active)
+  };
+}
+
 // ─── Mode standalone ─────────────────────────────────────────────────
 
 /**
@@ -493,6 +685,7 @@ async function runStandalone(options = {}) {
 module.exports = {
   runPipeline,
   runStandalone,
+  runHealthCheck,
   buildEnrichedTelegramMessage,
   saveAgentResult,
   loadAgentResult

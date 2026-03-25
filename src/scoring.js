@@ -130,8 +130,9 @@ function computeConfidence(opp) {
     const salesWithImage = matchedSales.filter(s => s.imageMatch && s.imageMatch.score !== null);
     if (salesWithImage.length > 0) {
       const bestImg = Math.max(...salesWithImage.map(s => s.imageMatch.score));
-      if (bestImg >= 0.85)      { visionScore = 25; visionLabel = `hash local ${Math.round(bestImg*100)}% ✓`; }
-      else if (bestImg >= 0.75) { visionScore = 15; visionLabel = `hash local ${Math.round(bestImg*100)}% ~`; }
+      const budgetSkipped = opp.visionSkippedBudget === true;
+      if (bestImg >= (budgetSkipped ? 0.60 : 0.85))      { visionScore = 25; visionLabel = `hash local ${Math.round(bestImg*100)}% ✓`; }
+      else if (bestImg >= (budgetSkipped ? 0.40 : 0.75)) { visionScore = 15; visionLabel = `hash local ${Math.round(bestImg*100)}% ~`; }
       // else visionScore = 0 — hash faible
     } else if (src === 'local-database') {
       visionScore = 15; // DB locale pré-vérifiée — bénéfice du doute
