@@ -1112,7 +1112,7 @@ tr:hover td { background: rgba(108,92,231,0.04); }
     <div class="panel-header">
       <div class="panel-title">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent2)" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
-        Contr&ocirc;le des agents
+        Agents manuels
       </div>
     </div>
     <div class="panel-body">
@@ -1175,6 +1175,48 @@ tr:hover td { background: rgba(108,92,231,0.04); }
           <div class="empty-state-title">Aucune opportunit&eacute; pour le moment</div>
           <div class="empty-state-text">Lance un scan pour d&eacute;couvrir des opportunit&eacute;s d'arbitrage TCG.</div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Orchestrateur V10 Section -->
+  <div class="panel" id="orchestratorPanel">
+    <div class="panel-header" onclick="toggleOrchestrator()" style="cursor:pointer;user-select:none;">
+      <div class="panel-title">
+        🤖 Orchestrateur V10
+        <span class="panel-badge" id="orchestratorActiveCount" style="background:var(--green);">0</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span id="orchestratorStatus" style="font-size:11px;color:var(--text3);">Chargement...</span>
+        <span id="orchestratorChevron" style="color:var(--text2);font-size:14px;transition:transform 0.2s;">▶</span>
+      </div>
+    </div>
+    <div class="panel-body" id="orchestratorBody" style="display:none;padding:16px;">
+      <!-- Métriques health -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;" id="orchestratorHealthGrid">
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:6px;">🔍 Scanner</div>
+          <div id="orchestratorScannerStats" style="font-size:12px;color:var(--text2);">—</div>
+        </div>
+        <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:6px;">⚖️ Évaluateur</div>
+          <div id="orchestratorEvaluatorStats" style="font-size:12px;color:var(--text2);">—</div>
+        </div>
+      </div>
+      <!-- Budget Vision -->
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">
+        <span style="font-size:11px;color:var(--text3);">💰 Budget Vision GPT</span>
+        <span id="orchestratorVisionBudget" style="font-size:13px;font-weight:600;color:var(--text);">—</span>
+      </div>
+      <!-- Décisions actives -->
+      <div style="margin-bottom:12px;">
+        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px;">🔧 Décisions actives</div>
+        <div id="orchestratorDecisionsActive" style="font-size:12px;color:var(--text3);">Aucune intervention en cours — tout va bien.</div>
+      </div>
+      <!-- Historique décisions récentes -->
+      <div>
+        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:8px;">📋 Historique récent</div>
+        <div id="orchestratorDecisionsHistory" style="font-size:11px;color:var(--text3);">—</div>
       </div>
     </div>
   </div>
@@ -1457,12 +1499,10 @@ let currentTotalProfit = null; // tracked profit total for immediate UI update
 let currentOppsProfit = {};    // id → profit value cache
 let feedbackInFlight = new Set(); // prevent double-submit
 
+// V10: Discovery + Explorateur + Liquidité → gérés automatiquement par Scanner/Évaluateur/Orchestrateur
 const AGENT_DEFS = [
   { key: 'diagnostic', name: 'Diagnostic', desc: 'Analyse la sante des niches', color: 'orange', icon: '&#9881;' },
-  { key: 'discovery', name: 'Discovery', desc: 'Decouvre de nouvelles niches', color: 'blue', icon: '&#128270;' },
-  { key: 'explore', name: 'Explorateur', desc: 'Explore de nouvelles categories', color: 'purple', icon: '&#127758;' },
-  { key: 'strategy', name: 'Strategie', desc: 'Rapport strategique portefeuille', color: 'green', icon: '&#128200;' },
-  { key: 'liquidity', name: 'Liquidite', desc: 'Analyse la facilite de vente', color: 'blue', icon: '&#128167;' }
+  { key: 'strategy',   name: 'Strategie',  desc: 'Rapport strategique portefeuille', color: 'green', icon: '&#128200;' }
 ];
 
 // ─── Fetch helpers ────────────────────────────────────────
@@ -2524,6 +2564,111 @@ var priceDatabaseState = {
 // ─── Apprentissage (feedback report + auto-amélioration) ────────────
 var learningOpen = false;
 
+// ─── Orchestrateur V10 ───────────────────────────────────────────────────────
+var orchestratorOpen = false;
+
+function toggleOrchestrator() {
+  orchestratorOpen = !orchestratorOpen;
+  var body    = document.getElementById('orchestratorBody');
+  var chevron = document.getElementById('orchestratorChevron');
+  body.style.display = orchestratorOpen ? '' : 'none';
+  chevron.textContent = orchestratorOpen ? '\u25BC' : '\u25B6';
+  if (orchestratorOpen) updateOrchestrator();
+}
+
+async function updateOrchestrator() {
+  var data       = await fetchJson('/api/orchestrator-status');
+  var budgetData = await fetchJson('/api/vision-budget');
+  if (!data) return;
+
+  var sh  = data.scannerHealth;
+  var eh  = data.evaluatorHealth;
+  var ad  = data.activeDecisions  || [];
+  var rd  = data.recentDecisions  || [];
+
+  // Budget Vision
+  var budgetEl = document.getElementById('orchestratorVisionBudget');
+  if (budgetData) {
+    var usedDollars  = (budgetData.estimatedCostCents  / 100).toFixed(2);
+    var limitDollars = (budgetData.dailyBudgetCents    / 100).toFixed(2);
+    var pct          = budgetData.dailyBudgetCents > 0
+      ? Math.round((budgetData.estimatedCostCents / budgetData.dailyBudgetCents) * 100)
+      : 0;
+    var bColor = pct >= 90 ? 'var(--red)' : pct >= 70 ? 'var(--orange)' : 'var(--green)';
+    budgetEl.innerHTML =
+      '<span style="color:' + bColor + ';">' + usedDollars + '$</span>' +
+      ' / ' + limitDollars + '$ <span style="color:var(--text3);font-size:11px;">(' + budgetData.callsToday + ' appels)</span>';
+  } else {
+    budgetEl.textContent = '—';
+  }
+
+  // Badge count
+  document.getElementById('orchestratorActiveCount').textContent = ad.length;
+  document.getElementById('orchestratorActiveCount').style.background = ad.length > 0 ? 'var(--orange)' : 'var(--green)';
+
+  // Status line
+  var statusEl = document.getElementById('orchestratorStatus');
+  if (sh) {
+    var lastRun = sh.lastRunAt ? new Date(sh.lastRunAt).toLocaleTimeString('fr-FR') : '?';
+    statusEl.textContent = 'Dernier scan : ' + lastRun;
+  }
+
+  // Scanner stats
+  var scannerEl = document.getElementById('orchestratorScannerStats');
+  if (sh) {
+    scannerEl.innerHTML =
+      '<b>' + (sh.itemsScanned || 0) + '</b> annonces scannées<br>' +
+      '<b>' + (sh.matchesFound || 0) + '</b> candidats trouvés<br>' +
+      '<span style="color:var(--text3);">' + (sh.countries || []).join(', ') + '</span>';
+  } else {
+    scannerEl.textContent = 'Pas encore de données';
+  }
+
+  // Evaluator stats
+  var evalEl = document.getElementById('orchestratorEvaluatorStats');
+  if (eh) {
+    var vErrPct = eh.visionRuns > 0 ? Math.round(eh.visionErrorRate * 100) : 0;
+    var vColor  = vErrPct > 50 ? 'var(--red)' : vErrPct > 20 ? 'var(--orange)' : 'var(--green)';
+    evalEl.innerHTML =
+      '<b>' + (eh.evaluated || 0) + '</b> évalués — ' +
+      '<span style="color:var(--green);">' + (eh.accepted || 0) + ' OK</span> / ' +
+      '<span style="color:var(--red);">' + (eh.rejected || 0) + ' rejetés</span><br>' +
+      'Confiance moy: <b>' + (eh.avgConfidence || 0) + '/100</b><br>' +
+      'Vision erreurs: <span style="color:' + vColor + ';">' + vErrPct + '%</span>' +
+      (eh.pendingReview > 0 ? ' — <b>' + eh.pendingReview + ' en revue manuelle</b>' : '');
+  } else {
+    evalEl.textContent = 'Pas encore de données';
+  }
+
+  // Décisions actives
+  var decActive = document.getElementById('orchestratorDecisionsActive');
+  if (ad.length === 0) {
+    decActive.innerHTML = '<span style="color:var(--green);">✅ Aucune intervention — tout va bien.</span>';
+  } else {
+    decActive.innerHTML = ad.map(function(d) {
+      var expires = d.expiresAt ? ' (expire ' + new Date(d.expiresAt).toLocaleTimeString('fr-FR') + ')' : '';
+      return '<div style="background:var(--surface2);border:1px solid var(--orange);border-radius:6px;padding:8px;margin-bottom:6px;">' +
+        '<span style="color:var(--orange);font-weight:600;">' + d.action + '</span>' + expires +
+        '<br><span style="color:var(--text3);">' + d.reason + '</span></div>';
+    }).join('');
+  }
+
+  // Historique
+  var decHist = document.getElementById('orchestratorDecisionsHistory');
+  if (rd.length === 0) {
+    decHist.textContent = 'Aucune décision récente.';
+  } else {
+    decHist.innerHTML = rd.map(function(d) {
+      var ts    = d.timestamp ? new Date(d.timestamp).toLocaleString('fr-FR') : '?';
+      var color = d.active ? 'var(--orange)' : 'var(--text3)';
+      return '<div style="padding:4px 0;border-bottom:1px solid var(--border);">' +
+        '<span style="color:' + color + ';">[' + d.action + ']</span> ' +
+        '<span style="color:var(--text3);">' + d.reason + '</span> — ' +
+        '<span style="color:var(--text4);font-size:10px;">' + ts + '</span></div>';
+    }).join('');
+  }
+}
+
 function toggleLearning() {
   learningOpen = !learningOpen;
   var body = document.getElementById('learningBody');
@@ -2852,7 +2997,23 @@ async function refreshAll() {
     updateHistory(),
     updatePortfolio(),
     updateAgents(),
-    updatePriceDbBadge()
+    updatePriceDbBadge(),
+    // V10: mise à jour badge orchestrateur (pas le panel entier, juste le status)
+    (async function() {
+      var data = await fetchJson('/api/orchestrator-status');
+      if (!data) return;
+      var ad = data.activeDecisions || [];
+      var badge = document.getElementById('orchestratorActiveCount');
+      if (badge) {
+        badge.textContent = ad.length;
+        badge.style.background = ad.length > 0 ? 'var(--orange)' : 'var(--green)';
+      }
+      var sh = data.scannerHealth;
+      var statusEl = document.getElementById('orchestratorStatus');
+      if (statusEl && sh && sh.lastRunAt) {
+        statusEl.textContent = 'Dernier scan : ' + new Date(sh.lastRunAt).toLocaleTimeString('fr-FR');
+      }
+    })()
   ]);
 }
 

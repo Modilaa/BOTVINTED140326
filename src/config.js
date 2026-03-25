@@ -556,5 +556,11 @@ module.exports = {
   telegram: {
     token: process.env.TELEGRAM_BOT_TOKEN || '',
     chatId: process.env.TELEGRAM_CHAT_ID || ''
-  }
+  },
+  // ─── Budget Vision GPT ────────────────────────────────────────────────────
+  // VISION_DAILY_BUDGET_CENTS=100  → 1$/jour max (ajustable dans .env)
+  // VISION_MIN_PROFIT_FOR_CHECK=10 → ne vérifier que si profit estimé > 10 EUR
+  visionDailyBudgetCents:    parseNumber(process.env.VISION_DAILY_BUDGET_CENTS,    100),
+  visionMinProfitForCheck:   parseNumber(process.env.VISION_MIN_PROFIT_FOR_CHECK,   10),
+  visionCostPerCallCents:    parseNumber(process.env.VISION_COST_PER_CALL_CENTS,     3)
 };

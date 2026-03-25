@@ -21,16 +21,9 @@ const { detectTrends, getStats: getPriceDbStats, recordVintedPrice, getUnderPric
 const { checkAndAlert, errorCounts: apiErrorCounts } = require('./api-monitor');
 const { buildProfitAnalysis, isOpportunity } = require('./profit');
 const { findUnderpricedListings } = require('./underpriced');
-const { runPipeline } = require('./agents/orchestrator');
-const { extractCardLanguage, getLanguageSearchKeyword } = require('./agents/supervisor');
-const { computeConfidence, computeLiquidity } = require('./scoring');
-const { evaluateSeller } = require('./seller-score');
-const { runReverseScanner } = require('./scanners/reverse-scanner');
-const { runCardmarketScanner } = require('./scanners/cardmarket-scanner');
-const { compareCardImages } = require('./vision-verify');
-
-// Stocke le quota eBay du dernier scan pour l'inclure dans le résumé
-let _lastEbayQuota = null;
+const { runPipeline, runHealthCheck } = require('./agents/orchestrator');
+const { run: runScanner }  = require('./agents/scanner');
+const { run: runEvaluator } = require('./agents/evaluator');
 
 async function ensureOutputDir(outputDir) {
   await fs.promises.mkdir(outputDir, { recursive: true });
@@ -625,7 +618,27 @@ async function runOnce() {
   }
 
   const previousListings = (previousData && previousData.searchedListings) || [];
-  const result = await runScan(previousListings);
+
+  // ─── V10: Pipeline multi-agents ─────────────────────────────────────────────
+  // 1. Agent Scanner  : scrape + price-router (sans scoring ni vision)
+  const scanResult = await runScanner(previousListings);
+
+  // 2. Agent Évaluateur : scoring + vision GPT + décision opportunité
+  const evalResult = await runEvaluator(scanResult.candidates);
+
+  // 3. Assemble result compatible avec mergeWithHistory (même format qu'avant)
+  //    Les objets candidates sont mutés in-place par l'Évaluateur
+  //    (confidence, liquidity, visionResult) → searchedListings déjà enrichi.
+  const result = {
+    scannedAt:        new Date().toISOString(),
+    scanning:         false,
+    thresholds:       { minProfitEur: config.minProfitEur, minProfitPercent: config.minProfitPercent },
+    scannedCount:     scanResult.searchedListings.length,
+    opportunities:    evalResult.opportunities.slice().sort((a, b) => b.profit.profit - a.profit.profit),
+    underpricedAlerts: scanResult.underpricedAlerts,
+    searchedListings: scanResult.searchedListings
+  };
+
   const merged = mergeWithHistory(result, config.outputDir, previousData);
   const outputPath = path.join(config.outputDir, 'latest-scan.json');
 
@@ -677,8 +690,8 @@ async function runOnce() {
         if (usageData.date === today) apifyStr = `${usageData.count}/50 (jour)`;
       } catch { /* pas de fichier usage */ }
 
-      const ebayStr = _lastEbayQuota
-        ? `${_lastEbayQuota.remaining}/${_lastEbayQuota.limit}`
+      const ebayStr = global._lastEbayQuota
+        ? `${global._lastEbayQuota.remaining}/${global._lastEbayQuota.limit}`
         : 'N/A';
 
       const summaryLines = [
@@ -757,6 +770,18 @@ async function runOnce() {
         }
       }
     } catch { /* non-bloquant */ }
+  }
+
+  // ─── V10: Orchestrateur Health Check (toutes les 2 boucles) ────────────────
+  // Analyse les fichiers scanner-health.json + evaluator-health.json,
+  // détecte les problèmes (vision KO, tout rejeté, aucun match) et applique
+  // des corrections dans orchestrator-decisions.json (lu par l'Évaluateur).
+  if (_scanCounter % 2 === 0) {
+    try {
+      await runHealthCheck(config);
+    } catch (err) {
+      console.error(`[Orchestrateur] Health check erreur: ${err.message}`);
+    }
   }
 
   // ─── Axe 8: Digest quotidien Telegram (une fois par jour) ──────────────
