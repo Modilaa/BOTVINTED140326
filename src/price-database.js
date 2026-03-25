@@ -418,8 +418,10 @@ function lookupPrice(title, category) {
   const ageDays = daysBetween(entry.lastSeen);
   const isStale = ageDays > STALE_THRESHOLD_DAYS;
 
-  // Find the most recent market price entry that has a stored URL
-  const latestWithUrl = [...(entry.marketPrices || [])].reverse().find(p => p.url);
+  // Find most recent market price with URL (préférer ceux qui ont aussi une imageUrl)
+  const marketPricesReversed = [...(entry.marketPrices || [])].reverse();
+  const latestWithImage = marketPricesReversed.find(p => p.url && p.imageUrl);
+  const latestWithUrl = latestWithImage || marketPricesReversed.find(p => p.url);
 
   return {
     price: entry.avgMarketPrice,

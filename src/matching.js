@@ -26,7 +26,7 @@ const FR_EN_TRANSLATIONS = {
   'neuf': 'mint',
   'neuve': 'mint',
   'excellent': 'excellent',
-  'bon etat': 'good',
+  'bon etat': 'good condition',
   // TCG specific
   'booster': 'booster',
   'extension': 'expansion',
@@ -41,14 +41,46 @@ const FR_EN_TRANSLATIONS = {
   'bronze': 'bronze',
   'parallele': 'parallel',
   'numerotee': 'numbered',
+  'numerote': 'numbered',
   'autographe': 'autograph',
+  'dedie': 'autograph',
+  'dedicace': 'autograph',
+  'refracteur': 'refractor',
   'debutant': 'rookie',
   'recrue': 'rookie',
   // One Piece specific
   'chef': 'leader',
   'personnage': 'character',
   'evenement': 'event',
-  'scene': 'stage'
+  'scene': 'stage',
+  // LEGO specific
+  'coffret': 'set',
+  'complet': 'complete',
+  'boite': 'box',
+  'notice': 'instructions',
+  'pieces': 'pieces',
+  'figurine': 'minifigure',
+  // Sneakers
+  'chaussures': 'shoes',
+  'baskets': 'sneakers',
+  'taille': 'size',
+  'pointure': 'size',
+  // Consoles / jeux vidéo
+  'manette': 'controller',
+  'jeu': 'game',
+  'console': 'console',
+  'en boite': 'boxed',
+  // Vinyles
+  'disque': 'vinyl',
+  'album': 'album',
+  'edition limitee': 'limited edition',
+  'pressage': 'pressing',
+  // Conditions générales
+  'etat neuf': 'mint condition',
+  'comme neuf': 'near mint',
+  'avec boite': 'with box',
+  'sans boite': 'no box',
+  'lot de': 'lot of'
 };
 
 function translateFrToEn(text) {
@@ -483,6 +515,19 @@ function scoreSoldListing(vintedListing, soldListing) {
   score += sharedIdentityTokens.length * 3;
   score += specificCoverage >= 0.8 ? 3 : specificCoverage >= 0.6 ? 1 : 0;
 
+  // ─── Variant/rarity mismatch ──────────────────────────────────────────────
+  // Fusionne les variant tokens de l'original et de la traduction FR→EN
+  const leftAllVariants = new Set([...left.variantTokens, ...leftTranslated.variantTokens]);
+  const rightAllVariants = new Set(right.variantTokens);
+
+  // Les deux côtés ont des variantes mais aucune en commun → parallèles différents → rejet dur
+  const variantMismatch = leftAllVariants.size > 0 && rightAllVariants.size > 0 &&
+    ![...leftAllVariants].some(t => rightAllVariants.has(t));
+
+  // Un seul côté a des variantes → pénalité de score
+  const variantAsymmetry = (leftAllVariants.size > 0) !== (rightAllVariants.size > 0);
+  if (variantAsymmetry) score -= 5;
+
   const printRunMismatch =
     (!left.printRun && right.printRun) ||
     (!right.printRun && left.printRun);
@@ -555,7 +600,8 @@ function scoreSoldListing(vintedListing, soldListing) {
     reverseMismatch ||
     hardCategoryConflict ||
     lotMismatch ||
-    serialVsCodeConflict;
+    serialVsCodeConflict ||
+    variantMismatch;  // les deux côtés ont des variantes différentes (ex: Aqua vs Gold)
 
   return {
     score,
@@ -573,7 +619,9 @@ function scoreSoldListing(vintedListing, soldListing) {
     categoryMismatch,
     hardCategoryConflict,
     lotMismatch,
-    serialVsCodeConflict
+    serialVsCodeConflict,
+    variantMismatch,
+    variantAsymmetry
   };
 }
 
@@ -1045,5 +1093,6 @@ module.exports = {
   extractCardSignature,
   scoreSoldListing,
   translateFrToEn,
-  getCategoryRejectionReasons
+  getCategoryRejectionReasons,
+  extractLegoSetNumber
 };

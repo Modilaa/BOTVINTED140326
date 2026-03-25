@@ -3125,6 +3125,8 @@ async function acceptOpportunity(id) {
 
 // ─── Reject opportunity (❌ button) ───────────────────────────────────
 async function rejectOpportunity(id) {
+  var reason = prompt('Raison du rejet (ex: variante différente, prix pas fiable, mauvais état…) :');
+  if (reason === null) return; // Annulé par l'utilisateur
   var btn = document.getElementById('rbtn-' + id);
   if (btn) btn.disabled = true;
   var profit = currentOppsProfit[id] || 0;
@@ -3132,7 +3134,7 @@ async function rejectOpportunity(id) {
   try {
     var res = await fetch(API_BASE + '/api/opportunity/' + id + '/reject', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ source: 'manual' })
+      body: JSON.stringify({ source: 'manual', reason: reason || 'rejet manuel' })
     });
     var data = await res.json();
     if (!data.success) { if (btn) btn.disabled = false; alert('Erreur: ' + (data.error || 'Inconnu')); return; }

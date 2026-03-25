@@ -25,7 +25,7 @@ const { getCardmarketMarketPrice } = require('./marketplaces/cardmarket');
 const { getDiscogsMarketPrice } = require('./marketplaces/discogs-api');
 const { getSneakersMarketPrice } = require('./marketplaces/sneaks-api');
 const { getLegoMarketPrice } = require('./marketplaces/lego-api');
-const { chooseBestSoldListings } = require('./matching');
+const { chooseBestSoldListings, extractLegoSetNumber } = require('./matching');
 const { attachImageSignals } = require('./image-match');
 
 // ─── In-Memory Result Cache ─────────────────────────────────────────────────
@@ -373,17 +373,25 @@ async function routeSneaks(listing, config, search) {
  * Rebrickable (identifie le set → enrichit la query) → eBay Browse API → eBay HTML → estimation
  */
 async function routeLego(listing, config, search) {
-  let enrichedListing = listing;
+  // 0. Extraction immédiate du numéro de set depuis le titre Vinted (ex: "LEGO 76386 Harry Potter" → "LEGO 76386")
+  const setNumber = extractLegoSetNumber(listing.title);
+  let enrichedListing = setNumber
+    ? { ...listing, enrichedTitle: `LEGO ${setNumber}` }
+    : listing;
+  if (setNumber) {
+    console.log(`    [LEGO] Numéro de set extrait du titre: ${setNumber} → query "LEGO ${setNumber}"`);
+  }
+
   let legoFallback = null;
 
-  // 1. Rebrickable : identifier le set + construire une query eBay précise
+  // 1. Rebrickable : identifier le set + construire une query eBay précise (enrichit davantage si trouvé)
   try {
     const legoResult = await getLegoMarketPrice(listing, config);
     if (legoResult) {
       legoFallback = legoResult; // garde l'estimation comme fallback de dernier recours
       if (legoResult.enrichedQuery) {
         enrichedListing = { ...listing, enrichedTitle: legoResult.enrichedQuery };
-        console.log(`    [LEGO] Query enrichie: "${legoResult.enrichedQuery}"`);
+        console.log(`    [LEGO] Query enrichie Rebrickable: "${legoResult.enrichedQuery}"`);
       }
     }
   } catch (err) {

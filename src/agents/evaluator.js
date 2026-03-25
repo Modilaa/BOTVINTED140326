@@ -231,6 +231,20 @@ async function run(candidates = null) {
         continue;
       }
 
+      // ─── Filtres profit par catégorie ────────────────────────────────────
+      const itemCategory = (row.category || row.search || '').toUpperCase();
+      const itemProfit   = row.profit ? row.profit.profit : 0;
+      const profitSeuil  = itemCategory.includes('LEGO') ? 50 : 15;
+
+      if (itemProfit < profitSeuil) {
+        console.log(`[Evaluator] ${itemCategory || 'inconnu'} filtré: profit ${itemProfit.toFixed(2)}€ < ${profitSeuil}€ minimum`);
+        row.rejectionReasons = [`${itemCategory || 'inconnu'} profit ${itemProfit.toFixed(2)}€ < ${profitSeuil}€ minimum`];
+        rejected.push(row);
+        if (row.id) seenListings.markAsSeen(row.id, row.search, row.title, 'no-match', itemProfit);
+        allEvaluated.push(row);
+        continue;
+      }
+
       const search     = config.searches ? config.searches.find(s => s.name === row.search) : null;
       const minProfEur = Math.max(5,  search && search.minProfitEur     != null ? search.minProfitEur     : config.minProfitEur);
       const minProfPct = Math.max(20, search && search.minProfitPercent != null ? search.minProfitPercent : config.minProfitPercent);
