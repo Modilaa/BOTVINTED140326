@@ -4,4 +4,11 @@ output/
 *.log
 .DS_Store
 .env.bak
+
+# Fichiers .claude/ lourds ou sensibles (pas à pousser sur GitHub)
+.claude/.env
+.claude/eng.traineddata
+.claude/package-lock.json
+.claude/SKILL CLAUDE/
 .claude/worktrees/
+.claude/test-apify.js

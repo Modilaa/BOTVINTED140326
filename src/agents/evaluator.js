@@ -516,6 +516,25 @@ async function run(candidates = null) {
           row.status = 'active';
           opportunities.push(row);
           console.log(`  [actif ✅] ${row.title} -> ${row.profit.profit.toFixed(2)} EUR (confiance ${row.confidence}/100, Vision OK)`);
+
+          // Feedback positif pour la boucle d'auto-amélioration Scanner
+          const ebayTitleAcc   = (row.matchedSales && row.matchedSales[0] && row.matchedSales[0].title) || '';
+          const visionRptAcc   = (row.visionResult && row.visionResult.report) || null;
+          writeEvaluatorFeedback(outputDir, {
+            timestamp:            new Date().toISOString(),
+            itemKey:              row.id || row.url || row.title,
+            category:             (row.category || row.search || '').toUpperCase(),
+            reason:               'vision_accepted',
+            detail:               `"${(row.title || '').slice(0, 60)}" vs "${ebayTitleAcc.slice(0, 60)}" — CONFIRMÉ`,
+            suggestion:           (visionRptAcc && visionRptAcc.suggestion) || null,
+            vintedTitle:          row.title || '',
+            ebayTitle:            ebayTitleAcc,
+            vintedObservation:    (visionRptAcc && visionRptAcc.vintedObservation)    || null,
+            referenceObservation: (visionRptAcc && visionRptAcc.referenceObservation) || null,
+            differences:          (visionRptAcc && visionRptAcc.differences)          || [],
+            imageUrls:            { vinted: row.imageUrl || null, ebay: row.ebayMatchImageUrl || null }
+          });
+
           sendOpportunityAlert(row).catch(() => {});
 
           if (row.id) {
@@ -529,17 +548,22 @@ async function run(candidates = null) {
           const visionSummary = (row.visionResult && row.visionResult.summary) || 'produits différents';
           console.log(`  [rejeté Vision ❌] ${row.title.slice(0, 50)}: ${visionSummary}`);
 
-          // Feedback actionnable pour le Scanner
-          const ebayTitleVr = (row.matchedSales && row.matchedSales[0] && row.matchedSales[0].title) || '';
+          // Feedback détaillé pour la boucle d'auto-amélioration Scanner
+          const ebayTitleVr   = (row.matchedSales && row.matchedSales[0] && row.matchedSales[0].title) || '';
+          const visionRptVr   = (row.visionResult && row.visionResult.report) || null;
           writeEvaluatorFeedback(outputDir, {
-            timestamp:   new Date().toISOString(),
-            itemKey:     row.id || row.url || row.title,
-            category:    (row.category || row.search || '').toUpperCase(),
-            reason:      'vision_rejected',
-            detail:      `"${(row.title || '').slice(0, 60)}" vs "${ebayTitleVr.slice(0, 60)}" — ${visionSummary}`,
-            suggestion:  'review_images_and_matching',
-            vintedTitle: row.title || '',
-            ebayTitle:   ebayTitleVr
+            timestamp:            new Date().toISOString(),
+            itemKey:              row.id || row.url || row.title,
+            category:             (row.category || row.search || '').toUpperCase(),
+            reason:               'vision_rejected',
+            detail:               `"${(row.title || '').slice(0, 60)}" vs "${ebayTitleVr.slice(0, 60)}" — ${visionSummary}`,
+            suggestion:           (visionRptVr && visionRptVr.suggestion) || 'review_images_and_matching',
+            vintedTitle:          row.title || '',
+            ebayTitle:            ebayTitleVr,
+            vintedObservation:    (visionRptVr && visionRptVr.vintedObservation)    || null,
+            referenceObservation: (visionRptVr && visionRptVr.referenceObservation) || null,
+            differences:          (visionRptVr && visionRptVr.differences)          || [],
+            imageUrls:            { vinted: row.imageUrl || null, ebay: row.ebayMatchImageUrl || null }
           });
 
           rejected.push(row);
