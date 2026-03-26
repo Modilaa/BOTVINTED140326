@@ -721,12 +721,6 @@ tr:hover td { background: rgba(108,92,231,0.04); }
   .niche-stats { width: 100px; }
   .agents-grid { grid-template-columns: 1fr; }
 }
-@media (max-width: 600px) {
-  .stats-grid { grid-template-columns: 1fr; }
-  .header-right { display: none; }
-  .opp-title { max-width: 150px; }
-}
-
 /* ─── Mobile ≤ 768px (iPhone) ──────────────────────── */
 @media (max-width: 768px) {
   /* Layout général */
@@ -844,6 +838,13 @@ tr:hover td { background: rgba(108,92,231,0.04); }
   #oppTableContainer table tr:not(.vision-banner) td:nth-child(10),
   #oppTableContainer table tr:not(.vision-banner) td:nth-child(11) { display: none; }
   #oppTableContainer table { min-width: 0; }
+}
+
+/* ─── Mobile ≤ 600px : masquer header-right (après 768px pour prendre priorité) ── */
+@media (max-width: 600px) {
+  .stats-grid { grid-template-columns: 1fr; }
+  .header-right { display: none !important; }
+  .opp-title { max-width: 150px; }
 }
 
 /* ─── Mobile ≤ 480px (iPhone SE, petit écran) ────────────────── */
@@ -1151,6 +1152,7 @@ tr:hover td { background: rgba(108,92,231,0.04); }
       <div class="filter-tabs" id="oppFilterTabs">
         <button class="filter-tab active" data-filter="active" onclick="setOppFilter('active')">En attente <span class="count" id="countActive">0</span></button>
         <button class="filter-tab" data-filter="accepted" onclick="setOppFilter('accepted')">Accept&eacute;es <span class="count" id="countAccepted">0</span></button>
+        <button class="filter-tab" data-filter="dismissed" onclick="setOppFilter('dismissed')">Ignor&eacute;es <span class="count" id="countDismissed">0</span></button>
         <span style="margin-left:12px;border-left:1px solid var(--border);padding-left:12px">
           <select id="platformFilter" onchange="updateOpportunities()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer">
             <option value="all">Toutes plateformes</option>
@@ -1809,6 +1811,7 @@ async function updateOpportunities() {
   document.getElementById('statOppsSub').textContent = (counts.accepted || 0) > 0 ? (counts.accepted) + ' accept\u00e9e(s)' : '';
   document.getElementById('countActive').textContent = counts.active || 0;
   document.getElementById('countAccepted').textContent = counts.accepted || 0;
+  document.getElementById('countDismissed').textContent = counts.dismissed || 0;
 
   if (opps.length === 0) {
     container.innerHTML = '<div class="empty-state" id="oppEmpty"><div class="empty-state-icon">&#128269;</div><div class="empty-state-title">Aucune opportunite pour ce filtre</div><div class="empty-state-text">Lance un scan pour decouvrir des opportunites.</div></div>';
@@ -1938,7 +1941,7 @@ async function updateOpportunities() {
       imgHtml = '<div class="opp-img-pair">' + vintedImgHtml + simBadgeHtml + noEbayImgBadge + '</div>';
     }
 
-    var confHtml = '<span style="color:var(--text3);font-size:13px;" title="Score de confiance non calcul\u00e9">?</span>';
+    var confHtml = '<span style="color:var(--text3);font-size:13px;" title="Score de confiance non calcul\u00e9">N/A</span>';
     if (opp.confidenceScore != null) {
       var confScore = opp.confidenceScore;
       var confColor = confidenceColor(confScore);
@@ -2640,6 +2643,9 @@ async function updateOrchestrator() {
   if (sh) {
     var lastRun = sh.lastRunAt ? new Date(sh.lastRunAt).toLocaleTimeString('fr-FR') : '?';
     statusEl.textContent = 'Dernier scan : ' + lastRun;
+  } else {
+    statusEl.textContent = 'Aucune donn\u00e9e encore';
+    statusEl.style.color = 'var(--text3)';
   }
 
   // Scanner stats
@@ -3613,6 +3619,11 @@ async function loadPerformanceCharts() {
   if (typeof Chart === 'undefined') return;
   var data = await fetchJson('/api/performance-history');
   if (!data) return;
+
+  var hasData = (data.profitHistory || []).length > 0 || (data.categoryBreakdown || []).length > 0;
+  var chartsSection = document.getElementById('chartsSection');
+  if (chartsSection) chartsSection.style.display = hasData ? '' : 'none';
+  if (!hasData) return;
 
   var textColor = '#e8eaf0';
   var gridColor = 'rgba(42,47,66,0.6)';
