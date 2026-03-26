@@ -16,8 +16,7 @@
 const priceDatabase = require('./price-database');
 const { checkAndAlert } = require('./api-monitor');
 const { getYugiohMarketPrice } = require('./marketplaces/ygoprodeck');
-const { getPokemonPriceViaTcgApi } = require('./marketplaces/pokemontcg-api');
-const { getPokemonMarketPrice } = require('./marketplaces/pokemon-tcg');
+const { getMarketPrice: getPokemonMarketPriceUnified } = require('./marketplaces/pokemon-unified');
 const { getEbaySoldListingsViaApi } = require('./marketplaces/ebay-api');
 const { getEbaySoldListings } = require('./marketplaces/ebay');
 const { getApifyEbaySoldPrices } = require('./marketplaces/apify-ebay');
@@ -263,38 +262,27 @@ async function routeYugioh(listing, config) {
 
 /**
  * Price route for Pokémon cards.
- * PokemonTCG.io → TCGdex+eBay → eBay Browse API → Apify
+ * pokemon-unified (PokemonTCG.io → TCGdex+eBay) → eBay Browse API → Apify
  */
 async function routePokemon(listing, config) {
-  // 1. PokemonTCG.io API (dédié, 20K req/jour avec clé API)
+  // 1. Unified Pokemon pricing (PokemonTCG.io → TCGdex+eBay)
   try {
-    const result = await getPokemonPriceViaTcgApi(listing, config);
+    const result = await getPokemonMarketPriceUnified(listing, config);
     if (result && result.matchedSales.length > 0) {
-      console.log(`    PokemonTCG.io: ${result.bestMatch} → ${result.marketPrice.toFixed(2)}€ (${result.confidence})`);
+      console.log(`    Pokemon: ${result.bestMatch} → ${result.marketPrice.toFixed(2)}€ (${result.confidence})`);
       checkAndAlert('pokemontcg', false, '');
       return result;
     }
   } catch (err) {
-    console.log(`    PokemonTCG.io erreur: ${err.message}`);
-    checkAndAlert('pokemontcg', true, `PokemonTCG.io erreur: ${err.message}`);
+    console.log(`    Pokemon erreur: ${err.message}`);
+    checkAndAlert('pokemontcg', true, `Pokemon erreur: ${err.message}`);
   }
 
-  // 2. TCGdex + eBay sold (prix Cardmarket via TCGdex)
-  try {
-    const result = await getPokemonMarketPrice(listing, config);
-    if (result && result.matchedSales.length > 0) {
-      console.log(`    TCGdex+eBay: ${result.bestMatch} → ${result.marketPrice.toFixed(2)}€ (${result.confidence})`);
-      return result;
-    }
-  } catch (err) {
-    console.log(`    TCGdex+eBay erreur: ${err.message}`);
-  }
-
-  // 3. eBay Browse API (fallback)
+  // 2. eBay Browse API (fallback)
   const ebayApiResult = await tryEbayBrowseApi(listing, config);
   if (ebayApiResult) return ebayApiResult;
 
-  // 4. Apify (dernier recours)
+  // 3. Apify (dernier recours)
   const apifyResult = await tryApifyEbay(listing, config, null);
   if (apifyResult) return apifyResult;
 

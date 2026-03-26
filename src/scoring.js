@@ -208,8 +208,24 @@ function computeConfidence(opp) {
     total = Math.min(total, 59);
   }
 
+  // === BONUS/MALUS TREND ===
+  // Trend rising = signal d'achat fort. Falling = risque de dépréciation. Volatile = incertitude.
+  let trendBonus = 0;
+  try {
+    const db = getPriceDb();
+    if (db && db.getTrend && db.generateKey && total > 0) {
+      const key = db.generateKey(opp.title || '');
+      const trend = db.getTrend(key);
+      const volatility = db.getVolatility(key);
+      if (trend === 'rising') trendBonus += 5;
+      else if (trend === 'falling') trendBonus -= 5;
+      if (volatility === 'volatile') trendBonus -= 3;
+      if (trendBonus !== 0) total = Math.min(100, Math.max(0, total + trendBonus));
+    }
+  } catch(e) {}
+
   // Stocker le breakdown sur l'objet opportunité (effet de bord non-cassant)
-  opp.confidenceBreakdown = { textScore, sourceScore, visionScore, visionLabel, belowAvgBoost, total };
+  opp.confidenceBreakdown = { textScore, sourceScore, visionScore, visionLabel, belowAvgBoost, trendBonus, total };
 
   return total;
 }

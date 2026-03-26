@@ -68,6 +68,7 @@ const DB_PATH = path.join(__dirname, '..', 'output', 'price-database.json');
 const MAX_VINTED_PRICES = 30;
 const MAX_MARKET_PRICES = 20;
 const MAX_LIQUIDITY_HISTORY = 30;
+const MAX_PRICE_HISTORY = 30;
 const MAX_AGE_DAYS_DEFAULT = 365;
 const STALE_THRESHOLD_DAYS = 30;
 
@@ -233,6 +234,14 @@ function calcStats(prices) {
   return { avg, min: sorted[0], max: sorted[sorted.length - 1] };
 }
 
+function calcVolatilityCoeff(prices) {
+  if (!prices || prices.length < 2) return null;
+  const mean = prices.reduce((a, b) => a + b, 0) / prices.length;
+  if (mean === 0) return null;
+  const variance = prices.reduce((sum, p) => sum + Math.pow(p - mean, 2), 0) / prices.length;
+  return Math.sqrt(variance) / mean;
+}
+
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -258,8 +267,78 @@ function makeEmptyEntry(name, category, today) {
     maxMarketPrice: 0,
     marketObservations: 0,
     lastSeen: today,
-    firstSeen: today
+    firstSeen: today,
+    priceHistory: [],
+    trend: 'stable',
+    trendStrength: 0,
+    volatility: 'low'
   };
+}
+
+// ─── Trend / Volatility helpers ─────────────────────────────────────────────
+
+/**
+ * Calcule le trend à partir d'une entrée (usage interne).
+ * Compare la moyenne des 3 derniers prix vs les 3 précédents.
+ * Retourne "rising" | "falling" | "stable" | "volatile".
+ */
+function computeTrendForEntry(entry) {
+  if (!entry.priceHistory || entry.priceHistory.length < 3) return 'stable';
+  const prices = entry.priceHistory.map(h => h.price).filter(p => p > 0);
+  if (prices.length < 3) return 'stable';
+
+  // Volatilité : écart-type > 30% de la moyenne
+  const cv = calcVolatilityCoeff(prices);
+  if (cv !== null && cv > 0.30) return 'volatile';
+
+  // Trend : avg des 3 derniers vs avg des 3 précédents (ou premiers si < 6 pts)
+  const last3 = prices.slice(-3);
+  const prev = prices.length >= 6
+    ? prices.slice(-6, -3)
+    : prices.slice(0, Math.max(1, prices.length - 3));
+  const avgLast = last3.reduce((a, b) => a + b, 0) / last3.length;
+  const avgPrev = prev.reduce((a, b) => a + b, 0) / prev.length;
+  if (avgPrev > 0) {
+    const change = (avgLast - avgPrev) / avgPrev;
+    if (change > 0.10) return 'rising';
+    if (change < -0.10) return 'falling';
+  }
+  return 'stable';
+}
+
+/**
+ * Calcule la force du trend (0 à 1) à partir d'une entrée.
+ */
+function computeTrendStrengthForEntry(entry) {
+  if (!entry.priceHistory || entry.priceHistory.length < 3) return 0;
+  const prices = entry.priceHistory.map(h => h.price).filter(p => p > 0);
+  if (prices.length < 3) return 0;
+
+  const last3 = prices.slice(-3);
+  const prev = prices.length >= 6
+    ? prices.slice(-6, -3)
+    : prices.slice(0, Math.max(1, prices.length - 3));
+  const avgLast = last3.reduce((a, b) => a + b, 0) / last3.length;
+  const avgPrev = prev.reduce((a, b) => a + b, 0) / prev.length;
+  if (avgPrev > 0) {
+    const change = Math.abs((avgLast - avgPrev) / avgPrev);
+    return Math.round(Math.min(1, change / 0.50) * 100) / 100;
+  }
+  return 0;
+}
+
+/**
+ * Calcule la volatilité à partir d'une entrée.
+ * Retourne "low" | "medium" | "high".
+ */
+function computeVolatilityForEntry(entry) {
+  if (!entry.priceHistory || entry.priceHistory.length < 2) return 'low';
+  const prices = entry.priceHistory.map(h => h.price).filter(p => p > 0);
+  const cv = calcVolatilityCoeff(prices);
+  if (cv === null) return 'low';
+  if (cv > 0.30) return 'high';
+  if (cv > 0.15) return 'medium';
+  return 'low';
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────────
@@ -390,6 +469,28 @@ function recordMarketPrice(title, category, price, source, listingData) {
   entry.maxMarketPrice = stats.max;
   entry.marketObservations = entry.marketPrices.length;
   entry.lastSeen = today;
+
+  // Mettre à jour l'historique de prix (1 entrée par jour max, 30 jours)
+  if (!entry.priceHistory) entry.priceHistory = [];
+  const roundedPrice = Math.round(price * 100) / 100;
+  const todayHistIdx = entry.priceHistory.findIndex(h => h.date === today);
+  if (todayHistIdx >= 0) {
+    const hist = entry.priceHistory[todayHistIdx];
+    const count = hist.salesCount || 1;
+    hist.price = Math.round(((hist.price * count + roundedPrice) / (count + 1)) * 100) / 100;
+    hist.salesCount = count + 1;
+    hist.source = source || hist.source;
+  } else {
+    entry.priceHistory.push({ date: today, price: roundedPrice, source: source || 'unknown', salesCount: 1 });
+    if (entry.priceHistory.length > MAX_PRICE_HISTORY) {
+      entry.priceHistory = entry.priceHistory.slice(-MAX_PRICE_HISTORY);
+    }
+  }
+
+  // Recalculer trend / volatilité
+  entry.trend = computeTrendForEntry(entry);
+  entry.trendStrength = computeTrendStrengthForEntry(entry);
+  entry.volatility = computeVolatilityForEntry(entry);
 
   dirty = true;
   scheduleSave();
@@ -623,6 +724,42 @@ function flushSync() {
 }
 
 /**
+ * Retourne le trend de prix pour une clé produit.
+ * @param {string} key - Clé générée par generateKey()
+ * @returns {"rising"|"falling"|"stable"|"volatile"}
+ */
+function getTrend(key) {
+  const database = loadDb();
+  const entry = database[key];
+  if (!entry) return 'stable';
+  return computeTrendForEntry(entry);
+}
+
+/**
+ * Retourne la volatilité de prix pour une clé produit.
+ * @param {string} key - Clé générée par generateKey()
+ * @returns {"low"|"medium"|"high"}
+ */
+function getVolatility(key) {
+  const database = loadDb();
+  const entry = database[key];
+  if (!entry) return 'low';
+  return computeVolatilityForEntry(entry);
+}
+
+/**
+ * Retourne la force du trend (0 à 1) pour une clé produit.
+ * @param {string} key - Clé générée par generateKey()
+ * @returns {number} 0 à 1
+ */
+function getTrendStrength(key) {
+  const database = loadDb();
+  const entry = database[key];
+  if (!entry) return 0;
+  return computeTrendStrengthForEntry(entry);
+}
+
+/**
  * Axe 4: Retourne les produits qui ont des observations Vinted
  * mais peu d'observations marché (<= 2), triés par potentiel de profit.
  * Utilisé pour l'enrichissement proactif des prix.
@@ -667,5 +804,9 @@ module.exports = {
   getProductInfo,
   pruneOldEntries,
   getUnderPricedProducts,
-  flushSync
+  flushSync,
+  // Historique de prix temporel
+  getTrend,
+  getVolatility,
+  getTrendStrength
 };
