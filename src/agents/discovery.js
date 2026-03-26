@@ -1266,11 +1266,62 @@ async function discover(config, options = {}) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+//  11. FILESYSTEM CONTEXT — Workspace discovery/findings.md
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Appende les résultats d'un run Discovery dans output/agents/discovery/findings.md
+ * Format markdown avec date + nb suggestions + top catégories.
+ */
+async function appendDiscoveryFindings(result, cfg) {
+  if (!result) return;
+  const outputDir = (cfg && cfg.outputDir) || path.join(__dirname, '..', '..', 'output');
+  const findingsPath = path.join(outputDir, 'agents', 'discovery', 'findings.md');
+
+  try {
+    await fs.promises.mkdir(path.dirname(findingsPath), { recursive: true });
+
+    const now = new Date();
+    const dateStr = now.toISOString().replace('T', ' ').slice(0, 19);
+    const lines = [
+      `\n## Run ${dateStr}`,
+      ''
+    ];
+
+    // Résumé
+    if (result.summary) {
+      const s = result.summary;
+      lines.push(`- **Catégories analysées :** ${s.totalCategories || 0} (${s.newCategories || 0} nouvelles)`);
+      lines.push(`- **Suggestions :** ${s.totalSuggestions || 0} (${s.highPriority || 0} haute priorité)`);
+      lines.push(`- **Top catégorie :** ${s.topCategory || 'n/a'} (score ${s.topScore || 0}/100)`);
+      lines.push(`- **Projection mensuelle :** ${s.projectedMonthly || 0} EUR/mois`);
+      lines.push(`- **Objectif 5000€ :** ${s.objectiveAchievable ? 'ATTEIGNABLE ✅' : `GAP ${result.objectivePlan ? result.objectivePlan.gap : '?'} EUR ❌`}`);
+    }
+
+    // Top 3 suggestions haute priorité
+    const highPrio = (result.suggestions || []).filter((s) => s.priority === 'high').slice(0, 3);
+    if (highPrio.length > 0) {
+      lines.push('');
+      lines.push('**Suggestions haute priorité :**');
+      for (const s of highPrio) {
+        lines.push(`- [${s.type}] ${s.emoji || ''} ${s.label || s.reason}`);
+      }
+    }
+
+    lines.push('');
+    await fs.promises.appendFile(findingsPath, lines.join('\n'));
+  } catch (err) {
+    console.error(`[Discovery] Erreur écriture findings.md: ${err.message}`);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 //  EXPORTS
 // ═══════════════════════════════════════════════════════════════════════
 
 module.exports = {
   discover,
+  appendDiscoveryFindings,
   analyzeHistoricalPatterns,
   analyzeAllCategories,
   generateSuggestions,

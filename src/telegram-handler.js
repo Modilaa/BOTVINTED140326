@@ -6,6 +6,7 @@
 
 const https = require('https');
 const http = require('http');
+const { updateState: updateOppState } = require('./opportunity-state');
 
 let _lastUpdateId = 0;
 let _pollingTimeout = null;
@@ -114,6 +115,8 @@ async function handleCallback(query) {
     try {
       const result = await localPost('/api/portfolio/add', { vintedId: oppId });
       if (result.success) {
+        // State machine : transition → accepted
+        try { updateOppState(oppId, { status: 'accepted', by: 'telegram' }); } catch { /* ignore */ }
         await answerCallback(callbackQueryId, '✅ Ajouté au portfolio!');
       } else {
         await answerCallback(callbackQueryId, '❌ Erreur: ' + (result.error || 'Inconnu'));
@@ -127,6 +130,8 @@ async function handleCallback(query) {
     try {
       const result = await localPost(`/api/opportunities/${oppId}/status`, { status: 'dismissed' });
       if (result.success) {
+        // State machine : transition → dismissed
+        try { updateOppState(oppId, { status: 'dismissed', by: 'telegram' }); } catch { /* ignore */ }
         await answerCallback(callbackQueryId, '❌ Ignoré');
       } else {
         await answerCallback(callbackQueryId, '❌ Erreur: ' + (result.error || 'Inconnu'));

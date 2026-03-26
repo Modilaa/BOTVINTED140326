@@ -18,6 +18,7 @@
 const path = require('path');
 const fs = require('fs');
 const { sendTelegramMessage } = require('./notifier');
+const { logDebugEvent } = require('./debug-protocol');
 
 // ─── Fichier de persistance des alertes (résiste aux restarts PM2) ──────────
 
@@ -92,6 +93,18 @@ function checkAndAlert(apiName, isError, details) {
 
   // Enregistrer l'heure AVANT l'envoi pour éviter les doublons en cas d'erreur async
   setLastAlertTime(apiName);
+
+  // Log structuré root-cause
+  logDebugEvent({
+    phase: 'api-monitor',
+    module: apiName,
+    symptom: `${apiName} en erreur (${errorCounts[apiName]} fois consécutives)`,
+    cause: details,
+    hypothesis: 'Quota dépassé, IP bloquée ou service indisponible',
+    fix: 'Alerte Telegram envoyée — surveillance active',
+    verified: null,
+    error: details
+  });
 
   const telegramConfig = {
     token: process.env.TELEGRAM_BOT_TOKEN,

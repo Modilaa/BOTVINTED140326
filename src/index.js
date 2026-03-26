@@ -19,6 +19,7 @@ const { purgeBlockedCache } = require('./http');
 const { buildTelegramMessage, sendTelegramMessage, sendOpportunityAlert } = require('./notifier');
 const { detectTrends, getStats: getPriceDbStats, recordVintedPrice, getUnderPricedProducts } = require('./price-database');
 const { checkAndAlert, errorCounts: apiErrorCounts } = require('./api-monitor');
+const { logDebugEvent } = require('./debug-protocol');
 const { buildProfitAnalysis, isOpportunity } = require('./profit');
 const { findUnderpricedListings } = require('./underpriced');
 const { runPipeline, runHealthCheck, writeSprintContract } = require('./agents/orchestrator');
@@ -27,6 +28,72 @@ const { run: runEvaluator } = require('./agents/evaluator');
 
 async function ensureOutputDir(outputDir) {
   await fs.promises.mkdir(outputDir, { recursive: true });
+}
+
+// ─── Scratch pad — dump brut au début du scan ─────────────────────────────
+
+const SCRATCH_DIR = path.join(config.outputDir, 'scratch');
+const SCRATCH_MAX = 10;
+
+/**
+ * Écrit un dump brut dans output/scratch/scan-{timestamp}.json.
+ * Garde seulement les SCRATCH_MAX derniers fichiers.
+ * Retourne le chemin du fichier créé (pour la reprise).
+ */
+async function writeScratchDump(data) {
+  try {
+    await fs.promises.mkdir(SCRATCH_DIR, { recursive: true });
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const filePath = path.join(SCRATCH_DIR, `scan-${ts}.json`);
+    await fs.promises.writeFile(filePath, JSON.stringify(data, null, 2));
+
+    // Purge des anciens fichiers (garder les SCRATCH_MAX derniers)
+    const files = (await fs.promises.readdir(SCRATCH_DIR))
+      .filter((f) => f.startsWith('scan-') && f.endsWith('.json'))
+      .map((f) => ({ name: f, mtime: fs.statSync(path.join(SCRATCH_DIR, f)).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime);
+
+    for (const old of files.slice(SCRATCH_MAX)) {
+      try { await fs.promises.unlink(path.join(SCRATCH_DIR, old.name)); } catch { /* ignore */ }
+    }
+
+    return filePath;
+  } catch (err) {
+    console.error(`[scratch] Erreur écriture: ${err.message}`);
+    return null;
+  }
+}
+
+/**
+ * Lit le dernier scratch file et retourne les IDs d'annonces déjà traitées.
+ * Permet de ne pas re-scanner ce qui a déjà été fait en cas de crash mid-scan.
+ */
+function loadLastScratchResume() {
+  try {
+    if (!fs.existsSync(SCRATCH_DIR)) return new Set();
+    const files = fs.readdirSync(SCRATCH_DIR)
+      .filter((f) => f.startsWith('scan-') && f.endsWith('.json'))
+      .map((f) => ({ name: f, mtime: fs.statSync(path.join(SCRATCH_DIR, f)).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime);
+
+    if (files.length === 0) return new Set();
+
+    const lastFile = path.join(SCRATCH_DIR, files[0].name);
+    const data = JSON.parse(fs.readFileSync(lastFile, 'utf8'));
+
+    // Reprise seulement si le scratch est récent (< 30 min) et le scan n'était pas terminé
+    const scratchAge = Date.now() - files[0].mtime;
+    if (scratchAge > 30 * 60 * 1000) return new Set(); // Trop vieux
+    if (data.scanCompleted) return new Set(); // Scan terminé normalement
+
+    const processedIds = new Set(data.processedIds || []);
+    if (processedIds.size > 0) {
+      console.log(`[scratch] Reprise: ${processedIds.size} annonce(s) déjà traitées ignorées.`);
+    }
+    return processedIds;
+  } catch {
+    return new Set();
+  }
 }
 
 // Global filter: remove physical manga/book listings from ALL categories.
@@ -594,6 +661,17 @@ function mergeWithHistory(newResult, outputDir, previousData) {
 async function runOnce() {
   await ensureOutputDir(config.outputDir);
 
+  // ─── Scratch dump — reprise en cas de crash ──────────────────────────
+  const scratchResumeIds = loadLastScratchResume();
+  const scratchPath = await writeScratchDump({
+    startedAt: new Date().toISOString(),
+    scanCompleted: false,
+    processedIds: [...scratchResumeIds]
+  });
+  // Exposer globalement pour que les modules downstream puissent enrichir le dump
+  global._scratchPath = scratchPath;
+  global._scratchResumeIds = scratchResumeIds;
+
   // ─── Country rotation in loop mode ─────────────────────────────────────
   if (loopEnabled && _allVintedCountries.length > 0) {
     const rotIdx = _countryRotationIndex % _allVintedCountries.length;
@@ -637,10 +715,41 @@ async function runOnce() {
   }
 
   // 1. Agent Scanner  : scrape + price-router (sans scoring ni vision)
-  const scanResult = await runScanner(previousListings);
+  let scanResult;
+  try {
+    scanResult = await runScanner(previousListings);
+  } catch (err) {
+    logDebugEvent({
+      phase: 'scan',
+      module: 'scanner',
+      symptom: 'Agent Scanner a crashé',
+      cause: err.message,
+      hypothesis: 'Erreur réseau, blocage Vinted ou bug interne',
+      fix: 'Scan abandonné pour ce cycle',
+      verified: false,
+      error: err.message
+    });
+    throw err; // On propage — le scan entier est bloqué
+  }
 
   // 2. Agent Évaluateur : scoring + vision GPT + décision opportunité
-  const evalResult = await runEvaluator(scanResult.candidates);
+  let evalResult;
+  try {
+    evalResult = await runEvaluator(scanResult.candidates);
+  } catch (err) {
+    logDebugEvent({
+      phase: 'evaluation',
+      module: 'evaluator',
+      symptom: 'Agent Évaluateur a crashé',
+      cause: err.message,
+      hypothesis: 'Erreur GPT Vision ou scoring',
+      fix: 'Évaluation abandonnée, opportunités vides',
+      verified: false,
+      error: err.message
+    });
+    // Fallback : pas d'opportunités plutôt que crash total
+    evalResult = { opportunities: [], candidates: [] };
+  }
 
   // 3. Assemble result compatible avec mergeWithHistory (même format qu'avant)
   //    Les objets candidates sont mutés in-place par l'Évaluateur
@@ -659,6 +768,18 @@ async function runOnce() {
   const outputPath = path.join(config.outputDir, 'latest-scan.json');
 
   await fs.promises.writeFile(outputPath, JSON.stringify(merged, null, 2));
+
+  // Marquer le scratch comme terminé (empêche la reprise au prochain scan normal)
+  if (global._scratchPath) {
+    try {
+      await fs.promises.writeFile(global._scratchPath, JSON.stringify({
+        startedAt: new Date().toISOString(),
+        scanCompleted: true,
+        scannedCount: result.scannedCount,
+        opportunityCount: result.opportunities.length
+      }, null, 2));
+    } catch { /* non-bloquant */ }
+  }
 
   // Notify dashboard to refresh
   if (global._broadcastSSE) {
