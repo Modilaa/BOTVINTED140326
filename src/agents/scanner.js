@@ -32,6 +32,7 @@ const { evaluateSeller }                            = require('../seller-score')
 const { extractCardLanguage }                       = require('./supervisor');
 const { findUnderpricedListings }                   = require('../underpriced');
 const { checkAndAlert }                             = require('../api-monitor');
+const messageBus                                    = require('../message-bus');
 
 // ─── Sprint Contract & Query Corrections — Pattern 4 ─────────────────────────
 
@@ -621,6 +622,13 @@ async function run(previousListings = []) {
   );
 
   console.log(`[Scanner] Terminé: ${searchedListings.length} annonces, ${candidates.length} candidats (${durationMs}ms)`);
+
+  // ─── Message Bus : transmettre les candidats bruts à l'Évaluateur ─────────
+  messageBus.publish('scanner', 'evaluator', 'candidates', {
+    scannedAt:    new Date().toISOString(),
+    count:        candidates.length,
+    listings:     candidates
+  });
 
   return { candidates, underpricedAlerts, searchedListings, health };
 }

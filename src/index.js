@@ -24,10 +24,14 @@ const { findUnderpricedListings } = require('./underpriced');
 const { runPipeline, runHealthCheck, writeSprintContract } = require('./agents/orchestrator');
 const { run: runScanner }  = require('./agents/scanner');
 const { run: runEvaluator } = require('./agents/evaluator');
+const messageBus = require('./message-bus');
 
 async function ensureOutputDir(outputDir) {
   await fs.promises.mkdir(outputDir, { recursive: true });
 }
+
+// Purge message bus au démarrage (rotation 1000 messages, TTL 24h)
+messageBus.purge();
 
 // Global filter: remove physical manga/book listings from ALL categories.
 // Vinted queries for TCG cards frequently surface manga volumes, novels, and
