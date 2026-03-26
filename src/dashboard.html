@@ -4,35 +4,36 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CODEX Dashboard — Arbitrage TCG</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg: #0b0d14;
-  --surface: #141722;
-  --surface2: #1c2030;
-  --surface3: #252a3a;
-  --border: #2a2f42;
-  --text: #e8eaf0;
-  --text2: #8890a8;
-  --text3: #5a6080;
-  --accent: #6c5ce7;
-  --accent2: #a29bfe;
-  --green: #00d2a0;
-  --green-bg: rgba(0,210,160,0.1);
-  --red: #ff6b6b;
-  --red-bg: rgba(255,107,107,0.1);
-  --orange: #ffa94d;
-  --orange-bg: rgba(255,169,77,0.1);
-  --blue: #74b9ff;
-  --blue-bg: rgba(116,185,255,0.1);
-  --purple: #a29bfe;
-  --radius: 12px;
-  --radius-sm: 8px;
-  --shadow: 0 4px 24px rgba(0,0,0,0.3);
+  --bg: #0a0a0f;
+  --surface: #12121a;
+  --surface2: #1a1a25;
+  --surface3: #222230;
+  --border: #2a2a3a;
+  --text: #e8e8e8;
+  --text2: #a0a0b0;
+  --text3: #606070;
+  --accent: #00ff88;
+  --accent2: #00ccff;
+  --green: #00ff88;
+  --green-bg: rgba(0,255,136,0.1);
+  --red: #ff4444;
+  --red-bg: rgba(255,68,68,0.1);
+  --orange: #ffaa00;
+  --orange-bg: rgba(255,170,0,0.1);
+  --blue: #00ccff;
+  --blue-bg: rgba(0,204,255,0.1);
+  --purple: #aa88ff;
+  --radius: 8px;
+  --radius-sm: 4px;
+  --shadow: 0 4px 24px rgba(0,0,0,0.5);
 }
 
 * { margin:0; padding:0; box-sizing:border-box; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
@@ -66,12 +67,11 @@ body {
   gap: 12px;
 }
 .logo {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 700;
-  background: linear-gradient(135deg, var(--accent), var(--accent2));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  letter-spacing: -0.5px;
+  color: var(--accent);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
 }
 .status-badge {
   display: inline-flex;
@@ -139,10 +139,10 @@ body {
   transition: all 0.2s ease;
 }
 .btn-primary {
-  background: linear-gradient(135deg, var(--accent), #8b5cf6);
-  color: white;
+  background: var(--accent);
+  color: #0a0a0f;
 }
-.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(108,92,231,0.4); }
+.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,255,136,0.3); }
 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
 
 .btn-sm {
@@ -172,6 +172,17 @@ body {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+@keyframes flashNew {
+  0% { background-color: rgba(0, 255, 136, 0.15); }
+  100% { background-color: transparent; }
+}
+.opp-row.new { animation: flashNew 2s ease-out; }
+
+/* ─── Trend badges ──────────────────────── */
+.trend-badge { font-size: 11px; padding: 2px 6px; border-radius: 3px; font-weight: 600; }
+.trend-rising  { background: rgba(0,255,136,0.15); color: #00ff88; }
+.trend-falling { background: rgba(255,68,68,0.15);  color: #ff4444; }
+.trend-stable  { background: rgba(160,160,176,0.15); color: #a0a0b0; }
 .spinner {
   display: inline-block;
   width: 14px;
@@ -200,34 +211,36 @@ body {
 .stat-card {
   background: var(--surface);
   border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
   border-radius: var(--radius);
   padding: 20px;
-  transition: all 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 .stat-card:hover {
-  border-color: var(--accent);
-  transform: translateY(-2px);
+  border-left-color: var(--accent2);
   box-shadow: var(--shadow);
 }
 .stat-label {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text2);
+  letter-spacing: 1px;
+  color: var(--text3);
   margin-bottom: 8px;
 }
 .stat-value {
-  font-size: 28px;
+  font-size: 2rem;
   font-weight: 700;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
 }
 .stat-value.green { color: var(--green); }
 .stat-value.orange { color: var(--orange); }
 .stat-value.blue { color: var(--blue); }
 .stat-value.purple { color: var(--purple); }
 .stat-sub {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text3);
   margin-top: 6px;
 }
@@ -258,12 +271,13 @@ body {
   gap: 8px;
 }
 .panel-badge {
-  background: var(--accent);
-  color: white;
+  background: rgba(0,204,255,0.15);
+  color: var(--accent2);
+  border: 1px solid rgba(0,204,255,0.3);
   font-size: 11px;
   font-weight: 700;
   padding: 2px 8px;
-  border-radius: 10px;
+  border-radius: 3px;
 }
 .panel-body {
   padding: 20px;
@@ -286,12 +300,12 @@ body {
   transition: all 0.2s;
 }
 .filter-tab.active {
-  background: var(--accent);
-  color: white;
+  background: rgba(0,255,136,0.15);
+  color: var(--accent);
   border-color: var(--accent);
 }
 .filter-tab:hover:not(.active) {
-  border-color: var(--accent);
+  border-color: var(--text2);
   color: var(--text);
 }
 .filter-tab .count {
@@ -1637,7 +1651,16 @@ function buildPriceCellHtml(opp) {
 
   var obsText = obs > 0 ? ' \u00b7 ' + obs + (obs > 1 ? ' ventes' : ' vente') : '';
   var badge = '<div style="display:inline-flex;align-items:center;padding:1px 5px;border-radius:6px;font-size:9px;font-weight:700;color:' + badgeColor + ';background:' + badgeBg + ';border:1px solid ' + badgeColor + '33;margin-top:2px;cursor:help;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + esc(tooltip) + '">' + esc(srcLabel) + esc(obsText) + '</div>';
-  return '<div style="display:flex;flex-direction:column;align-items:flex-end;">' + priceHtml + badge + '</div>';
+  // Trend badge (si données historiques disponibles)
+  var trendHtml = '';
+  if (opp.priceTrend === 'rising') {
+    trendHtml = ' <span class="trend-badge trend-rising" title="Prix en hausse">&#8593; hausse</span>';
+  } else if (opp.priceTrend === 'falling') {
+    trendHtml = ' <span class="trend-badge trend-falling" title="Prix en baisse">&#8595; baisse</span>';
+  } else if (opp.priceTrend === 'stable') {
+    trendHtml = ' <span class="trend-badge trend-stable" title="Prix stable">&#8596; stable</span>';
+  }
+  return '<div style="display:flex;flex-direction:column;align-items:flex-end;">' + priceHtml + trendHtml + badge + '</div>';
 }
 
 function buildLiquidityCell(opp) {
@@ -1772,6 +1795,7 @@ function setOppFilter(filter) {
 var oppInteracting = false;   // true while mouse is over the opp zone OR modal is open
 var pendingOppsData = null;   // HTML string buffered when oppInteracting is true
 var feedbackCache = {};       // opportunityId → Boolean(validated)
+var knownOppIds = new Set();  // IDs déjà vus → animation flashNew sur les nouvelles
 
 async function loadFeedbackCache() {
   var data = await fetchJson('/api/feedback');
@@ -2075,7 +2099,8 @@ async function updateOpportunities() {
     var titleInner = opp.url
       ? '<a href="' + esc(opp.url) + '" target="_blank" rel="noopener" class="opp-title-link">' + esc(opp.title) + '</a>'
       : esc(opp.title);
-    html += '<tr data-opp-id="' + esc(safeId) + '"><td>' + imgHtml + '</td><td><div class="opp-title" title="' + esc(opp.title) + '">' + titleInner + '</div>' + ebayTitleHtml + '<div style="font-size:10px;color:var(--text3)">' + timeAgo(opp.firstSeenAt) + '</div></td><td><span style="font-size:12px;color:var(--text2)">' + esc(opp.search || '\u2014') + '</span></td><td>' + platBadge + (routeBadge ? ' ' + routeBadge : '') + '</td><td title="' + esc(buyLabel) + '">' + euro(opp.vintedPrice) + '</td><td title="' + esc(sellLabel) + '">' + buildPriceCellHtml(opp) + '</td><td class="' + profitClass + '">' + euro(opp.profit) + (opp.profitPercent != null ? ' <span style="font-size:11px;opacity:0.7">(' + pct(opp.profitPercent) + ')</span>' : '') + profitWarnHtml + '</td><td>' + buildLiquidityCell(opp) + '</td><td>' + confHtml + '</td><td>' + statusHtml + '</td><td><div class="source-links">' + sourceLinksHtml + '</div></td><td style="white-space:nowrap">' + actionsHtml + '</td></tr>';
+    var isNewOpp = opp.itemKey && !knownOppIds.has(opp.itemKey);
+    html += '<tr data-opp-id="' + esc(safeId) + '" class="opp-row' + (isNewOpp ? ' new' : '') + '"><td>' + imgHtml + '</td><td><div class="opp-title" title="' + esc(opp.title) + '">' + titleInner + '</div>' + ebayTitleHtml + '<div style="font-size:10px;color:var(--text3)">' + timeAgo(opp.firstSeenAt) + '</div></td><td><span style="font-size:12px;color:var(--text2)">' + esc(opp.search || '\u2014') + '</span></td><td>' + platBadge + (routeBadge ? ' ' + routeBadge : '') + '</td><td title="' + esc(buyLabel) + '">' + euro(opp.vintedPrice) + '</td><td title="' + esc(sellLabel) + '">' + buildPriceCellHtml(opp) + '</td><td class="' + profitClass + '">' + euro(opp.profit) + (opp.profitPercent != null ? ' <span style="font-size:11px;opacity:0.7">(' + pct(opp.profitPercent) + ')</span>' : '') + profitWarnHtml + '</td><td>' + buildLiquidityCell(opp) + '</td><td>' + confHtml + '</td><td>' + statusHtml + '</td><td><div class="source-links">' + sourceLinksHtml + '</div></td><td style="white-space:nowrap">' + actionsHtml + '</td></tr>';
     // Render saved vision banner (persists across refresh)
     if (opp.verification && opp.verification.vision) {
       var sv = opp.verification.vision;
@@ -2088,6 +2113,8 @@ async function updateOpportunities() {
   }
 
   html += '</tbody></table>';
+  // Mettre à jour les IDs connus après la construction du HTML
+  opps.forEach(function(o) { if (o.itemKey) knownOppIds.add(o.itemKey); });
   if (oppInteracting) {
     pendingOppsData = html;
   } else {

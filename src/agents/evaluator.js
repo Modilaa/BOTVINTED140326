@@ -31,6 +31,7 @@ const { computeConfidence, computeLiquidity } = require('../scoring');
 const { compareCardImages }                   = require('../vision-verify');
 const { sendOpportunityAlert }                = require('../notifier');
 const seenListings                            = require('../seen-listings');
+const messageBus                              = require('../message-bus');
 
 // ─── Helpers budget Vision ────────────────────────────────────────────────────
 
@@ -277,6 +278,113 @@ function getActiveDecisions(outputDir) {
   }
 }
 
+// ─── Dispatching parallèle Vision GPT ────────────────────────────────────────
+
+/**
+ * Exécute des items en batches avec une concurrence limitée.
+ * @param {Array}    items       — Éléments à traiter
+ * @param {Function} fn         — Fonction async appelée sur chaque item
+ * @param {number}   concurrency — Nombre max de traitements simultanés
+ * @returns {Array} Résultats de Promise.allSettled
+ */
+async function processInBatches(items, fn, concurrency) {
+  const results = [];
+  for (let i = 0; i < items.length; i += concurrency) {
+    const batch = items.slice(i, i + concurrency);
+    const batchResults = await Promise.allSettled(batch.map(fn));
+    results.push(...batchResults);
+  }
+  return results;
+}
+
+/**
+ * Pre-pass Vision GPT en parallèle (max 3 simultanés).
+ * Mute les rows directement : row.visionVerified, row.visionResult, etc.
+ * Le budget est réservé de façon synchrone avant chaque appel async pour éviter
+ * les dépassements dans les batches.
+ *
+ * @returns {{ visionErrors, visionRuns, visionBudgetSkips }}
+ */
+async function runVisionPass(candidates, budget, visionDisabledByOrch, outputDir, dailyBudget) {
+  const VISION_CONCURRENCY = 3;
+  let visionErrors      = 0;
+  let visionRuns        = 0;
+  let visionBudgetSkips = 0;
+
+  const eligible = candidates.filter(row =>
+    !visionDisabledByOrch &&
+    row.imageUrl           &&
+    row.ebayMatchImageUrl   &&
+    row.matchedSales && row.matchedSales.length > 0 &&
+    process.env.OPENAI_API_KEY
+  );
+
+  if (eligible.length === 0) {
+    return { visionErrors, visionRuns, visionBudgetSkips };
+  }
+
+  const visionStart = Date.now();
+
+  async function processVision(row) {
+    // Vérification budget synchrone avant l'appel async
+    const budgetCheck = shouldSkipVisionBudget(row, budget);
+
+    if (budgetCheck.skip) {
+      visionBudgetSkips++;
+      row.visionSkippedBudget = true;
+      row.visionSkipReason    = budgetCheck.reason;
+      const profit = row.profit ? row.profit.profit.toFixed(2) : '0.00';
+      if (budgetCheck.reason === 'profit_too_low') {
+        console.log(`[Evaluator] Vision skip (profit ${profit}€ < ${config.visionMinProfitForCheck}€): "${row.title.slice(0, 50)}"`);
+      } else {
+        console.log(`[Evaluator] Vision skip (budget ${budget.estimatedCostCents}/${dailyBudget}¢): "${row.title.slice(0, 50)}"`);
+      }
+      return;
+    }
+
+    // Réserver le slot budget synchroniquement AVANT l'await
+    // (évite dépassement dans les batches parallèles)
+    visionRuns++;
+    budget.callsToday++;
+    budget.estimatedCostCents += (config.visionCostPerCallCents || 3);
+
+    try {
+      console.log(`[Evaluator] Vision: "${row.title.slice(0, 50)}"`);
+      const visionResult = await compareCardImages(row.imageUrl, row.ebayMatchImageUrl);
+
+      if (visionResult) {
+        row.visionVerified = true;
+        row.visionResult   = visionResult;
+        row.visionSameCard = visionResult.sameCard;
+
+        if (visionResult.sameCard === false) {
+          console.log(`[Evaluator] ❌ Vision REJET: "${row.title.slice(0, 50)}" — ${visionResult.summary}`);
+        } else {
+          console.log(`[Evaluator] ✅ Vision OK: "${row.title.slice(0, 50)}" (${visionResult.confidence}%)`);
+        }
+      }
+      saveVisionBudget(outputDir, budget);
+
+    } catch (visionErr) {
+      // Rembourser le slot si l'appel échoue
+      budget.callsToday--;
+      budget.estimatedCostCents -= (config.visionCostPerCallCents || 3);
+      visionRuns--;
+      visionErrors++;
+      console.log(`[Evaluator] Vision erreur: ${visionErr.message} → pending_manual_review`);
+      row.visionError = visionErr.message;
+      row.status      = 'pending_manual_review';
+    }
+  }
+
+  await processInBatches(eligible, processVision, VISION_CONCURRENCY);
+
+  const visionMs = Date.now() - visionStart;
+  console.log(`[Evaluator] [vision] ${eligible.length} vérification(s) en ${visionMs}ms (parallèle x${VISION_CONCURRENCY})`);
+
+  return { visionErrors, visionRuns, visionBudgetSkips };
+}
+
 // ─── Agent principal ──────────────────────────────────────────────────────────
 
 /**
@@ -327,71 +435,17 @@ async function run(candidates = null) {
   const pendingReview    = [];
   const rejected         = [];
   const allEvaluated     = [];
-  let visionErrors       = 0;
-  let visionRuns         = 0;
-  let visionBudgetSkips  = 0; // skips économiques — pas des erreurs
   const confidenceScores = [];
+
+  // ─── Pre-pass Vision GPT en parallèle ─────────────────────────────────────
+  const { visionErrors, visionRuns, visionBudgetSkips } = await runVisionPass(
+    candidates, budget, visionDisabledByOrch, outputDir, dailyBudget
+  );
 
   for (const row of candidates) {
     try {
-      // ─── Vision GPT-4o mini ────────────────────────────────────────────────
-      const visionPossible =
-        !visionDisabledByOrch &&
-        row.imageUrl          &&
-        row.ebayMatchImageUrl  &&
-        row.matchedSales && row.matchedSales.length > 0 &&
-        process.env.OPENAI_API_KEY;
-
-      if (visionPossible) {
-        // Vérification budget avant l'appel
-        const budgetCheck = shouldSkipVisionBudget(row, budget);
-
-        if (budgetCheck.skip) {
-          // ─── Skip économique ──────────────────────────────────────────────
-          visionBudgetSkips++;
-          row.visionSkippedBudget = true;
-          row.visionSkipReason    = budgetCheck.reason;
-
-          const profit = row.profit ? row.profit.profit.toFixed(2) : '0.00';
-          if (budgetCheck.reason === 'profit_too_low') {
-            console.log(`[Evaluator] 💰 Vision skip (profit ${profit}€ < ${config.visionMinProfitForCheck}€): "${row.title.slice(0, 50)}"`);
-          } else {
-            console.log(`[Evaluator] 💰 Vision skip (budget ${budget.estimatedCostCents}/${dailyBudget}¢): "${row.title.slice(0, 50)}"`);
-          }
-
-        } else {
-          // ─── Appel GPT Vision ─────────────────────────────────────────────
-          visionRuns++;
-          try {
-            console.log(`[Evaluator] Vision: "${row.title.slice(0, 50)}"`);
-            const visionResult = await compareCardImages(row.imageUrl, row.ebayMatchImageUrl);
-
-            if (visionResult) {
-              row.visionVerified = true;
-              row.visionResult   = visionResult;
-              row.visionSameCard = visionResult.sameCard;
-
-              if (visionResult.sameCard === false) {
-                console.log(`[Evaluator] ❌ Vision REJET: "${row.title.slice(0, 50)}" — ${visionResult.summary}`);
-              } else {
-                console.log(`[Evaluator] ✅ Vision OK: "${row.title.slice(0, 50)}" (${visionResult.confidence}%)`);
-              }
-            }
-
-            // Comptabiliser le coût uniquement si l'appel a abouti
-            budget.callsToday++;
-            budget.estimatedCostCents += (config.visionCostPerCallCents || 3);
-            saveVisionBudget(outputDir, budget);
-
-          } catch (visionErr) {
-            visionErrors++;
-            console.log(`[Evaluator] Vision erreur: ${visionErr.message} → pending_manual_review`);
-            row.visionError = visionErr.message;
-            row.status      = 'pending_manual_review';
-          }
-        }
-
-      } else if (!visionPossible && !visionDisabledByOrch && !row.ebayMatchImageUrl) {
+      // Vision déjà traitée par le pre-pass — juste un log si pas d'image eBay
+      if (!visionDisabledByOrch && row.imageUrl && !row.ebayMatchImageUrl) {
         console.log(`[Evaluator] ⏭ Vision skip: "${row.title.slice(0, 50)}" — pas d'image eBay`);
       }
 
@@ -519,6 +573,15 @@ async function run(candidates = null) {
 
   console.log(`[Evaluator] Terminé: ${opportunities.length} opportunités / ${candidates.length} évalués (${durationMs}ms)`);
   console.log(`[Evaluator] Vision: ${visionRuns} appels, ${visionErrors} erreurs, ${visionBudgetSkips} skips budget — coût: ${budget.estimatedCostCents}¢/${dailyBudget}¢`);
+
+  // ─── Message Bus : transmettre les opportunités validées au Notifier ───────
+  if (opportunities.length > 0) {
+    messageBus.publish('evaluator', 'notifier', 'opportunities', {
+      evaluatedAt:  new Date().toISOString(),
+      count:        opportunities.length,
+      opportunities
+    });
+  }
 
   return { opportunities, pendingReview, rejected, allEvaluated, health };
 }
