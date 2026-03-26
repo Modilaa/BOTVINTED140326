@@ -142,26 +142,34 @@ function computeConfidence(opp) {
   }
 
   // === CHEMIN B : Prix très en dessous de la moyenne Vinted en base ===
-  // Si le prix actuel est significativement plus bas que la moyenne des prix Vinted observés,
-  // c'est un fort signal de bonne affaire — même sans comparaison eBay ni GPT Vision.
+  // Compare au prix moyen de CE produit spécifique (même titre normalisé), pas à la catégorie.
+  // Conditions : >= 5 observations du même produit ET titre suffisamment spécifique (>= 3 tokens).
   let belowAvgBoost = 0;
   try {
     const db = getPriceDb();
     if (db && db.getProductInfo) {
-      const productInfo = db.getProductInfo(opp.title || '', opp.search || '');
-      if (productInfo && (productInfo.vintedObservations || 0) >= 3 && productInfo.avgVintedPrice > 0) {
-        const currentPrice = opp.vintedBuyerPrice || opp.vintedListedPrice || 0;
-        if (currentPrice > 0) {
-          const ratio = currentPrice / productInfo.avgVintedPrice;
-          if (ratio <= 0.6) {
-            // 40%+ en dessous de la moyenne → quasi-certitude de bonne affaire → score plancher 95
-            belowAvgBoost = 95;
-          } else if (ratio <= 0.7) {
-            // 30%+ en dessous → très bon signal → score plancher 90
-            belowAvgBoost = 90;
-          } else if (ratio <= 0.8) {
-            // 20%+ en dessous → signal positif → score plancher 75
-            belowAvgBoost = 75;
+      // Garde de spécificité : titre trop générique (< 3 mots) → skip
+      const titleTokens = (opp.title || '').toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ').trim().split(/\s+/).filter(t => t.length > 1);
+      const isSpecific = titleTokens.length >= 3;
+
+      if (isSpecific) {
+        const productInfo = db.getProductInfo(opp.title || '', opp.search || '');
+        // Require >= 5 observations du même produit (pas de la catégorie entière)
+        if (productInfo && (productInfo.vintedObservations || 0) >= 5 && productInfo.avgVintedPrice > 0) {
+          const currentPrice = opp.vintedBuyerPrice || opp.vintedListedPrice || 0;
+          if (currentPrice > 0) {
+            const ratio = currentPrice / productInfo.avgVintedPrice;
+            if (ratio <= 0.6) {
+              // 40%+ en dessous de la moyenne → quasi-certitude de bonne affaire → score plancher 95
+              belowAvgBoost = 95;
+            } else if (ratio <= 0.7) {
+              // 30%+ en dessous → très bon signal → score plancher 90
+              belowAvgBoost = 90;
+            } else if (ratio <= 0.8) {
+              // 20%+ en dessous → signal positif → score plancher 75
+              belowAvgBoost = 75;
+            }
           }
         }
       }
