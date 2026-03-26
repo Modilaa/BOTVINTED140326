@@ -1,3 +1,6 @@
+// DEPRECATED: use src/marketplaces/pokemon-unified.js
+// Ce fichier est conservé comme dépendance interne de pokemon-unified.js (TCGdex fallback).
+
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');

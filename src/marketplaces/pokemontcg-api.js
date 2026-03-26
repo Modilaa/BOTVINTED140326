@@ -1,4 +1,7 @@
 /**
+ * DEPRECATED: use src/marketplaces/pokemon-unified.js
+ * Ce fichier est conservé comme dépendance interne de pokemon-unified.js.
+ *
  * PokemonTCG.io API — Prix TCGPlayer directs pour les cartes Pokémon.
  *
  * Endpoint: https://api.pokemontcg.io/v2/cards?q=name:...
