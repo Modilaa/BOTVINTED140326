@@ -777,6 +777,7 @@ async function runOnce() {
     thresholds:       { minProfitEur: config.minProfitEur, minProfitPercent: config.minProfitPercent },
     scannedCount:     scanResult.searchedListings.length,
     opportunities:    evalResult.opportunities.slice().sort((a, b) => b.profit.profit - a.profit.profit),
+    pendingReview:    (evalResult.pendingReview || []).slice(), // candidats en attente de Vision
     underpricedAlerts: scanResult.underpricedAlerts,
     searchedListings: scanResult.searchedListings
   };
