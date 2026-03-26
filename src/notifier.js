@@ -64,8 +64,8 @@ async function sendOpportunityAlert(opportunity) {
     messageLines.push(`✅ Vision IA: Confirmé (${opportunity.visionResult.confidence}%)`);
   }
   messageLines.push('');
-  messageLines.push(`🔗 Vinted: ${opportunity.url}`);
-  messageLines.push(`🔗 eBay: ${ebaySearchUrl}`);
+  messageLines.push(`🔗 Vinted: ${escMd(opportunity.url || '')}`);
+  messageLines.push(`🔗 eBay: ${escMd(ebaySearchUrl)}`);
 
   const message = messageLines.join('\n');
 
