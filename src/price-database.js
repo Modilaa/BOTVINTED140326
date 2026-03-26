@@ -68,7 +68,7 @@ const DB_PATH = path.join(__dirname, '..', 'output', 'price-database.json');
 const MAX_VINTED_PRICES = 30;
 const MAX_MARKET_PRICES = 20;
 const MAX_LIQUIDITY_HISTORY = 30;
-const MAX_AGE_DAYS_DEFAULT = 90;
+const MAX_AGE_DAYS_DEFAULT = 365;
 const STALE_THRESHOLD_DAYS = 30;
 
 // ─── In-memory state ────────────────────────────────────────────────────────
@@ -216,7 +216,7 @@ function generateKey(title) {
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .substring(0, 80);
+    .substring(0, 150);
   return normalized || 'unknown';
 }
 
@@ -493,19 +493,33 @@ function getStats() {
 function pruneOldEntries(maxAgeDays = MAX_AGE_DAYS_DEFAULT) {
   if (!db) return 0;
 
-  let pruned = 0;
+  const total = Object.keys(db).length;
+
+  // Identifier les clés à supprimer
+  const keysToDelete = [];
   for (const key of Object.keys(db)) {
     const entry = db[key];
     if (!entry || typeof entry !== 'object') continue;
     if (entry.lastSeen && daysBetween(entry.lastSeen) > maxAgeDays) {
-      delete db[key];
-      pruned++;
-      dirty = true;
+      keysToDelete.push(key);
     }
   }
 
+  // Protection : ne pas purger si le résultat serait < 50 entrées
+  const remaining = total - keysToDelete.length;
+  if (remaining < 50 && total > 0) {
+    console.log(`[price-db] Purge annulée : ${total} entrées total, purger ${keysToDelete.length} laisserait ${remaining} < 50 entrées (protection activée)`);
+    return 0;
+  }
+
+  for (const key of keysToDelete) {
+    delete db[key];
+    dirty = true;
+  }
+
+  const pruned = keysToDelete.length;
   if (pruned > 0) {
-    console.log(`[price-db] Pruned ${pruned} stale entries (> ${maxAgeDays} days)`);
+    console.log(`[price-db] Purgé ${pruned}/${total} entrées périmées (> ${maxAgeDays} jours), ${remaining} conservées`);
     scheduleSave();
   }
 

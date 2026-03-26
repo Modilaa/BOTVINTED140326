@@ -922,12 +922,18 @@ function chooseBestSoldListings(vintedListing, soldListings, searchConfig) {
       }
 
       // ─── Price ratio sanity check ──────────────────────────────────────
-      // If eBay sold price is 10x+ Vinted price, only allow if same category
       if (vintedPrice > 0 && listing.soldPrice) {
         const ebayPrice = Number(listing.soldPrice) || 0;
-        if (ebayPrice > 0 && ebayPrice >= vintedPrice * 10) {
-          if (sourceCategory !== listing.signature.cardCategory) {
-            debugReject(listing.title, `price ratio 10x+ category mismatch`);
+        if (ebayPrice > 0) {
+          const ratio = ebayPrice / vintedPrice;
+          // Hard cap absolu : ratio >= 15x → rejet systématique quelle que soit la catégorie
+          if (ratio >= 15) {
+            debugReject(listing.title, `price ratio ${ratio.toFixed(1)}x exceeds hard cap 15x`);
+            return false;
+          }
+          // Soft cap : ratio >= 10x rejeté si catégories différentes
+          if (ratio >= 10 && sourceCategory !== listing.signature?.cardCategory) {
+            debugReject(listing.title, `price ratio ${ratio.toFixed(1)}x+ category mismatch`);
             return false;
           }
         }
