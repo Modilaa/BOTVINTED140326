@@ -558,9 +558,9 @@ module.exports = {
     chatId: process.env.TELEGRAM_CHAT_ID || ''
   },
   // ─── Budget Vision GPT ────────────────────────────────────────────────────
-  // VISION_DAILY_BUDGET_CENTS=100  → 1$/jour max (ajustable dans .env)
-  // VISION_MIN_PROFIT_FOR_CHECK=10 → ne vérifier que si profit estimé > 10 EUR
-  visionDailyBudgetCents:    parseNumber(process.env.VISION_DAILY_BUDGET_CENTS,    100),
-  visionMinProfitForCheck:   parseNumber(process.env.VISION_MIN_PROFIT_FOR_CHECK,   10),
+  // VISION_DAILY_BUDGET_CENTS=200  → 2$/jour max (ajustable dans .env)
+  // VISION_MIN_PROFIT_FOR_CHECK=0  → vérifier TOUTES les candidates (Vision = gardien final)
+  visionDailyBudgetCents:    parseNumber(process.env.VISION_DAILY_BUDGET_CENTS,    200),
+  visionMinProfitForCheck:   parseNumber(process.env.VISION_MIN_PROFIT_FOR_CHECK,    0),
   visionCostPerCallCents:    parseNumber(process.env.VISION_COST_PER_CALL_CENTS,     3)
 };

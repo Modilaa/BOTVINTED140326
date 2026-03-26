@@ -3,44 +3,51 @@
 const OpenAI = require('openai');
 const { checkAndAlert } = require('./api-monitor');
 
-const VISION_PROMPT = `You are a strict product authentication expert. Compare these two product images.
+const VISION_PROMPT = `Tu es un expert en ARBITRAGE e-commerce. Ta mission : vérifier si deux annonces concernent LE MÊME PRODUIT EXACT pour valider une opportunité d'achat (Vinted) - revente (eBay).
 
-Image 1 = Vinted listing (item being sold).
-Image 2 = eBay reference (price benchmark).
+Image 1 = Annonce Vinted (article à acheter, photo maison aléatoire).
+Image 2 = Annonce eBay (référence de prix, photo pro ou maison).
 
-The items may be trading cards (Pokémon, Yu-Gi-Oh, Topps, sports cards), LEGO sets, or other collectibles.
+RÈGLE FONDAMENTALE : Compare L'OBJET physique, PAS l'image. Ignore complètement le fond, l'angle, l'éclairage, la mise en scène. Ils seront TOUJOURS différents entre Vinted et eBay — c'est normal.
 
-Your task: verify 3 things STRICTLY:
+Vérifie ces 3 critères STRICTEMENT :
 
-1. SAME PRODUCT: exact same item — for cards: same player/character, card number, set/year; for LEGO: same set number and name; for other items: same model/edition. Even minor differences (wrong year, wrong set, wrong model) = NOT same product.
+1. MÊME PRODUIT EXACT
+   - Cartes TCG : même joueur/personnage + même numéro de carte + même set + même année/édition
+   - LEGO : même numéro de set exact (ex: 75192 ≠ 75330)
+   - Tech : même modèle exact + même capacité/coloris (iPhone 13 ≠ 13 Pro, 128Go ≠ 256Go)
+   - Autre : même modèle/édition exact
+   → La moindre différence = REJET
 
-2. SAME VARIANT/EDITION: for cards: base ≠ holo ≠ refractor ≠ prizm ≠ gold; for LEGO: sealed ≠ opened ≠ incomplete; for other items: same size/color/edition. If you cannot confirm they are the SAME variant, mark false.
+2. MÊME VARIANTE
+   - Cartes TCG : base ≠ holo ≠ refractor ≠ prizm ≠ gold ≠ rainbow ≠ full art ≠ alt art ≠ prismatic ≠ galaxy
+   - LEGO : scellé ≠ ouvert ≠ incomplet
+   - Si tu ne peux pas CONFIRMER avec certitude la même variante → REJET
 
-3. COMPARABLE CONDITION: mint/sealed ≠ damaged/opened, significant wear ≠ near-mint. If condition difference affects value significantly, mark false.
+3. CONDITION COMPARABLE
+   - Mint/scellé ≠ très endommagé/incomplet = REJET
+   - Légère usure, pas de sleeve = acceptable (mark match_condition_diff)
 
-IMPORTANT CONTEXT:
-- Image 1 is from Vinted (second-hand marketplace). The seller took the photo at home, so the BACKGROUND will be random (desk, table, bed, floor, etc.). IGNORE THE BACKGROUND COMPLETELY.
-- Image 2 is from eBay (reference listing). It usually has a clean/white background or professional photo.
-- The backgrounds will ALWAYS be different. This is NORMAL and NOT a reason to reject.
-- Focus ONLY on the PRODUCT/OBJECT in the image: the card, the LEGO set, the figurine, etc.
-- Compare: same player/character name, same card number, same set/collection, same variant (base, chrome, refractor, etc.)
-- A card photographed on a wooden desk is THE SAME CARD as one photographed on white background.
-- Physical condition differences (slight wear, no sleeve vs sleeved) should NOT cause rejection. Mark as match_condition_diff instead.
+RÈGLES CRITIQUES :
+- Le fond sera TOUJOURS différent (Vinted = maison, eBay = studio). JAMAIS une raison de rejeter.
+- Lis les textes/numéros visibles sur les objets pour confirmer (numéro de carte, numéro de set LEGO, etc.)
+- Si les descriptions sont visibles dans l'image, lis-les pour confirmer l'édition et la variante.
+- EN CAS DE DOUTE → REJETER. Mieux vaut manquer une opportunité que valider un faux positif.
 
-verdict = "match" ONLY if ALL THREE are true. Otherwise "no_match".
+verdict = "match" UNIQUEMENT si les 3 critères sont vrais. Sinon "no_match".
 
-Respond ONLY with valid JSON, no markdown, no extra text:
+Réponds UNIQUEMENT avec du JSON valide, sans markdown, sans texte supplémentaire :
 {
   "sameProduct": true or false,
   "sameVariant": true or false,
   "conditionComparable": true or false,
   "verdict": "match" or "no_match",
-  "reason": "short one-line explanation",
+  "reason": "explication courte en une ligne",
   "report": {
-    "vintedObservation": "description of what is visible on the Vinted image (condition, variant, markings)",
-    "referenceObservation": "description of what is visible on the eBay image (condition, variant, markings)",
-    "differences": ["list each detected difference"],
-    "suggestion": "one suggestion to improve the scanning program based on what you observed"
+    "vintedObservation": "description de ce qui est visible sur l'image Vinted (condition, variante, marquages)",
+    "referenceObservation": "description de ce qui est visible sur l'image eBay (condition, variante, marquages)",
+    "differences": ["liste chaque différence détectée"],
+    "suggestion": "une suggestion pour améliorer le programme de scan"
   }
 }`;
 

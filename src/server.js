@@ -225,8 +225,14 @@ function appendOpportunitiesToHistory(scanOpportunities, scannedAt) {
         if (opp.visionSameCard != null) existing.visionSameCard = opp.visionSameCard;
         if (opp.visionResult) existing.visionFullResponse = opp.visionResult;
         if (opp.visionResult && opp.visionResult.visionReason) existing.visionReason = opp.visionResult.visionReason;
-        // Re-activate expired items, but never overwrite accepted/rejected decisions
-        if (existing.status === 'expired') existing.status = 'active';
+        // Upgrade candidate → active si Vision vient de le valider
+        if (opp.status === 'active' && existing.status === 'candidate') {
+          existing.status = 'active';
+        }
+        // Re-activate expired items (avec priorité au statut du nouveau scan)
+        if (existing.status === 'expired') {
+          existing.status = opp.status || 'active';
+        }
       }
     } else {
       // New opportunity
@@ -259,7 +265,7 @@ function appendOpportunitiesToHistory(scanOpportunities, scannedAt) {
         visionSameCard: opp.visionSameCard != null ? opp.visionSameCard : null,
         visionFullResponse: opp.visionResult || null,
         visionReason: (opp.visionResult && opp.visionResult.visionReason) || null,
-        status: 'active', // active, sold, expired, archived
+        status: opp.status || 'active', // active, candidate, sold, expired, archived
         firstSeenAt: scannedAt,
         lastSeenAt: scannedAt
       });
@@ -285,6 +291,18 @@ function appendOpportunitiesToHistory(scanOpportunities, scannedAt) {
     if (h.status === 'active' && !h.manualOverride && h.confidence != null && h.confidence < 30) {
       const age = Date.now() - new Date(h.firstSeenAt || h.lastSeenAt || 0).getTime();
       if (age > CONFIDENCE_EXPIRY_MS) {
+        h.status = 'expired';
+      }
+    }
+  }
+
+  // Expire les candidats Vision (status=candidate) après 3 jours sans validation
+  // Au-delà, l'annonce Vinted est probablement vendue ou retirée
+  const CANDIDATE_EXPIRY_MS = 3 * 24 * 60 * 60 * 1000;
+  for (const h of history) {
+    if (h.status === 'candidate' && !h.manualOverride) {
+      const lastSeen = new Date(h.lastSeenAt || h.firstSeenAt || 0).getTime();
+      if (now - lastSeen > CANDIDATE_EXPIRY_MS) {
         h.status = 'expired';
       }
     }
@@ -362,6 +380,10 @@ app.get('/api/opportunities', (req, res) => {
   if (scanData && scanData.opportunities && scanData.opportunities.length > 0) {
     appendOpportunitiesToHistory(scanData.opportunities, scanData.scannedAt || new Date().toISOString());
   }
+  // Sync candidates (en attente de vérification Vision)
+  if (scanData && scanData.pendingReview && scanData.pendingReview.length > 0) {
+    appendOpportunitiesToHistory(scanData.pendingReview, scanData.scannedAt || new Date().toISOString());
+  }
 
   // Deduplicate by item ID: same Vinted item can appear on multiple country domains (fr/be/…)
   let history = deduplicateHistoryById(getOpportunitiesHistory());
@@ -371,8 +393,11 @@ app.get('/api/opportunities', (req, res) => {
     history = history.filter((h) => h.status === 'accepted');
   } else if (filter === 'dismissed') {
     history = history.filter((h) => h.status === 'dismissed' || h.status === 'rejected');
+  } else if (filter === 'candidate') {
+    // Candidats en attente de vérification Vision
+    history = history.filter((h) => h.status === 'candidate');
   } else {
-    // Default: active only (En attente)
+    // Default: active seulement — VALIDÉS par Vision GPT
     history = history.filter((h) => h.status === 'active');
   }
 
@@ -436,6 +461,10 @@ app.get('/api/opportunities', (req, res) => {
       sourceUrls: opp.sourceUrls || [],
       confidenceBreakdown: opp.confidenceBreakdown || null,
       sellerScore: opp.sellerScore != null ? opp.sellerScore : null,
+      visionVerified: opp.visionVerified || false,
+      visionSameCard: opp.visionSameCard != null ? opp.visionSameCard : null,
+      visionResult: opp.visionFullResponse || null,
+      visionReason: opp.visionReason || null,
       claim: claims[itemKey] || null,
       stale: opp.status === 'expired',
       status: opp.status,
@@ -444,8 +473,8 @@ app.get('/api/opportunities', (req, res) => {
     };
   });
 
-  // Filter out zero-profit items (not for dismissed/accepted views)
-  if (filter === 'active') {
+  // Filter out zero-profit items (not for dismissed/accepted/candidate views)
+  if (filter === 'active' || filter === 'candidate') {
     opportunities = opportunities.filter((o) => (o.profit || 0) > 0);
   }
 
@@ -456,6 +485,7 @@ app.get('/api/opportunities', (req, res) => {
   const allHistoryDeduped = deduplicateHistoryById(getOpportunitiesHistory());
   const counts = {
     active: allHistoryDeduped.filter((h) => h.status === 'active').length,
+    candidate: allHistoryDeduped.filter((h) => h.status === 'candidate').length,
     accepted: allHistoryDeduped.filter((h) => h.status === 'accepted').length,
     dismissed: allHistoryDeduped.filter((h) => h.status === 'dismissed' || h.status === 'rejected').length,
     total: allHistoryDeduped.filter((h) => h.status === 'active' || h.status === 'accepted').length,

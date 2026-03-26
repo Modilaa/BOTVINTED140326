@@ -16,7 +16,7 @@
  *   - Un skip budgétaire N'est PAS une erreur Vision (l'Orchestrateur ne le compte pas)
  *
  * Autres règles :
- *   - GPT Vision échoue (429/timeout) → item marqué "pending_manual_review"
+ *   - GPT Vision échoue (429/timeout) → item reste "candidate" (retry prochain scan)
  *   - Décision Orchestrateur "disable_vision" → Vision complètement skippée
  *   - Décision Orchestrateur "lower_confidence_threshold" → seuil abaissé
  */
@@ -371,9 +371,9 @@ async function runVisionPass(candidates, budget, visionDisabledByOrch, outputDir
       budget.estimatedCostCents -= (config.visionCostPerCallCents || 3);
       visionRuns--;
       visionErrors++;
-      console.log(`[Evaluator] Vision erreur: ${visionErr.message} → pending_manual_review`);
+      // Ne pas bloquer l'item — il restera "candidate" pour retry au prochain scan
+      console.log(`[Evaluator] Vision erreur: ${visionErr.message} → candidate (retry prochain scan)`);
       row.visionError = visionErr.message;
-      row.status      = 'pending_manual_review';
     }
   }
 
@@ -444,9 +444,9 @@ async function run(candidates = null) {
 
   for (const row of candidates) {
     try {
-      // Vision déjà traitée par le pre-pass — juste un log si pas d'image eBay
+      // Vision déjà traitée par le pre-pass — log si skip pour raison technique
       if (!visionDisabledByOrch && row.imageUrl && !row.ebayMatchImageUrl) {
-        console.log(`[Evaluator] ⏭ Vision skip: "${row.title.slice(0, 50)}" — pas d'image eBay`);
+        console.log(`[Evaluator] ⏭ Vision impossible: "${row.title.slice(0, 50)}" — pas d'image eBay → candidate`);
       }
 
       // ─── Scoring ────────────────────────────────────────────────────────────
@@ -455,13 +455,6 @@ async function run(candidates = null) {
       row.confidence = computeConfidence(row);
       row.liquidity  = computeLiquidity(row);
       confidenceScores.push(row.confidence);
-
-      // ─── Décision opportunité ─────────────────────────────────────────────
-      if (row.status === 'pending_manual_review') {
-        pendingReview.push(row);
-        allEvaluated.push(row);
-        continue;
-      }
 
       // ─── Seuils par search config ─────────────────────────────────────────
       const search     = config.searches ? config.searches.find(s => s.name === row.search) : null;
@@ -517,13 +510,56 @@ async function run(candidates = null) {
             row.profit ? row.profit.profit : null);
         }
       } else {
-        opportunities.push(row);
-        console.log(`  [opportunité] ${row.title} -> ${row.profit.profit.toFixed(2)} EUR (confiance ${row.confidence}/100${row.visionSkippedBudget ? ' ⚠ non vérifié GPT' : ''})`);
-        sendOpportunityAlert(row).catch(() => {});
+        // ─── GARDIEN FINAL : Vision GPT obligatoire ──────────────────────────
+        if (row.visionSameCard === true) {
+          // ✅ Vision a confirmé → l'item est actif et visible
+          row.status = 'active';
+          opportunities.push(row);
+          console.log(`  [actif ✅] ${row.title} -> ${row.profit.profit.toFixed(2)} EUR (confiance ${row.confidence}/100, Vision OK)`);
+          sendOpportunityAlert(row).catch(() => {});
 
-        if (row.id) {
-          seenListings.markAsSeen(row.id, row.search, row.title, 'opportunity',
-            row.profit ? row.profit.profit : null);
+          if (row.id) {
+            seenListings.markAsSeen(row.id, row.search, row.title, 'opportunity',
+              row.profit ? row.profit.profit : null);
+          }
+
+        } else if (row.visionSameCard === false) {
+          // ❌ Vision a rejeté → traité comme un rejet définitif
+          row.status = 'vision_rejected';
+          const visionSummary = (row.visionResult && row.visionResult.summary) || 'produits différents';
+          console.log(`  [rejeté Vision ❌] ${row.title.slice(0, 50)}: ${visionSummary}`);
+
+          // Feedback actionnable pour le Scanner
+          const ebayTitleVr = (row.matchedSales && row.matchedSales[0] && row.matchedSales[0].title) || '';
+          writeEvaluatorFeedback(outputDir, {
+            timestamp:   new Date().toISOString(),
+            itemKey:     row.id || row.url || row.title,
+            category:    (row.category || row.search || '').toUpperCase(),
+            reason:      'vision_rejected',
+            detail:      `"${(row.title || '').slice(0, 60)}" vs "${ebayTitleVr.slice(0, 60)}" — ${visionSummary}`,
+            suggestion:  'review_images_and_matching',
+            vintedTitle: row.title || '',
+            ebayTitle:   ebayTitleVr
+          });
+
+          rejected.push(row);
+          if (row.id) {
+            seenListings.markAsSeen(row.id, row.search, row.title, 'no-match',
+              row.profit ? row.profit.profit : null);
+          }
+
+        } else {
+          // ⏳ Vision n'a pas tourné (pas d'image eBay, budget dépassé, erreur API)
+          // → l'item reste "candidate" et sera re-vérifié au prochain scan
+          const noVisionReason = row.visionError
+            ? `erreur API (${row.visionError.slice(0, 40)})`
+            : row.visionSkippedBudget
+              ? `budget dépassé (${row.visionSkipReason})`
+              : 'pas d\'image eBay';
+          console.log(`  [candidat ⏳] ${row.title.slice(0, 50)}: Vision non exécutée (${noVisionReason}) → retry prochain scan`);
+          row.status = 'candidate';
+          pendingReview.push(row);
+          // Ne PAS marquer comme "seen" → sera retentée au prochain scan
         }
       }
 
@@ -571,7 +607,7 @@ async function run(candidates = null) {
     JSON.stringify(health, null, 2)
   );
 
-  console.log(`[Evaluator] Terminé: ${opportunities.length} opportunités / ${candidates.length} évalués (${durationMs}ms)`);
+  console.log(`[Evaluator] Terminé: ${opportunities.length} actifs ✅ / ${pendingReview.length} candidats ⏳ / ${rejected.length} rejetés ❌ sur ${candidates.length} évalués (${durationMs}ms)`);
   console.log(`[Evaluator] Vision: ${visionRuns} appels, ${visionErrors} erreurs, ${visionBudgetSkips} skips budget — coût: ${budget.estimatedCostCents}¢/${dailyBudget}¢`);
 
   // ─── Message Bus : transmettre les opportunités validées au Notifier ───────

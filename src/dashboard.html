@@ -1164,7 +1164,8 @@ tr:hover td { background: rgba(108,92,231,0.04); }
         <span class="panel-badge" id="oppCount">0</span>
       </div>
       <div class="filter-tabs" id="oppFilterTabs">
-        <button class="filter-tab active" data-filter="active" onclick="setOppFilter('active')">En attente <span class="count" id="countActive">0</span></button>
+        <button class="filter-tab active" data-filter="active" onclick="setOppFilter('active')">Valid&eacute;es GPT <span class="count" id="countActive">0</span></button>
+        <button class="filter-tab" data-filter="candidate" onclick="setOppFilter('candidate')">Candidates <span class="count" id="countCandidate">0</span></button>
         <button class="filter-tab" data-filter="accepted" onclick="setOppFilter('accepted')">Accept&eacute;es <span class="count" id="countAccepted">0</span></button>
         <button class="filter-tab" data-filter="dismissed" onclick="setOppFilter('dismissed')">Ignor&eacute;es <span class="count" id="countDismissed">0</span></button>
         <span id="blacklistBadge" title="Annonces en blacklist permanente (ne reviendront plus jamais)" style="display:none;margin-left:8px;background:var(--danger,#e53e3e);color:#fff;border-radius:10px;padding:2px 7px;font-size:11px;font-weight:600;cursor:default">🚫 <span id="countBlacklisted">0</span> blacklist</span>
@@ -1833,8 +1834,9 @@ async function updateOpportunities() {
   countBadge.textContent = opps.length;
   // Sync stat card "Opportunités actives" with history-based count
   document.getElementById('statOpps').textContent = counts.active || 0;
-  document.getElementById('statOppsSub').textContent = (counts.accepted || 0) > 0 ? (counts.accepted) + ' accept\u00e9e(s)' : '';
+  document.getElementById('statOppsSub').textContent = (counts.accepted || 0) > 0 ? (counts.accepted) + ' accept\u00e9e(s)' : ((counts.candidate || 0) > 0 ? (counts.candidate) + ' en attente Vision' : '');
   document.getElementById('countActive').textContent = counts.active || 0;
+  document.getElementById('countCandidate').textContent = counts.candidate || 0;
   document.getElementById('countAccepted').textContent = counts.accepted || 0;
   document.getElementById('countDismissed').textContent = counts.dismissed || 0;
   var blacklisted = counts.blacklisted || 0;
@@ -1842,7 +1844,12 @@ async function updateOpportunities() {
   document.getElementById('blacklistBadge').style.display = blacklisted > 0 ? 'inline-block' : 'none';
 
   if (opps.length === 0) {
-    container.innerHTML = '<div class="empty-state" id="oppEmpty"><div class="empty-state-icon">&#128269;</div><div class="empty-state-title">Aucune opportunite pour ce filtre</div><div class="empty-state-text">Lance un scan pour decouvrir des opportunites.</div></div>';
+    var emptyMsg = currentOppFilter === 'candidate'
+      ? '<div class="empty-state" id="oppEmpty"><div class="empty-state-icon">&#9203;</div><div class="empty-state-title">Aucun candidat en attente</div><div class="empty-state-text">Les candidats sont les articles qui ont pass\u00e9 les seuils de profit mais attendent la validation GPT Vision (image eBay manquante, budget d\u00e9pass\u00e9, ou erreur API).</div></div>'
+      : currentOppFilter === 'active'
+        ? '<div class="empty-state" id="oppEmpty"><div class="empty-state-icon">&#128269;</div><div class="empty-state-title">Aucune opportunit\u00e9 valid\u00e9e</div><div class="empty-state-text">Seules les opportunit\u00e9s confirm\u00e9es par GPT Vision apparaissent ici. Lance un scan pour en d\u00e9couvrir.</div></div>'
+        : '<div class="empty-state" id="oppEmpty"><div class="empty-state-icon">&#128269;</div><div class="empty-state-title">Aucune opportunite pour ce filtre</div><div class="empty-state-text">Lance un scan pour decouvrir des opportunites.</div></div>';
+    container.innerHTML = emptyMsg;
     return;
   }
 
@@ -1914,6 +1921,9 @@ async function updateOpportunities() {
     document.getElementById('statOpps').textContent = opps.length;
     document.getElementById('countActive').textContent = opps.length;
   }
+  if (currentOppFilter === 'candidate') {
+    document.getElementById('countCandidate').textContent = opps.length;
+  }
   if (currentOppFilter === 'accepted') {
     document.getElementById('countAccepted').textContent = opps.length;
   }
@@ -1951,7 +1961,9 @@ async function updateOpportunities() {
     var simScore = opp.imageSimilarityScore;
     var simBadgeHtml;
     if (opp.visionVerified && opp.visionResult && opp.visionResult.sameCard) {
-      simBadgeHtml = '<div class="img-sim-badge img-sim-high" title="GPT-4o mini Vision : m\u00eame carte confirm\u00e9e (' + opp.visionResult.confidence + '%)">\u2705 Vision IA</div>';
+      simBadgeHtml = '<div class="img-sim-badge img-sim-high" title="GPT-4o mini Vision : m\u00eame produit confirm\u00e9 (' + (opp.visionResult.confidence || '') + '%)">\u2705 V\u00e9rifi\u00e9 GPT</div>';
+    } else if (opp.status === 'candidate') {
+      simBadgeHtml = '<div class="img-sim-badge img-sim-none" title="En attente de v\u00e9rification GPT Vision au prochain scan">\u23f3 Vision en attente</div>';
     } else if (simScore != null) {
       var simClass = simScore >= 60 ? 'img-sim-high' : (simScore >= 40 ? 'img-sim-med' : 'img-sim-low');
       var simLabel = simScore >= 60 ? '✓ ' : (simScore >= 40 ? '~ ' : '! ');
