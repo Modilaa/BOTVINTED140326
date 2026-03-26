@@ -619,6 +619,14 @@ async function runOnce() {
 
   const previousListings = (previousData && previousData.searchedListings) || [];
 
+  // Signaler au dashboard que le scan commence
+  const scanningPath = path.join(config.outputDir, 'latest-scan.json');
+  try {
+    const scanningSnapshot = { ...(previousData || {}), scanning: true, scannedAt: new Date().toISOString() };
+    await fs.promises.writeFile(scanningPath, JSON.stringify(scanningSnapshot, null, 2));
+    if (global._broadcastSSE) global._broadcastSSE({ type: 'scan-start' });
+  } catch { /* ignore */ }
+
   // ─── V10: Pipeline multi-agents ─────────────────────────────────────────────
   // 0. Orchestrateur écrit le contrat de sprint (critères + ajustements query)
   //    Pattern 1 (contrat) + Pattern 3 (feedback utilisateur → ajustements auto)
@@ -859,6 +867,7 @@ async function main() {
   console.log('Appuie sur Ctrl+C pour arreter.\n');
 
   while (true) {
+    global._triggerScan = null; // non disponible pendant le scan
     const startedAt = Date.now();
     try {
       await runOnce();
@@ -870,7 +879,24 @@ async function main() {
     const waitMs = Math.max(0, loopIntervalMs - elapsed);
     const nextScanAt = new Date(Date.now() + waitMs).toLocaleTimeString('fr-FR');
     console.log(`\nProchain scan a ${nextScanAt} ...\n`);
-    await new Promise((resolve) => setTimeout(resolve, waitMs));
+    await new Promise((resolve) => {
+      let done = false;
+      global._triggerScan = () => {
+        if (!done) {
+          done = true;
+          global._triggerScan = null;
+          console.log('[dashboard] Scan manuel déclenché.');
+          resolve();
+        }
+      };
+      setTimeout(() => {
+        if (!done) {
+          done = true;
+          global._triggerScan = null;
+          resolve();
+        }
+      }, waitMs);
+    });
   }
 }
 

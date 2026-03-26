@@ -1559,7 +1559,7 @@ function timeAgo(dateStr) {
 function shortDate(dateStr) {
   if (!dateStr) return '\u2014';
   try {
-    return new Date(dateStr).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    return new Date(dateStr).toLocaleString('fr-BE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   } catch (e) { return dateStr; }
 }
 function confidenceColor(score) {
@@ -1680,7 +1680,8 @@ async function updateStatus() {
     }
     return;
   }
-  var newState = data.isScanning ? 'scanning' : 'online';
+  var isStale = data.lastScanAt && (Date.now() - new Date(data.lastScanAt).getTime() > 20 * 60 * 1000);
+  var newState = data.isScanning ? 'scanning' : (isStale ? 'offline' : 'online');
   if (lastScanningState !== newState) {
     lastScanningState = newState;
     var badge = document.getElementById('statusBadge');
@@ -1690,6 +1691,12 @@ async function updateStatus() {
       badge.className = 'status-badge scanning';
       text.textContent = 'Scan en cours...';
       btn.disabled = true;
+    } else if (isStale) {
+      badge.className = 'status-badge offline';
+      text.textContent = 'Hors ligne';
+      btn.disabled = false;
+      var progressEl = document.getElementById('scanProgress');
+      if (progressEl) progressEl.style.display = 'none';
     } else {
       badge.className = 'status-badge online';
       text.textContent = 'En ligne';
@@ -3048,7 +3055,14 @@ function connectSSE() {
   evtSource.onmessage = function(event) {
     try {
       var data = JSON.parse(event.data);
-      if (data.type === 'scan-progress') {
+      if (data.type === 'scan-start') {
+        if (lastScanningState !== 'scanning') {
+          lastScanningState = 'scanning';
+          document.getElementById('statusBadge').className = 'status-badge scanning';
+          document.getElementById('statusText').textContent = 'Scan en cours...';
+          document.getElementById('scanBtn').disabled = true;
+        }
+      } else if (data.type === 'scan-progress') {
         // Only update the progress counter — no full re-render
         var progressEl = document.getElementById('scanProgress');
         if (progressEl && data.scanned != null) {
