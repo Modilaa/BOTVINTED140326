@@ -18,7 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const config = require('../config');
 const { supervise } = require('./supervisor');
-const { discover } = require('./discovery');
+const { discover, appendDiscoveryFindings } = require('./discovery');
 const { diagnose } = require('./diagnostic');
 const { strategize } = require('./strategist');
 const { assessLiquidity } = require('./liquidity');
@@ -313,6 +313,52 @@ function buildEnrichedTelegramMessage(supervisorResult, discoveryResult) {
   return lines.join('\n').trim();
 }
 
+// ─── Filesystem Context — decisions.md ───────────────────────────────
+
+/**
+ * Appende un résumé des décisions du pipeline dans output/agents/orchestrator/decisions.md
+ */
+async function appendOrchestratorDecision(result) {
+  const decisionsPath = path.join(config.outputDir, 'agents', 'orchestrator', 'decisions.md');
+  try {
+    await fs.promises.mkdir(path.dirname(decisionsPath), { recursive: true });
+
+    const now = new Date();
+    const dateStr = now.toISOString().replace('T', ' ').slice(0, 19);
+    const lines = [`\n## Pipeline ${dateStr}`, ''];
+
+    // Scan résumé
+    const sr = result.scanResult || {};
+    lines.push(`- **Scan :** ${sr.scannedCount || 0} annonces, ${sr.opportunityCount || 0} opportunités brutes`);
+
+    // Superviseur
+    if (result.supervisor) {
+      const sv = result.supervisor.summary || {};
+      lines.push(`- **Superviseur :** ${sv.confirmed || result.supervisor.confirmed.length} confirmées / ${sv.total || 0} (confiance moy ${sv.avgConfidence || 0}/100)`);
+    }
+
+    // Agents status
+    const agentLines = (result.pipeline.agents || []).map((a) => {
+      if (a.status === 'success') return `  - ${a.name}: ✅ (${a.durationMs}ms)`;
+      if (a.status === 'error')   return `  - ${a.name}: ❌ ${a.error}`;
+      return `  - ${a.name}: ⏭ skipped`;
+    });
+    if (agentLines.length > 0) {
+      lines.push('- **Agents :**');
+      lines.push(...agentLines);
+    }
+
+    // Durée totale
+    lines.push(`- **Durée totale :** ${result.pipeline.totalDurationMs}ms`);
+    lines.push(`- **Telegram :** ${result.telegram.sent ? 'envoyé ✅' : 'non envoyé'}`);
+    lines.push('');
+
+    await fs.promises.appendFile(decisionsPath, lines.join('\n'));
+  } catch (err) {
+    console.error(`[Orchestrateur] Erreur écriture decisions.md: ${err.message}`);
+  }
+}
+
 // ─── Pipeline principal ──────────────────────────────────────────────
 
 /**
@@ -475,6 +521,7 @@ async function runPipeline(scanResult, options = {}) {
       result.discovery = await discover(config);
 
       await saveAgentResult('discovery', result.discovery);
+      await appendDiscoveryFindings(result.discovery, config);
 
       result.pipeline.agents.push({
         name: 'discovery',
@@ -609,6 +656,9 @@ async function runPipeline(scanResult, options = {}) {
 
   // Sauvegarder le résultat complet du pipeline
   await saveAgentResult('pipeline', result);
+
+  // Écrire un résumé de la décision dans output/agents/orchestrator/decisions.md
+  await appendOrchestratorDecision(result);
 
   console.log('\n========================================');
   console.log('  PIPELINE TERMINE');

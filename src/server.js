@@ -9,6 +9,8 @@ const { explore } = require('./agents/product-explorer');
 const { strategize } = require('./agents/strategist');
 const { assessLiquidity } = require('./agents/liquidity');
 const { saveAgentResult } = require('./agents/orchestrator');
+const { updateState: updateOppState, getState: getOppState, getHistory: getOppHistory } = require('./opportunity-state');
+const { readDebugLog } = require('./debug-protocol');
 
 const app = express();
 const PORT = process.env.DASHBOARD_PORT || 3000;
@@ -494,6 +496,19 @@ app.post('/api/opportunity/:id/accept', (req, res) => {
   opp.manualOverride = true;
   saveOpportunitiesHistory(history);
 
+  // State machine audit trail
+  updateOppState(id, {
+    status: 'accepted',
+    title: opp.title,
+    category: opp.search,
+    vintedUrl: opp.url,
+    vintedPrice: opp.vintedPrice || opp.vintedBuyerPrice,
+    ebayAvgPrice: opp.estimatedSalePrice,
+    profitEstimated: opp.profit && opp.profit.profit,
+    confidenceScore: opp.confidence,
+    by: 'manual'
+  });
+
   appendFeedbackLog({
     id: opp.id,
     title: opp.title,
@@ -522,6 +537,18 @@ app.post('/api/opportunity/:id/reject', (req, res) => {
   opp.rejectedAt = new Date().toISOString();
   saveOpportunitiesHistory(history);
 
+  // State machine audit trail
+  updateOppState(id, {
+    status: 'rejected',
+    title: opp.title,
+    category: opp.search,
+    vintedUrl: opp.url,
+    vintedPrice: opp.vintedPrice || opp.vintedBuyerPrice,
+    ebayAvgPrice: opp.estimatedSalePrice,
+    by: source || 'manual',
+    details: reason ? { reason } : null
+  });
+
   appendFeedbackLog({
     id: opp.id,
     title: opp.title,
@@ -536,6 +563,21 @@ app.post('/api/opportunity/:id/reject', (req, res) => {
 
   broadcastSSE({ type: 'opportunities-update' });
   res.json({ success: true });
+});
+
+// ─── API: Historique transitions d'une opportunité ────────────────────
+app.get('/api/opportunity/:id/history', (req, res) => {
+  const { id } = req.params;
+  const history = getOppHistory(id);
+  const state = getOppState(id);
+  res.json({ id, state: state || null, history });
+});
+
+// ─── API: Debug log (50 derniers événements root-cause) ──────────────
+app.get('/api/debug-log', (req, res) => {
+  const limit = parseInt(req.query.limit || '50', 10);
+  const events = readDebugLog(Math.min(limit, 200));
+  res.json({ count: events.length, events });
 });
 
 // ─── API: Feedback report (stats apprentissage) ───────────────────────
