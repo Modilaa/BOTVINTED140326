@@ -429,6 +429,8 @@ tr:hover td { background: rgba(108,92,231,0.04); }
   color: white;
   border-color: var(--accent);
 }
+.opp-title-link { color: inherit; text-decoration: none; }
+.opp-title-link:hover { color: var(--accent2); text-decoration: underline; }
 .source-links { display: flex; flex-wrap: wrap; gap: 4px; }
 .source-btn {
   display: inline-flex;
@@ -2059,7 +2061,11 @@ async function updateOpportunities() {
       sourceLinksHtml += ' <a class="source-btn" href="' + esc(ebaySearchUrl) + '" target="_blank" rel="noopener" style="background:rgba(255,165,0,0.12);color:#ffa94d;border-color:rgba(255,165,0,0.3);" title="Recherche g\u00e9n\u00e9rique eBay \u2014 prix bas\u00e9 sur la moyenne du march\u00e9, pas un listing sp\u00e9cifique">&#128269; Recherche eBay</a>';
     }
 
-    html += '<tr data-opp-id="' + esc(safeId) + '"><td>' + imgHtml + '</td><td><div class="opp-title" title="' + esc(opp.title) + '">' + esc(opp.title) + '</div>' + ebayTitleHtml + '<div style="font-size:10px;color:var(--text3)">' + timeAgo(opp.firstSeenAt) + '</div></td><td><span style="font-size:12px;color:var(--text2)">' + esc(opp.search || '\u2014') + '</span></td><td>' + platBadge + (routeBadge ? ' ' + routeBadge : '') + '</td><td title="' + esc(buyLabel) + '">' + euro(opp.vintedPrice) + '</td><td title="' + esc(sellLabel) + '">' + buildPriceCellHtml(opp) + '</td><td class="' + profitClass + '">' + euro(opp.profit) + (opp.profitPercent != null ? ' <span style="font-size:11px;opacity:0.7">(' + pct(opp.profitPercent) + ')</span>' : '') + profitWarnHtml + '</td><td>' + buildLiquidityCell(opp) + '</td><td>' + confHtml + '</td><td>' + statusHtml + '</td><td><div class="source-links">' + sourceLinksHtml + '</div></td><td style="white-space:nowrap">' + actionsHtml + '</td></tr>';
+    // Titre cliquable vers l'annonce source (Vinted etc.) — utile sur mobile où la colonne Liens est masquée
+    var titleInner = opp.url
+      ? '<a href="' + esc(opp.url) + '" target="_blank" rel="noopener" class="opp-title-link">' + esc(opp.title) + '</a>'
+      : esc(opp.title);
+    html += '<tr data-opp-id="' + esc(safeId) + '"><td>' + imgHtml + '</td><td><div class="opp-title" title="' + esc(opp.title) + '">' + titleInner + '</div>' + ebayTitleHtml + '<div style="font-size:10px;color:var(--text3)">' + timeAgo(opp.firstSeenAt) + '</div></td><td><span style="font-size:12px;color:var(--text2)">' + esc(opp.search || '\u2014') + '</span></td><td>' + platBadge + (routeBadge ? ' ' + routeBadge : '') + '</td><td title="' + esc(buyLabel) + '">' + euro(opp.vintedPrice) + '</td><td title="' + esc(sellLabel) + '">' + buildPriceCellHtml(opp) + '</td><td class="' + profitClass + '">' + euro(opp.profit) + (opp.profitPercent != null ? ' <span style="font-size:11px;opacity:0.7">(' + pct(opp.profitPercent) + ')</span>' : '') + profitWarnHtml + '</td><td>' + buildLiquidityCell(opp) + '</td><td>' + confHtml + '</td><td>' + statusHtml + '</td><td><div class="source-links">' + sourceLinksHtml + '</div></td><td style="white-space:nowrap">' + actionsHtml + '</td></tr>';
     // Render saved vision banner (persists across refresh)
     if (opp.verification && opp.verification.vision) {
       var sv = opp.verification.vision;
