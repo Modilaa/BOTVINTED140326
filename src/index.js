@@ -10,6 +10,7 @@ const { clearMemoryCache: clearYugiohCache } = require('./marketplaces/ygoprodec
 const { clearMemoryCache: clearPokemonTcgApiCache } = require('./marketplaces/pokemontcg-api');
 const { getPrice: getPriceViaRouter, clearPriceCache } = require('./price-router');
 const seenListings = require('./seen-listings');
+const dismissedListings = require('./dismissed-listings');
 const { getVintedListings, fetchVintedDescription } = require('./marketplaces/vinted');
 const { enrichTitleFromDescription } = require('./description-enricher');
 const { getFacebookMarketplaceListings } = require('./marketplaces/facebook');
@@ -181,6 +182,12 @@ async function runScan(previousListings) {
   const searchedListings = [];
   const underpricedAlerts = [];
   const minPrice = config.minListingPriceEur || 2;
+
+  // Log blacklist count au démarrage du scan
+  const blacklistCount = dismissedListings.getCount();
+  if (blacklistCount > 0) {
+    console.log(`[blacklist] ${blacklistCount} annonce(s) en blacklist permanente (ignorées définitivement)`);
+  }
 
   // ─── Filtrer les catégories désactivées par le feedback-analyzer ──────────
   try {
@@ -380,6 +387,12 @@ async function runScan(previousListings) {
         // Skip listings already processed in the last 24h with a definitive result
         if (listing.id && seenListings.isAlreadySeen(listing.id)) {
           console.log(`[seen] Skip ${listing.id} "${listing.title.slice(0, 50)}" (déjà traité: ${seenListings.getSeenResult(listing.id)})`);
+          continue;
+        }
+
+        // Skip listings blacklistées par l'utilisateur (dismiss permanent)
+        if (dismissedListings.isDismissed(listing.id, listing.title)) {
+          console.log(`[blacklist] Skip ${listing.id} "${listing.title.slice(0, 50)}" (ignoré définitivement)`);
           continue;
         }
 

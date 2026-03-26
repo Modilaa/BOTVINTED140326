@@ -11,6 +11,7 @@ const { assessLiquidity } = require('./agents/liquidity');
 const { saveAgentResult } = require('./agents/orchestrator');
 const { updateState: updateOppState, getState: getOppState, getHistory: getOppHistory } = require('./opportunity-state');
 const { readDebugLog } = require('./debug-protocol');
+const dismissedListings = require('./dismissed-listings');
 
 const app = express();
 const PORT = process.env.DASHBOARD_PORT || 3000;
@@ -457,7 +458,8 @@ app.get('/api/opportunities', (req, res) => {
     active: allHistoryDeduped.filter((h) => h.status === 'active').length,
     accepted: allHistoryDeduped.filter((h) => h.status === 'accepted').length,
     dismissed: allHistoryDeduped.filter((h) => h.status === 'dismissed' || h.status === 'rejected').length,
-    total: allHistoryDeduped.filter((h) => h.status === 'active' || h.status === 'accepted').length
+    total: allHistoryDeduped.filter((h) => h.status === 'active' || h.status === 'accepted').length,
+    blacklisted: dismissedListings.getCount()
   };
 
   res.json({
@@ -485,6 +487,12 @@ app.post('/api/opportunities/:id/status', (req, res) => {
 
   opp.status = status;
   if (status === 'sold') opp.soldAt = new Date().toISOString();
+  if (status === 'dismissed') {
+    opp.dismissedAt = new Date().toISOString();
+    // Ajouter à la blacklist permanente
+    const vintedId = opp.id || (opp.url || '').match(/\/items\/(\d+)/)?.[1];
+    if (vintedId) dismissedListings.addDismissed(vintedId, opp.title);
+  }
   saveOpportunitiesHistory(history);
 
   broadcastSSE({ type: 'opportunities-update' });
@@ -1326,6 +1334,9 @@ app.post('/api/feedback', (req, res) => {
   if (!Boolean(validated) && opp) {
     opp.status = 'dismissed';
     opp.dismissedAt = new Date().toISOString();
+    // Blacklist permanente
+    const vintedIdFb = opp.id || (opp.url || '').match(/\/items\/(\d+)/)?.[1];
+    if (vintedIdFb) dismissedListings.addDismissed(vintedIdFb, opp.title);
     saveOpportunitiesHistory(history);
     broadcastSSE({ type: 'opportunities-update' });
   }

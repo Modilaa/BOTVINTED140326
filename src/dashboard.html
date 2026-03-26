@@ -1167,6 +1167,7 @@ tr:hover td { background: rgba(108,92,231,0.04); }
         <button class="filter-tab active" data-filter="active" onclick="setOppFilter('active')">En attente <span class="count" id="countActive">0</span></button>
         <button class="filter-tab" data-filter="accepted" onclick="setOppFilter('accepted')">Accept&eacute;es <span class="count" id="countAccepted">0</span></button>
         <button class="filter-tab" data-filter="dismissed" onclick="setOppFilter('dismissed')">Ignor&eacute;es <span class="count" id="countDismissed">0</span></button>
+        <span id="blacklistBadge" title="Annonces en blacklist permanente (ne reviendront plus jamais)" style="display:none;margin-left:8px;background:var(--danger,#e53e3e);color:#fff;border-radius:10px;padding:2px 7px;font-size:11px;font-weight:600;cursor:default">🚫 <span id="countBlacklisted">0</span> blacklist</span>
         <span style="margin-left:12px;border-left:1px solid var(--border);padding-left:12px">
           <select id="platformFilter" onchange="updateOpportunities()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer">
             <option value="all">Toutes plateformes</option>
@@ -1836,6 +1837,9 @@ async function updateOpportunities() {
   document.getElementById('countActive').textContent = counts.active || 0;
   document.getElementById('countAccepted').textContent = counts.accepted || 0;
   document.getElementById('countDismissed').textContent = counts.dismissed || 0;
+  var blacklisted = counts.blacklisted || 0;
+  document.getElementById('countBlacklisted').textContent = blacklisted;
+  document.getElementById('blacklistBadge').style.display = blacklisted > 0 ? 'inline-block' : 'none';
 
   if (opps.length === 0) {
     container.innerHTML = '<div class="empty-state" id="oppEmpty"><div class="empty-state-icon">&#128269;</div><div class="empty-state-title">Aucune opportunite pour ce filtre</div><div class="empty-state-text">Lance un scan pour decouvrir des opportunites.</div></div>';
