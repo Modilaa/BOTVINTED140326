@@ -482,13 +482,15 @@ app.get('/api/opportunities', (req, res) => {
   opportunities.sort((a, b) => (b.profit || 0) - (a.profit || 0));
 
   // Count by status for the badge (use deduplicated view)
+  // "active" = validées Vision (status=active ET visionVerified/visionSameCard=true)
+  // "candidate" = en attente Vision (status=candidate OU status=active sans Vision)
   const allHistoryDeduped = deduplicateHistoryById(getOpportunitiesHistory());
   const counts = {
-    active: allHistoryDeduped.filter((h) => h.status === 'active').length,
-    candidate: allHistoryDeduped.filter((h) => h.status === 'candidate').length,
+    active: allHistoryDeduped.filter((h) => h.status === 'active' && (h.visionVerified === true || h.visionSameCard === true)).length,
+    candidate: allHistoryDeduped.filter((h) => h.status === 'candidate' || (h.status === 'active' && !h.visionVerified && !h.visionSameCard)).length,
     accepted: allHistoryDeduped.filter((h) => h.status === 'accepted').length,
     dismissed: allHistoryDeduped.filter((h) => h.status === 'dismissed' || h.status === 'rejected').length,
-    total: allHistoryDeduped.filter((h) => h.status === 'active' || h.status === 'accepted').length,
+    total: allHistoryDeduped.filter((h) => (h.status === 'active' && (h.visionVerified === true || h.visionSameCard === true)) || h.status === 'accepted').length,
     blacklisted: dismissedListings.getCount()
   };
 
@@ -727,10 +729,10 @@ app.get('/api/stats', (_req, res) => {
 
   const allListings = scanData.searchedListings || [];
 
-  // Total estimated profit: active + accepted opportunities
+  // Total estimated profit: active Vision-verified + accepted opportunities
   const totalEstimatedProfit = Math.round(
     deduplicateHistoryById(getOpportunitiesHistory())
-      .filter((h) => h.status === 'active' || h.status === 'accepted')
+      .filter((h) => (h.status === 'active' || h.status === 'accepted') && (h.visionVerified === true || h.visionSameCard === true))
       .reduce((sum, h) => sum + (h.profit || 0), 0) * 100
   ) / 100;
 
@@ -814,10 +816,12 @@ app.get('/api/performance-history', (_req, res) => {
     const history = deduplicateHistoryById(getOpportunitiesHistory());
     const scansHistory = readJsonSafe(getScansHistoryPath()) || [];
 
-    // ── Profit history: group active/sold opportunities by date ──
+    // ── Profit history: group Vision-verified opportunities by date ──
     const profitByDate = new Map();
     for (const h of history) {
       if (!h.lastSeenAt) continue;
+      // Graphique honnête : uniquement les opportunités validées par GPT Vision
+      if (!h.visionVerified && !h.visionSameCard) continue;
       const date = h.lastSeenAt.slice(0, 10);
       if (!profitByDate.has(date)) {
         profitByDate.set(date, { profit: 0, count: 0 });
@@ -831,9 +835,11 @@ app.get('/api/performance-history', (_req, res) => {
       .sort((a, b) => a.date.localeCompare(b.date))
       .slice(-30);
 
-    // ── Category breakdown: group by search field ──
+    // ── Category breakdown: Vision-verified only ──
     const catMap = new Map();
     for (const h of history) {
+      // Uniquement les opportunités validées par GPT Vision
+      if (!h.visionVerified && !h.visionSameCard) continue;
       const cat = h.search || 'Autre';
       if (!catMap.has(cat)) {
         catMap.set(cat, { profit: 0, count: 0 });
