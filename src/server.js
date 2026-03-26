@@ -363,10 +363,11 @@ app.get('/api/opportunities', (req, res) => {
   // Deduplicate by item ID: same Vinted item can appear on multiple country domains (fr/be/…)
   let history = deduplicateHistoryById(getOpportunitiesHistory());
 
-  // Rejected items are NEVER returned to the frontend
-  // Only active (En attente) and accepted (Acceptées) are visible
+  // Filter by status
   if (filter === 'accepted') {
     history = history.filter((h) => h.status === 'accepted');
+  } else if (filter === 'dismissed') {
+    history = history.filter((h) => h.status === 'dismissed' || h.status === 'rejected');
   } else {
     // Default: active only (En attente)
     history = history.filter((h) => h.status === 'active');
@@ -409,7 +410,7 @@ app.get('/api/opportunities', (req, res) => {
       // Scores inline (calculés au scan) — priorité sur les données agents
       // opp.liquidity peut être un objet { score, classification, summary } (nouveau)
       // ou un number (anciens scans sérialisés), ou null
-      confidenceScore: opp.confidence != null ? opp.confidence : (verification ? verification.confidenceScore : null),
+      confidenceScore: opp.confidence != null ? opp.confidence : (verification ? verification.confidenceScore : 0),
       liquidityScore: opp.liquidity != null
         ? (typeof opp.liquidity === 'object' ? opp.liquidity.score : opp.liquidity)
         : (liq ? liq.liquidityScore : null),
@@ -440,6 +441,11 @@ app.get('/api/opportunities', (req, res) => {
     };
   });
 
+  // Filter out zero-profit items (not for dismissed/accepted views)
+  if (filter === 'active') {
+    opportunities = opportunities.filter((o) => (o.profit || 0) > 0);
+  }
+
   // Sort by profit descending
   opportunities.sort((a, b) => (b.profit || 0) - (a.profit || 0));
 
@@ -448,6 +454,7 @@ app.get('/api/opportunities', (req, res) => {
   const counts = {
     active: allHistoryDeduped.filter((h) => h.status === 'active').length,
     accepted: allHistoryDeduped.filter((h) => h.status === 'accepted').length,
+    dismissed: allHistoryDeduped.filter((h) => h.status === 'dismissed' || h.status === 'rejected').length,
     total: allHistoryDeduped.filter((h) => h.status === 'active' || h.status === 'accepted').length
   };
 
