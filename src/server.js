@@ -225,13 +225,13 @@ function appendOpportunitiesToHistory(scanOpportunities, scannedAt) {
         if (opp.visionSameCard != null) existing.visionSameCard = opp.visionSameCard;
         if (opp.visionResult) existing.visionFullResponse = opp.visionResult;
         if (opp.visionResult && opp.visionResult.visionReason) existing.visionReason = opp.visionResult.visionReason;
-        // Upgrade candidate → active si Vision vient de le valider
-        if (opp.status === 'active' && existing.status === 'candidate') {
+        // Upgrade candidate → active UNIQUEMENT si Vision a confirmé
+        if (opp.status === 'active' && opp.visionVerified === true && existing.status === 'candidate') {
           existing.status = 'active';
         }
-        // Re-activate expired items (avec priorité au statut du nouveau scan)
+        // Re-activate expired items — sans Vision confirmée → candidate
         if (existing.status === 'expired') {
-          existing.status = opp.status || 'active';
+          existing.status = (opp.status === 'active' && !opp.visionVerified) ? 'candidate' : (opp.status || 'candidate');
         }
       }
     } else {
@@ -265,7 +265,7 @@ function appendOpportunitiesToHistory(scanOpportunities, scannedAt) {
         visionSameCard: opp.visionSameCard != null ? opp.visionSameCard : null,
         visionFullResponse: opp.visionResult || null,
         visionReason: (opp.visionResult && opp.visionResult.visionReason) || null,
-        status: opp.status || 'active', // active, candidate, sold, expired, archived
+        status: (opp.status === 'active' && !opp.visionVerified) ? 'candidate' : (opp.status || 'candidate'), // active (Vision requis), candidate, sold, expired, archived
         firstSeenAt: scannedAt,
         lastSeenAt: scannedAt
       });

@@ -650,9 +650,11 @@ function mergeWithHistory(newResult, outputDir, previousData) {
   }
 
   // Also preserve previous opportunities not in current scan
+  // GARDIEN : seulement les items validés par Vision (status active + visionVerified)
+  // Les items bruts de searchedListings n'ont pas de visionVerified → exclus automatiquement
   const newOppUrls = new Set(newResult.opportunities.map((o) => o.url));
   const previousOpps = previousListings
-    .filter((l) => !newOppUrls.has(l.url) && !l.archived)
+    .filter((l) => !newOppUrls.has(l.url) && !l.archived && l.status === 'active' && l.visionVerified === true)
     .filter((l) => {
       const profit = l.profit;
       if (!profit) return false;
