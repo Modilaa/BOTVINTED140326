@@ -1302,45 +1302,6 @@ tr:hover td { background: rgba(108,92,231,0.04); }
     </div>
   </div>
 
-  <!-- Price Database Section -->
-  <div class="panel" id="priceDatabasePanel">
-    <div class="panel-header" onclick="togglePriceDatabase()" style="cursor:pointer;user-select:none;">
-      <div class="panel-title">
-        📊 Base de prix
-        <span class="panel-badge" id="priceDatabaseCount">0</span>
-      </div>
-      <span id="priceDatabaseChevron" style="color:var(--text2);font-size:14px;transition:transform 0.2s;">▶</span>
-    </div>
-    <div class="panel-body" id="priceDatabaseBody" style="display:none;padding:12px;">
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
-        <input type="text" id="priceDatabaseSearch" placeholder="🔍 Rechercher par nom ou catégorie..." oninput="filterPriceDatabase()"
-          style="flex:1;min-width:180px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-size:13px;outline:none;" />
-        <div id="priceDatabaseCategoryButtons" style="display:flex;gap:6px;flex-wrap:wrap;">
-          <button class="btn btn-sm pdb-cat-btn" onclick="setPriceDbCategory('all')" id="pdbcat-all" style="background:var(--accent);color:#fff;border:1px solid var(--accent);">Tous</button>
-        </div>
-      </div>
-      <div class="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th onclick="sortPriceDb('name')" style="cursor:pointer;">Produit <span id="pdbsort-name"> ▲</span></th>
-              <th onclick="sortPriceDb('category')" style="cursor:pointer;">Cat. <span id="pdbsort-category"></span></th>
-              <th onclick="sortPriceDb('avgVintedPrice')" style="cursor:pointer;text-align:right;">Prix Vinted moy. <span id="pdbsort-avgVintedPrice"></span></th>
-              <th onclick="sortPriceDb('avgMarketPrice')" style="cursor:pointer;text-align:right;">Prix Marché moy. <span id="pdbsort-avgMarketPrice"></span></th>
-              <th onclick="sortPriceDb('spread')" style="cursor:pointer;text-align:right;">Spread <span id="pdbsort-spread"></span></th>
-              <th onclick="sortPriceDb('vintedObservations')" style="cursor:pointer;text-align:right;">Obs. Vinted <span id="pdbsort-vintedObservations"></span></th>
-              <th onclick="sortPriceDb('marketObservations')" style="cursor:pointer;text-align:right;">Obs. Marché <span id="pdbsort-marketObservations"></span></th>
-              <th onclick="sortPriceDb('lastSeen')" style="cursor:pointer;">Dernière vue <span id="pdbsort-lastSeen"></span></th>
-              <th>Tendance</th>
-              <th>Liens</th>
-            </tr>
-          </thead>
-          <tbody id="priceDatabaseTableBody">
-            <tr><td colspan="10" style="text-align:center;color:var(--text2);padding:24px;">Cliquez pour charger...</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
   </div>
 
   <!-- Apprentissage -->
@@ -1629,7 +1590,6 @@ function buildPriceCellHtml(opp) {
   var srcLabels = {
     'ebay-browse-api': 'eBay API',
     'ebay-html': 'eBay scraping',
-    'local-database': 'Base locale',
     'pokemon-tcg-api': 'Pok\u00e9TCG.io',
     'pokemontcg-api': 'Pok\u00e9TCG.io',
     'ygoprodeck': 'YGOPRODeck',
@@ -1646,8 +1606,6 @@ function buildPriceCellHtml(opp) {
   var isNicheApi = (src === 'pokemon-tcg-api' || src === 'pokemontcg-api' || src === 'ygoprodeck' || src === 'ygoprodeck-set' || src === 'cardmarket' || src === 'discogs');
   if (!src) {
     badgeColor = '#888'; badgeBg = 'rgba(128,128,128,0.12)';
-  } else if (src === 'local-database') {
-    badgeColor = '#ffa94d'; badgeBg = 'rgba(255,169,77,0.14)'; // orange = moins fiable (moyenne accumul\u00e9e)
   } else if (isNicheApi || obs >= 5) {
     badgeColor = '#00d2a0'; badgeBg = 'rgba(0,210,160,0.10)'; // vert = tr\u00e8s fiable
   } else if (obs >= 3) {
@@ -2799,34 +2757,6 @@ async function updateEbayQuota() {
 }
 
 // ─── Price DB badge ────────────────────────────────────────
-async function updatePriceDbBadge() {
-  var data = await fetchJson('/api/price-database/stats');
-  var badge = document.getElementById('priceDbBadge');
-  if (!badge) return;
-  if (!data || data.totalProducts == null) { badge.style.display = 'none'; return; }
-  badge.style.display = '';
-  badge.textContent = '\uD83D\uDCCA Base: ' + data.totalProducts + ' produits';
-  var pdbCount = document.getElementById('priceDatabaseCount');
-  if (pdbCount) pdbCount.textContent = data.totalProducts;
-
-  var seenBadge = document.getElementById('seenListingsBadge');
-  if (seenBadge && data.seenListings != null) {
-    seenBadge.style.display = '';
-    seenBadge.textContent = '\uD83D\uDC41 Vus: ' + data.seenListings;
-  }
-}
-
-// ─── Price Database Browser ────────────────────────────────
-var priceDatabaseState = {
-  loaded: false,
-  open: false,
-  data: [],
-  filtered: [],
-  sortField: 'name',
-  sortAsc: true,
-  category: 'all',
-  search: ''
-};
 
 // ─── Apprentissage (feedback report + auto-amélioration) ────────────
 var learningOpen = false;
@@ -3085,178 +3015,7 @@ function formatAgo(ts) {
   return 'à l\'instant';
 }
 
-function togglePriceDatabase() {
-  var body = document.getElementById('priceDatabaseBody');
-  var chevron = document.getElementById('priceDatabaseChevron');
-  priceDatabaseState.open = !priceDatabaseState.open;
-  body.style.display = priceDatabaseState.open ? '' : 'none';
-  chevron.textContent = priceDatabaseState.open ? '▼' : '▶';
-  if (priceDatabaseState.open && !priceDatabaseState.loaded) {
-    loadPriceDatabaseData();
-  }
-}
 
-async function loadPriceDatabaseData() {
-  var tbody = document.getElementById('priceDatabaseTableBody');
-  tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text2);padding:24px;">Chargement...</td></tr>';
-  var data = await fetchJson('/api/price-database/browse');
-  if (!data || !data.products) return;
-  priceDatabaseState.data = data.products;
-  priceDatabaseState.loaded = true;
-  var badge = document.getElementById('priceDatabaseCount');
-  if (badge) badge.textContent = data.products.length;
-  // Extract unique categories and render buttons dynamically
-  var cats = [];
-  data.products.forEach(function(p) { if (p.category && cats.indexOf(p.category) === -1) cats.push(p.category); });
-  renderPriceDbCategoryButtons(cats);
-  applyPriceDatabaseFilter();
-}
-
-function pdbCatLabel(cat) {
-  var labels = {
-    'pokemon': 'Pokémon', 'yugioh': 'Yu-Gi-Oh', 'lego': 'LEGO',
-    'topps-f1': 'Topps F1', 'one-piece': 'One Piece',
-    'topps-football': 'Topps Football', 'topps-ufc': 'Topps UFC',
-    'topps-tennis': 'Topps Tennis', 'topps-sport-general': 'Topps Sport General',
-    'topps-chrome-football': 'Topps Chrome Football', 'ebay': 'eBay', 'misc': 'Divers'
-  };
-  return labels[cat] || cat.split('-').map(function(w) { return w.charAt(0).toUpperCase() + w.slice(1); }).join(' ');
-}
-
-function renderPriceDbCategoryButtons(categories) {
-  var container = document.getElementById('priceDatabaseCategoryButtons');
-  if (!container) return;
-  var activeCat = priceDatabaseState.category || 'all';
-  var html = '<button class="btn btn-sm pdb-cat-btn" onclick="setPriceDbCategory(\'all\')" id="pdbcat-all" style="' +
-    (activeCat === 'all' ? 'background:var(--accent);color:#fff;border:1px solid var(--accent);' : 'background:var(--surface3);color:var(--text2);border:1px solid var(--border);') +
-    '">Tous</button>';
-  categories.slice().sort().forEach(function(cat) {
-    html += '<button class="btn btn-sm pdb-cat-btn" onclick="setPriceDbCategory(\'' + cat + '\')" id="pdbcat-' + cat + '" style="' +
-      (activeCat === cat ? 'background:var(--accent);color:#fff;border:1px solid var(--accent);' : 'background:var(--surface3);color:var(--text2);border:1px solid var(--border);') +
-      '">' + pdbCatLabel(cat) + '</button>';
-  });
-  container.innerHTML = html;
-}
-
-function setPriceDbCategory(cat) {
-  priceDatabaseState.category = cat;
-  document.querySelectorAll('.pdb-cat-btn').forEach(function(btn) {
-    var btnCat = btn.id.replace('pdbcat-', '') || 'all';
-    if (btnCat === cat) {
-      btn.style.background = 'var(--accent)'; btn.style.color = '#fff'; btn.style.borderColor = 'var(--accent)';
-    } else {
-      btn.style.background = 'var(--surface3)'; btn.style.color = 'var(--text2)'; btn.style.borderColor = 'var(--border)';
-    }
-  });
-  applyPriceDatabaseFilter();
-}
-
-function filterPriceDatabase() {
-  priceDatabaseState.search = (document.getElementById('priceDatabaseSearch').value || '').toLowerCase();
-  applyPriceDatabaseFilter();
-}
-
-function sortPriceDb(field) {
-  if (priceDatabaseState.sortField === field) {
-    priceDatabaseState.sortAsc = !priceDatabaseState.sortAsc;
-  } else {
-    priceDatabaseState.sortField = field;
-    priceDatabaseState.sortAsc = true;
-  }
-  ['name','category','avgVintedPrice','avgMarketPrice','spread','vintedObservations','marketObservations','lastSeen'].forEach(function(f) {
-    var el = document.getElementById('pdbsort-' + f);
-    if (!el) return;
-    el.textContent = f === field ? (priceDatabaseState.sortAsc ? ' ▲' : ' ▼') : '';
-  });
-  renderPriceDatabaseTable();
-}
-
-function applyPriceDatabaseFilter() {
-  var cat = priceDatabaseState.category;
-  var search = priceDatabaseState.search;
-  priceDatabaseState.filtered = priceDatabaseState.data.filter(function(p) {
-    if (cat !== 'all' && p.category !== cat) return false;
-    if (search && !p.name.toLowerCase().includes(search) && !p.category.toLowerCase().includes(search)) return false;
-    return true;
-  });
-  renderPriceDatabaseTable();
-}
-
-function togglePdbDropdown(id) {
-  var all = document.querySelectorAll('.pdb-links-drop');
-  all.forEach(function(d) { if (d.id !== id) d.style.display = 'none'; });
-  var el = document.getElementById(id);
-  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
-}
-document.addEventListener('click', function() {
-  document.querySelectorAll('.pdb-links-drop').forEach(function(d) { d.style.display = 'none'; });
-});
-
-function renderPriceDatabaseTable() {
-  var f = priceDatabaseState.sortField;
-  var asc = priceDatabaseState.sortAsc;
-  var sorted = priceDatabaseState.filtered.slice().sort(function(a, b) {
-    var av = a[f] != null ? a[f] : '';
-    var bv = b[f] != null ? b[f] : '';
-    if (typeof av === 'number' && typeof bv === 'number') return asc ? av - bv : bv - av;
-    return asc ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
-  });
-  var tbody = document.getElementById('priceDatabaseTableBody');
-  if (sorted.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text2);padding:24px;">Aucun résultat</td></tr>';
-    return;
-  }
-  var html = '';
-  sorted.forEach(function(p) {
-    var trendColor = p.trend === 'rising' ? 'var(--green)' : p.trend === 'falling' ? 'var(--red)' : 'var(--text3)';
-    var trendIcon = p.trend === 'rising' ? '↑' : p.trend === 'falling' ? '↓' : '→';
-    var trendLabel = p.trend === 'rising' ? 'Hausse' : p.trend === 'falling' ? 'Baisse' : 'Stable';
-    var catLabel = pdbCatLabel(p.category);
-    var spreadStr = p.spread != null ? (p.spread > 0 ? '+' : '') + p.spread + '%' : '&mdash;';
-    var spreadColor = p.spread != null && p.spread > 50 ? 'var(--green)' : p.spread != null && p.spread > 20 ? 'var(--orange)' : 'var(--text2)';
-    var linksCell;
-    var pListings = p.listings && p.listings.length > 0 ? p.listings : [];
-    if (pListings.length > 0) {
-      var dropId = 'pdb-drop-' + p.key.replace(/[^a-z0-9]/g, '');
-      var btnLabel = '&#128206; ' + pListings.length + ' lien' + (pListings.length > 1 ? 's' : '');
-      var dropItems = '';
-      pListings.forEach(function(l, i) {
-        var lPrice = l.price ? l.price.toFixed(2) + '&euro;' : '?&euro;';
-        var lDate = l.date ? l.date.slice(5) : '';
-        var lSrc = (l.source || '').replace('ebay-browse-api','eBay API').replace('apify-ebay','Apify').replace('ebay-scrape','eBay scrape');
-        var lTitle = (l.title || '').replace(/"/g, '&quot;');
-        var border = i < pListings.length - 1 ? '1px solid var(--border)' : 'none';
-        dropItems += '<div style="display:flex;align-items:center;gap:8px;padding:5px 10px;font-size:12px;border-bottom:' + border + ';">' +
-          '<span style="color:var(--green);font-weight:600;min-width:50px;">' + lPrice + '</span>' +
-          '<span style="color:var(--text3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + lTitle + '">' + lSrc + (lDate ? ' &middot; ' + lDate : '') + '</span>' +
-          '<a href="' + l.url + '" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:var(--accent);text-decoration:none;font-size:11px;flex-shrink:0;">Voir &#8599;</a>' +
-          '</div>';
-      });
-      linksCell = '<div style="position:relative;display:inline-block;">' +
-        '<button onclick="event.stopPropagation();togglePdbDropdown(\'' + dropId + '\')" style="background:var(--surface3);color:var(--text2);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;">' + btnLabel + '</button>' +
-        '<div id="' + dropId + '" class="pdb-links-drop" style="display:none;position:absolute;right:0;top:100%;margin-top:2px;z-index:1000;background:var(--surface2);border:1px solid var(--border);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.6);min-width:300px;">' +
-        dropItems +
-        '</div></div>';
-    } else {
-      linksCell = '<span style="color:var(--text3);">&mdash;</span>';
-    }
-    html += '<tr>' +
-      '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + p.name + '">' + p.name + '</td>' +
-      '<td><span style="background:var(--surface3);padding:2px 6px;border-radius:4px;font-size:11px;">' + catLabel + '</span></td>' +
-      '<td style="text-align:right;color:var(--blue);">' + (p.avgVintedPrice > 0 ? p.avgVintedPrice.toFixed(2) + '&euro;' : '&mdash;') + '</td>' +
-      '<td style="text-align:right;font-weight:600;">' + (p.avgMarketPrice > 0 ? p.avgMarketPrice.toFixed(2) + '&euro;' : '&mdash;') + '</td>' +
-      '<td style="text-align:right;font-weight:600;color:' + spreadColor + ';">' + spreadStr + '</td>' +
-      '<td style="text-align:right;color:var(--text2);">' + (p.vintedObservations || 0) + '</td>' +
-      '<td style="text-align:right;color:var(--text2);">' + (p.marketObservations || 0) + '</td>' +
-      '<td style="color:var(--text2);">' + (p.lastSeen || '&mdash;') + '</td>' +
-      '<td style="color:' + trendColor + ';font-weight:600;">' + trendIcon + ' ' + trendLabel + '</td>' +
-      '<td>' + linksCell + '</td>' +
-      '</tr>';
-  });
-  tbody.innerHTML = html;
-}
-
-// ─── Refresh all data ─────────────────────────────────────
 async function refreshAll() {
   await Promise.all([
     updateStatus(),
@@ -3267,7 +3026,6 @@ async function refreshAll() {
     updateHistory(),
     updatePortfolio(),
     updateAgents(),
-    updatePriceDbBadge(),
     // V10: mise à jour badge orchestrateur (pas le panel entier, juste le status)
     (async function() {
       var data = await fetchJson('/api/orchestrator-status');
@@ -4088,8 +3846,6 @@ document.addEventListener('DOMContentLoaded', function() {
   setInterval(loadPortfolio, 60000);
   updateEbayQuota();
   setInterval(updateEbayQuota, 60000);
-  updatePriceDbBadge();
-  setInterval(updatePriceDbBadge, 120000);
   loadPerformanceCharts();
   setInterval(loadPerformanceCharts, 60000);
 

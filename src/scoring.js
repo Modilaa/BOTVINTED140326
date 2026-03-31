@@ -45,7 +45,7 @@ function coefficientOfVariation(prices) {
  *
  * Tier 1 : Qualité du matching texte (0-40)
  * Tier 2 : Fiabilité de la source (0-20)
- * Tier 3 : Vérification vision GPT-4o mini (0-40) — le facteur décisif
+ * Tier 3 : Vérification vision GPT-4o mini (0-50) — score granulaire GPT
  *
  * Score final typique :
  *   Vision confirmée  : 80-100 → ACHAT
@@ -79,8 +79,8 @@ function computeConfidence(opp) {
     else if (ms >= 4 && isEbaySource)      textScore = 25; // Match correct + ventes eBay réelles
     else if (ms >= 4)                      textScore = 20; // Match correct seul
     else                                   textScore = 10; // Match faible
-  } else if (src === 'local-database' || src === 'pokemon-tcg-api' || src === 'ygoprodeck') {
-    // API niche ou base locale — matching texte déjà fait lors de l'indexation
+  } else if (src === 'pokemon-tcg-api' || src === 'ygoprodeck') {
+    // API niche — matching texte déjà fait lors de l'indexation
     textScore = 30;
   }
 
@@ -91,11 +91,6 @@ function computeConfidence(opp) {
     case 'ygoprodeck':
       sourceScore = 20; // APIs dédiées — très fiables
       break;
-    case 'local-database': {
-      const sc = opp.scanCount || 0;
-      sourceScore = sc >= 10 ? 20 : sc >= 5 ? 15 : sc >= 3 ? 10 : 5;
-      break;
-    }
     case 'ebay-browse-api':
       sourceScore = matchedSales.length >= 3 ? 20 : 10; // 3+ ventes = source fiable
       break;
@@ -120,17 +115,22 @@ function computeConfidence(opp) {
   const isNicheApi = ['pokemon-tcg-api', 'ygoprodeck', 'pokemontcg-api'].includes(src);
   const singleObsHardGate = matchedSales.length < 2 && !isNicheApi;
 
-  // === TIER 3 : Vérification Vision (0-40) ===
-  // GPT-4o mini : match = +40, uncertain = +15 (à review), reject = 0 immédiat
+  // === TIER 3 : Vérification Vision (0-50) ===
+  // GPT-4o mini retourne un confidenceScore granulaire (0-100), mappé sur 0-50 pts
+  // match = 25-50 pts (selon confiance GPT), uncertain = 10-25 pts, reject = 0 immédiat
   let visionScore = 0;
   let visionLabel = 'non vérifié';
   if (opp.visionVerified && opp.visionResult) {
     if (opp.visionResult.sameCard === true) {
-      visionScore = 40; // GPT confirme — c'est le bon produit
-      visionLabel = 'GPT confirmé ✅';
+      // Score granulaire : confidence GPT (60-100) → mappé sur 25-50 pts
+      const gptConf = (typeof opp.visionResult.confidence === 'number') ? opp.visionResult.confidence : 90;
+      visionScore = Math.round(25 + (Math.min(100, Math.max(60, gptConf)) - 60) * 25 / 40);
+      visionLabel = `GPT confirmé ${gptConf}% ✅`;
     } else if (opp.visionResult.sameCard === 'uncertain') {
-      visionScore = 15; // GPT incertain — candidate pour review manuel
-      visionLabel = 'GPT incertain 🔶';
+      // Uncertain : confidence GPT (20-55) → mappé sur 10-25 pts
+      const gptConf = (typeof opp.visionResult.confidence === 'number') ? opp.visionResult.confidence : 45;
+      visionScore = Math.round(10 + (Math.min(55, Math.max(20, gptConf)) - 20) * 15 / 35);
+      visionLabel = `GPT incertain ${gptConf}% 🔶`;
     } else if (opp.visionResult.sameCard === false) {
       opp.confidenceBreakdown = { textScore, sourceScore, visionScore: 0, visionLabel: 'GPT rejeté ❌', belowAvgBoost: 0, total: 0 };
       return 0; // GPT dit produit clairement différent — rejet immédiat
@@ -144,11 +144,8 @@ function computeConfidence(opp) {
       if (bestImg >= (budgetSkipped ? 0.60 : 0.85))      { visionScore = 25; visionLabel = `hash local ${Math.round(bestImg*100)}% ✓`; }
       else if (bestImg >= (budgetSkipped ? 0.40 : 0.75)) { visionScore = 15; visionLabel = `hash local ${Math.round(bestImg*100)}% ~`; }
       // else visionScore = 0 — hash faible
-    } else if (src === 'local-database') {
-      visionScore = 15; // DB locale pré-vérifiée — bénéfice du doute
-      visionLabel = 'base locale (bénéfice du doute)';
     }
-    // Pas d'image du tout + pas local-db → visionScore = 0
+    // Pas d'image du tout → visionScore = 0
   }
 
   // === PÉNALITÉ CONDITION : occasion Vinted vs neuf eBay ===
@@ -166,46 +163,8 @@ function computeConfidence(opp) {
     }
   }
 
-  // === CHEMIN B : Prix très en dessous de la moyenne Vinted en base ===
-  // Compare au prix moyen de CE produit spécifique (même titre normalisé), pas à la catégorie.
-  // Conditions : >= 5 observations du même produit ET titre suffisamment spécifique (>= 3 tokens).
-  let belowAvgBoost = 0;
-  try {
-    const db = getPriceDb();
-    if (db && db.getProductInfo) {
-      // Garde de spécificité : titre trop générique (< 3 mots) → skip
-      const titleTokens = (opp.title || '').toLowerCase()
-        .replace(/[^a-z0-9\s]/g, ' ').trim().split(/\s+/).filter(t => t.length > 1);
-      const isSpecific = titleTokens.length >= 3;
-
-      if (isSpecific) {
-        const productInfo = db.getProductInfo(opp.title || '', opp.search || '');
-        // Require >= 5 observations du même produit (pas de la catégorie entière)
-        if (productInfo && (productInfo.vintedObservations || 0) >= 5 && productInfo.avgVintedPrice > 0) {
-          const currentPrice = opp.vintedBuyerPrice || opp.vintedListedPrice || 0;
-          if (currentPrice > 0) {
-            const ratio = currentPrice / productInfo.avgVintedPrice;
-            if (ratio <= 0.6) {
-              // 40%+ en dessous de la moyenne → quasi-certitude de bonne affaire → score plancher 95
-              belowAvgBoost = 95;
-            } else if (ratio <= 0.7) {
-              // 30%+ en dessous → très bon signal → score plancher 90
-              belowAvgBoost = 90;
-            } else if (ratio <= 0.8) {
-              // 20%+ en dessous → signal positif → score plancher 75
-              belowAvgBoost = 75;
-            }
-          }
-        }
-      }
-    }
-  } catch(e) {}
-
   // === SCORE FINAL ===
   let total = Math.min(100, textScore + sourceScore + visionScore);
-
-  // Chemin B peut hausser le score indépendamment des autres tiers
-  if (belowAvgBoost > total) total = belowAvgBoost;
 
   // === PÉNALITÉS ===
   // Règles apprises via feedback
@@ -216,10 +175,10 @@ function computeConfidence(opp) {
     if (penalty < 0) total = Math.max(0, total + penalty);
   } catch(e) {}
 
-  // Vendeur suspect → plafond à 40 (sauf si Chemin B très fort)
+  // Vendeur suspect → plafond à 40
   const sellerScore = opp.sellerScore;
   if (sellerScore && typeof sellerScore === 'object' && sellerScore.score < 20) {
-    total = Math.min(total, belowAvgBoost >= 90 ? 60 : 40);
+    total = Math.min(total, 40);
   }
 
   // Hard gate : 1 seule observation (non-niche) → plafond à 45 (ne peut jamais devenir opportunité active)
@@ -228,32 +187,15 @@ function computeConfidence(opp) {
     total = Math.min(total, 45);
   }
 
-  // Hard gate assoupli : sans GPT Vision ET sans signal Chemin B fort, on plafonne à 59
+  // Hard gate assoupli : sans GPT Vision ET sans signal fort, on plafonne à 59
   // 50-59 = opportunité visible mais marquée "à vérifier manuellement"
   // GPT confirmé → pas de plafond (score libre jusqu'à 100)
   const gptConfirmed = opp.visionVerified && opp.visionResult && opp.visionResult.sameCard === true;
-  const hasStrongSignal = belowAvgBoost >= 75 ||
-    (textScore >= 30 && sourceScore >= 15 && visionScore >= 15) ||
-    (src === 'local-database' && textScore >= 30 && visionScore >= 15);
+  const hasStrongSignal = (textScore >= 30 && sourceScore >= 15 && visionScore >= 15);
   if (!gptConfirmed && !hasStrongSignal) {
     total = Math.min(total, 59);
   }
 
-  // === BONUS/MALUS TREND ===
-  // Trend rising = signal d'achat fort. Falling = risque de dépréciation. Volatile = incertitude.
-  let trendBonus = 0;
-  try {
-    const db = getPriceDb();
-    if (db && db.getTrend && db.generateKey && total > 0) {
-      const key = db.generateKey(opp.title || '');
-      const trend = db.getTrend(key);
-      const volatility = db.getVolatility(key);
-      if (trend === 'rising') trendBonus += 5;
-      else if (trend === 'falling') trendBonus -= 5;
-      if (volatility === 'volatile') trendBonus -= 3;
-      if (trendBonus !== 0) total = Math.min(100, Math.max(0, total + trendBonus));
-    }
-  } catch(e) {}
 
   // Determine price reliability for breakdown
   const priceReliability =
@@ -262,7 +204,7 @@ function computeConfidence(opp) {
     'low';
 
   // Stocker le breakdown sur l'objet opportunité (effet de bord non-cassant)
-  opp.confidenceBreakdown = { textScore, sourceScore, visionScore, visionLabel, belowAvgBoost, trendBonus, priceReliability, total };
+  opp.confidenceBreakdown = { textScore, sourceScore, visionScore, visionLabel, priceReliability, total };
 
   return total;
 }
@@ -276,15 +218,6 @@ function getSeenListings() {
     try { _seenListings = require('./seen-listings'); } catch { _seenListings = null; }
   }
   return _seenListings;
-}
-
-// Lazy-load price-database for recording history
-let _priceDb = null;
-function getPriceDb() {
-  if (!_priceDb) {
-    try { _priceDb = require('./price-database'); } catch { _priceDb = null; }
-  }
-  return _priceDb;
 }
 
 /**
@@ -432,14 +365,6 @@ function computeLiquidity(opp) {
       turnover: turnoverPoints
     }
   };
-
-  // Enregistre l'historique de liquidité dans price-database
-  try {
-    const db = getPriceDb();
-    if (db && db.recordLiquidity && opp.title && opp.search) {
-      db.recordLiquidity(opp.title, opp.search, result);
-    }
-  } catch { /* ignore — pas bloquant */ }
 
   return result;
 }

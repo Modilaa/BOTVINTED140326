@@ -12,7 +12,6 @@
  * Format de sortie unifié: { matchedSales, pricingSource, bestMatch, marketPrice, confidence }
  */
 
-const priceDatabase = require('./price-database');
 const { checkAndAlert } = require('./api-monitor');
 const { getYugiohMarketPrice } = require('./marketplaces/ygoprodeck');
 const { getMarketPrice: getPokemonMarketPriceUnified } = require('./marketplaces/pokemon-unified');
@@ -180,34 +179,6 @@ async function tryEbayHtmlScraping(listing, config, search) {
   return null;
 }
 
-// ─── Local DB reliability check ─────────────────────────────────────────────
-
-const VERIFIED_API_SOURCES = new Set([
-  'ebay-browse-api', 'pokemontcg-api', 'ygoprodeck'
-]);
-
-/**
- * La base locale est fiable SEULEMENT si :
- * - Condition B : au moins 1 observation marché d'une API vérifiée AVEC une URL directe
- * - OU Condition A : 3+ observations Vinted distinctes (dédupliquées par vintedId)
- * Si aucune condition n'est remplie → forcer un appel API en temps réel.
- */
-function isLocalDbReliable(title, category) {
-  const entry = priceDatabase.getProductInfo(title, category);
-  if (!entry || !entry.marketPrices || entry.marketPrices.length === 0) return false;
-
-  // Condition B : au moins 1 observation API vérifiée avec URL directe
-  const hasVerifiedApi = entry.marketPrices.some(mp =>
-    mp.url && VERIFIED_API_SOURCES.has(mp.source)
-  );
-  if (hasVerifiedApi) return true;
-
-  // Condition A : 3+ observations Vinted distinctes (déjà dédupliquées par vintedId)
-  const distinctVinted = (entry.vintedPrices || []).length;
-  if (distinctVinted >= 3) return true;
-
-  return false;
-}
 
 // ─── Route Definitions ──────────────────────────────────────────────────────
 
@@ -340,18 +311,6 @@ async function routeSneaks(listing, config, search) {
  *   Transmis au Browse API pour adapter la catégorie et les queries.
  * @returns {object|null} - { matchedSales, pricingSource, bestMatch, marketPrice, confidence }
  */
-// ─── pricingSource → DB category ─────────────────────────────────────────
-
-function dbCategory(pricingSource) {
-  switch (pricingSource) {
-    case 'pokemon-tcg-api': return 'pokemon';
-    case 'ygoprodeck':      return 'yugioh';
-    // rebrickable supprimé
-    case 'discogs':         return 'discogs';
-    case 'sneaks-api':      return 'sneakers';
-    default:                return pricingSource || 'misc';
-  }
-}
 
 async function getPrice(listing, pricingSource, config, search) {
   // Check in-memory cache first
@@ -359,71 +318,6 @@ async function getPrice(listing, pricingSource, config, search) {
   if (cached) {
     return cached;
   }
-
-  const category = dbCategory(pricingSource);
-
-  // ── Check local price database ──────────────────────────────────────────
-  const dbResult = priceDatabase.lookupPrice(listing.title, category);
-  const dbReliable = dbResult && dbResult.source !== 'local-database-stale' && isLocalDbReliable(listing.title, category);
-  if (dbResult && !dbReliable) {
-    console.log(`  [price-db] Cache local ignoré (non fiable): "${listing.title.slice(0, 50)}" — ${dbResult.scanCount} obs marché, ${dbResult.vintedObservations || 0} obs Vinted`);
-  }
-  if (dbReliable) {
-    // Validation : le titre caché doit partager au moins un mot significatif avec le titre Vinted
-    const ebayTitle = dbResult.ebayListingTitle || '';
-    if (ebayTitle) {
-      const SKIP = new Set(['pokemon','carte','card','cards','holo','ex','gx','vmax','vstar','psa','promo','rare','ultra','gold','silver','topps','chrome','panini','lego','funko','bandai']);
-      const getTokens = (t) => (t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(w => w.length >= 4 && !SKIP.has(w));
-      const vTokens = getTokens(listing.title);
-      const eTokens = getTokens(ebayTitle);
-      const shared = vTokens.filter(t => eTokens.some(e => e === t || e.includes(t) || t.includes(e)));
-      if (vTokens.length > 0 && eTokens.length > 0 && shared.length === 0) {
-        console.log(`  [price-db] Cache local REJETÉ (mismatch): "${listing.title.slice(0, 40)}" ≠ "${ebayTitle.slice(0, 40)}"`);
-        // Ne pas utiliser ce résultat caché — continuer vers les APIs
-      } else {
-        // Match OK — utiliser le cache
-        return buildLocalDbResult();
-      }
-    } else {
-      return buildLocalDbResult();
-    }
-  }
-
-  // Fonction helper pour construire le résultat local-database
-  function buildLocalDbResult() {
-    console.log(`  [price-db] Cache local fiable: "${listing.title.slice(0, 50)}" → ${dbResult.price}€ (${dbResult.scanCount} obs marché, ${dbResult.ageDays}j)`);
-    const localSale = {
-      title: dbResult.ebayListingTitle || listing.title,
-      price: dbResult.price,
-      url: dbResult.ebayUrl || '',
-      imageUrl: dbResult.ebayImageUrl || '',
-      source: 'local-database',
-      marketplace: dbResult.ebayUrl ? 'ebay' : 'local-database'
-    };
-    const localResult = {
-      matchedSales: [localSale],
-      pricingSource: 'local-database',
-      bestMatch: localSale.title,
-      marketPrice: dbResult.price,
-      confidence: 'high',
-      scanCount: dbResult.scanCount,
-      dbListings: dbResult.listings || [],
-      sourceUrls: []
-    };
-    // Build sourceUrls from stored eBay listings
-    localResult.sourceUrls = buildSourceUrls(localResult);
-    // If still empty but we have a URL from the DB, add it manually
-    if (localResult.sourceUrls.length === 0 && dbResult.ebayUrl) {
-      localResult.sourceUrls = [{
-        url: dbResult.ebayUrl,
-        title: dbResult.ebayListingTitle || listing.title,
-        price: dbResult.price,
-        platform: 'ebay'
-      }];
-    }
-    setCachedPrice(listing, localResult);
-    return localResult;
-  } // fin buildLocalDbResult
 
   let result = null;
 
@@ -450,24 +344,6 @@ async function getPrice(listing, pricingSource, config, search) {
     default:
       result = await routeEbay(listing, config, search);
       break;
-  }
-
-  // ── Record price in local database ──────────────────────────────────────
-  if (result && result.marketPrice > 0) {
-    // Pass the first matched eBay listing data for traceability
-    const firstSale = result.matchedSales && result.matchedSales[0];
-    const listingData = (firstSale && firstSale.url) ? {
-      url: firstSale.url,
-      listingTitle: firstSale.title || '',
-      imageUrl: firstSale.imageUrl || ''
-    } : null;
-    priceDatabase.recordPrice(
-      listing.title,
-      category,
-      result.marketPrice,
-      result.pricingSource || pricingSource,
-      listingData
-    );
   }
 
   // Attach sourceUrls to the result
@@ -530,8 +406,8 @@ function buildSourceUrls(result) {
       });
     }
 
-    // 4. eBay URL (for eBay-sourced results or local-database with stored eBay URL)
-    if (sale.url && ((sale.marketplace || '').includes('ebay') || sale.source === 'local-database') && !seen.has(sale.url)) {
+    // 4. eBay URL (for eBay-sourced results)
+    if (sale.url && (sale.marketplace || '').includes('ebay') && !seen.has(sale.url)) {
       seen.add(sale.url);
       urls.push({
         url: sale.url,

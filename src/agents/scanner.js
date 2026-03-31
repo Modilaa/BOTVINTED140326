@@ -24,7 +24,6 @@ const { getFacebookMarketplaceListings }            = require('../marketplaces/f
 const { getCardmarketListings }                     = require('../marketplaces/cardmarket');
 const { getLeboncoinListings }                      = require('../marketplaces/leboncoin');
 const { purgeBlockedCache }                         = require('../http');
-const { recordVintedPrice }                         = require('../price-database');
 const { getPrice: getPriceViaRouter }               = require('../price-router');
 const seenListings                                  = require('../seen-listings');
 const { buildProfitAnalysis }                       = require('../profit');
@@ -387,11 +386,6 @@ async function run(previousListings = []) {
       for (let i = 0; i < itemsToProcess.length; i++) {
         const listing = itemsToProcess[i];
         try {
-          // Enregistrement prix Vinted pour tracking
-          if (listing.id && listing.buyerPrice > 0 && (!listing.platform || listing.platform === 'vinted')) {
-            recordVintedPrice(listing.title, search.name, listing.buyerPrice, listing.id, listing.vintedCountry || 'be');
-          }
-
           // Skip annonces déjà traitées (résultat définitif en cache)
           if (listing.id && seenListings.isAlreadySeen(listing.id)) {
             console.log(`[seen] Skip ${listing.id} "${listing.title.slice(0, 50)}" (${seenListings.getSeenResult(listing.id)})`);

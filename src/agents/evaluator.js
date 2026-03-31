@@ -165,7 +165,7 @@ function evaluateCriteria(row, sprintContract, minConfidence, minProfEur, minPro
   const itemMargin       = row.profit ? row.profit.profitPercent : 0;
   const priceObs         = (row.priceDetails && row.priceDetails.observations) ||
                            (row.matchedSales ? row.matchedSales.length : 0);
-  const isPriceFromApi   = ['pokemon-tcg', 'ygoprodeck', 'rebrickable', 'pokemon-tcg-api', 'ebay-browse-api', 'local-database', 'discogs'].includes(row.pricingSource);
+  const isPriceFromApi   = ['pokemon-tcg', 'ygoprodeck', 'rebrickable', 'pokemon-tcg-api', 'ebay-browse-api', 'discogs'].includes(row.pricingSource);
   const liqScore         = (row.liquidity && typeof row.liquidity === 'object') ? row.liquidity.score : 0;
 
   const checks = [
@@ -461,7 +461,7 @@ async function run(candidates = null) {
       const minProfEur = Math.max(5,  search && search.minProfitEur     != null ? search.minProfitEur     : config.minProfitEur);
       const minProfPct = Math.max(20, search && search.minProfitPercent != null ? search.minProfitPercent : config.minProfitPercent);
       const src        = row.pricingSource || 'unknown';
-      const minLiq     = src === 'local-database' ? 20 : 30;
+      const minLiq     = 30;
 
       // ─── Pattern 5 : Seuils durs par critère ─────────────────────────────
       const { checks, failedCriteria, passed } = evaluateCriteria(

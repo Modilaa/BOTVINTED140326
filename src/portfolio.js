@@ -80,31 +80,14 @@ function markAsSold(id, soldPrice) {
 }
 
 /**
- * Updates current market prices from price-database for all in_stock items.
- * @returns {Array} Updated in_stock items
+ * Updates current market prices for all in_stock items.
+ * Note: Now uses live pricing from price-router during scanning.
+ * @returns {Array} Updated in_stock items (empty as prices are updated during scan)
  */
 function updateMarketPrices() {
-  let priceDb;
-  try { priceDb = require('./price-database'); } catch { return []; }
-
-  const portfolio = loadPortfolio();
-  const today = new Date().toISOString().slice(0, 10);
-  let changed = false;
-
-  for (const item of portfolio) {
-    if (item.status !== 'in_stock') continue;
-    try {
-      const entry = priceDb.lookupPrice(item.title, item.category);
-      if (entry && entry.price > 0) {
-        item.currentMarketPrice = entry.price;
-        item.lastPriceUpdate = today;
-        changed = true;
-      }
-    } catch { /* ignore */ }
-  }
-
-  if (changed) savePortfolio(portfolio);
-  return portfolio.filter((p) => p.status === 'in_stock');
+  // Prices are now updated during the scan via price-router
+  // This function is kept for compatibility but is no longer used
+  return [];
 }
 
 /**

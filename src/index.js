@@ -18,7 +18,6 @@ const { getCardmarketListings, clearMemoryCache: clearCardmarketCache } = requir
 const { getLeboncoinListings, clearMemoryCache: clearLeboncoinCache } = require('./marketplaces/leboncoin');
 const { purgeBlockedCache, purgeExpiredDiskCache } = require('./http');
 const { buildTelegramMessage, sendTelegramMessage, sendOpportunityAlert } = require('./notifier');
-const { detectTrends, getStats: getPriceDbStats, recordVintedPrice, getUnderPricedProducts } = require('./price-database');
 const { checkAndAlert, errorCounts: apiErrorCounts } = require('./api-monitor');
 const { logDebugEvent } = require('./debug-protocol');
 const { buildProfitAnalysis, isOpportunity } = require('./profit');
@@ -432,11 +431,6 @@ async function runScan(previousListings) {
     for (let i = 0; i < itemsToProcess.length; i += 1) {
       const listing = itemsToProcess[i];
       try {
-        // Record Vinted price for every listing (before seen-check, to always track prices)
-        if (listing.id && listing.buyerPrice > 0 && (!listing.platform || listing.platform === 'vinted')) {
-          recordVintedPrice(listing.title, search.name, listing.buyerPrice, listing.id, listing.vintedCountry || 'be');
-        }
-
         // Skip listings already processed in the last 24h with a definitive result
         if (listing.id && seenListings.isAlreadySeen(listing.id)) {
           console.log(`[seen] Skip ${listing.id} "${listing.title.slice(0, 50)}" (déjà traité: ${seenListings.getSeenResult(listing.id)})`);
@@ -581,7 +575,7 @@ async function runScan(previousListings) {
           const _failsProfit = !profit || profit.profit < _minProfitEur;
           const _failsMargin = !profit || profit.profitPercent < _minProfitPct;
           const _failsConfidence = row.confidence < 50;
-          const _minLiquidity = actualPricingSource === 'local-database' ? 25 : 40;
+          const _minLiquidity = 40;
           const _failsLiquidity = _liquidityScore < _minLiquidity;
 
           const _failsHard = _failsProfit || _failsMargin; // profit/marge = critères durs
@@ -901,13 +895,6 @@ async function runOnce() {
   clearCardmarketCache();
   clearLeboncoinCache();
 
-  // Detect price trends at end of scan cycle
-  try {
-    const trends = detectTrends();
-    if (trends.length > 0) {
-      console.log(`[Tendances] ${trends.length} tendance(s) détectée(s): ${trends.map(t => `${t.name} ${t.trend.direction === 'rising' ? '📈' : '📉'} ${t.trend.changePercent > 0 ? '+' : ''}${t.trend.changePercent}%`).slice(0, 3).join(', ')}`);
-    }
-  } catch { /* non-bloquant */ }
 
   console.log(`Scan termine. ${result.scannedCount} annonces analysees (${merged.searchedListings.length} total avec historique).`);
   console.log(`${merged.opportunities.length} opportunite(s) detectee(s).`);
@@ -922,8 +909,6 @@ async function runOnce() {
 
     const opportunitiesFound = result.opportunities.length;
     if (opportunitiesFound > 0) {
-      const dbStats = getPriceDbStats();
-
       // Lecture budget Apify du jour
       let apifyStr = 'N/A';
       try {
@@ -949,7 +934,6 @@ async function runOnce() {
         '',
         `🔍 Annonces scannées: ${result.scannedCount}`,
         `✅ Opportunités trouvées: ${opportunitiesFound}`,
-        `📊 Base de prix: ${dbStats.totalProducts} produits`,
         `🔋 eBay: ${ebayStr}${ebayCallsStr}`,
         `🔋 Apify: ${apifyStr}`
       ];
@@ -1050,27 +1034,6 @@ async function runOnce() {
     } catch { /* non-bloquant */ }
   }
 
-  // ─── Axe 4: Enrichissement proactif des prix marché ─────────────────────
-  // Tous les 2 scans, enrichit les produits avec peu d'observations marché
-  if (_scanCounter % 2 === 0) {
-    try {
-      const toEnrich = getUnderPricedProducts(5);
-      if (toEnrich.length > 0) {
-        console.log(`[enrichment] Enrichissement proactif de ${toEnrich.length} produit(s)...`);
-        const ENRICHMENT_PRICING_MAP = { pokemon: 'pokemon-tcg-api', yugioh: 'ygoprodeck' };
-        for (const product of toEnrich) {
-          try {
-            const pricingSrc = ENRICHMENT_PRICING_MAP[product.category] || 'ebay';
-            const fakeListing = { title: product.name, url: '', price: product.avgVintedPrice || 0 };
-            const routerResult = await getPriceViaRouter(fakeListing, pricingSrc, config);
-            if (routerResult && routerResult.marketPrice > 0) {
-              console.log(`[enrichment] ✅ ${product.name.slice(0, 40)} → ${routerResult.marketPrice.toFixed(2)}€ (${routerResult.source})`);
-            }
-          } catch { /* continue silently */ }
-        }
-      }
-    } catch { /* non-bloquant */ }
-  }
 
   // ─── V10: Orchestrateur Health Check (toutes les 2 boucles) ────────────────
   // Analyse les fichiers scanner-health.json + evaluator-health.json,

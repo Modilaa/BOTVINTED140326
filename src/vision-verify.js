@@ -40,11 +40,19 @@ Les 3 verdicts possibles :
 - "uncertain" = au moins 1 critère est "uncertain" mais AUCUN n'est false. Pourrait être le même produit.
 - "no_match" = au moins 1 critère est CLAIREMENT false. Produit différent confirmé.
 
+Évalue aussi ta CONFIANCE GLOBALE dans le match (0-100) :
+- 90-100 : tu es certain que c'est exactement le même produit, même variante, même condition
+- 70-89 : très probable, tu vois les mêmes marquages/numéros mais un petit doute subsiste (angle, flou)
+- 50-69 : probable mais plusieurs éléments ne sont pas vérifiables sur les images
+- 30-49 : possible mais trop de doutes pour confirmer
+- 0-29 : peu probable ou clairement différent
+
 Réponds UNIQUEMENT avec du JSON valide, sans markdown, sans texte supplémentaire :
 {
   "sameProduct": true or false or "uncertain",
   "sameVariant": true or false or "uncertain",
   "conditionComparable": true or false,
+  "confidenceScore": 0-100,
   "verdict": "match" or "uncertain" or "no_match",
   "reason": "explication courte en une ligne",
   "report": {
@@ -141,6 +149,11 @@ async function compareCardImages(vintedImageUrl, ebayImageUrl) {
       const variantFalse = parsed.sameVariant === false;
       const conditionOk = parsed.conditionComparable !== false;
 
+      // Récupérer le confidenceScore granulaire de GPT (0-100), fallback sur ancienne logique
+      const gptScore = (typeof parsed.confidenceScore === 'number' && parsed.confidenceScore >= 0 && parsed.confidenceScore <= 100)
+        ? parsed.confidenceScore
+        : null;
+
       // Any CLEAR rejection (false) → no_match
       const hasHardReject = productFalse || variantFalse;
       // All confirmed → match
@@ -155,16 +168,17 @@ async function compareCardImages(vintedImageUrl, ebayImageUrl) {
       } else if (allConfirmed) {
         parsed.verdict = 'match';
         parsed.sameCard = true;
-        parsed.confidence = 90;
+        // Utiliser le score GPT granulaire, borné à [60, 100] pour un match confirmé
+        parsed.confidence = gptScore !== null ? Math.max(60, Math.min(100, gptScore)) : 90;
       } else if (productVariantMatch && !conditionOk) {
         parsed.verdict = 'match_condition_diff';
         parsed.sameCard = true;
-        parsed.confidence = 60;
+        parsed.confidence = gptScore !== null ? Math.max(40, Math.min(70, gptScore)) : 60;
       } else {
         // At least one "uncertain", no hard reject → uncertain
         parsed.verdict = 'uncertain';
         parsed.sameCard = 'uncertain';
-        parsed.confidence = 45;
+        parsed.confidence = gptScore !== null ? Math.max(20, Math.min(55, gptScore)) : 45;
       }
 
       parsed.summary = parsed.reason || '';

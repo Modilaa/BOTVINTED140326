@@ -414,7 +414,7 @@ async function run(candidates = null) {
       const minProfEur = Math.max(5,  search && search.minProfitEur     != null ? search.minProfitEur     : config.minProfitEur);
       const minProfPct = Math.max(20, search && search.minProfitPercent != null ? search.minProfitPercent : config.minProfitPercent);
       const src        = row.pricingSource || 'unknown';
-      const minLiq     = src === 'local-database' ? 25 : 40;
+      const minLiq     = 40;
 
       // ─── Pattern 5 : Seuils durs par critère ─────────────────────────────
       const { checks, failedCriteria, passed } = evaluateCriteria(
