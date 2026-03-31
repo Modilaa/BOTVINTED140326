@@ -31,6 +31,16 @@ let tokenExpiresAt = 0;
 // wasting time on 30-second waits.
 let _ebayQuotaExhausted = false;
 
+// ─── Compteur d'appels par scan ──────────────────────────────────────────────
+// Budget API par scan pour ne pas cramer les 5000 appels/jour en un cycle.
+// Chaque searchBrowseApi() compte comme 1 appel.
+let _apiCallsThisScan = 0;
+const DEFAULT_MAX_CALLS_PER_SCAN = 200; // ~25 scans/jour × 200 = 5000
+let _maxCallsPerScan = Number(process.env.EBAY_MAX_CALLS_PER_SCAN) || DEFAULT_MAX_CALLS_PER_SCAN;
+
+function getApiCallsThisScan() { return _apiCallsThisScan; }
+function getMaxCallsPerScan() { return _maxCallsPerScan; }
+
 function markQuotaExhausted() {
   if (!_ebayQuotaExhausted) {
     _ebayQuotaExhausted = true;
@@ -40,6 +50,7 @@ function markQuotaExhausted() {
 
 function resetEbayQuota() {
   _ebayQuotaExhausted = false;
+  _apiCallsThisScan = 0;
 }
 
 /**
@@ -289,6 +300,15 @@ async function searchBrowseApi(query, token, config, categoryId) {
   // Skip immediately if quota is known to be exhausted — no waiting, no retrying
   if (_ebayQuotaExhausted) return [];
 
+  // Budget par scan : arrêter proprement avant d'atteindre le plafond journalier
+  if (_apiCallsThisScan >= _maxCallsPerScan) {
+    if (_apiCallsThisScan === _maxCallsPerScan) {
+      console.log(`    [eBay] Budget scan atteint (${_maxCallsPerScan} appels) → stop Browse API pour ce scan`);
+      _apiCallsThisScan++; // +1 pour ne logger qu'une fois
+    }
+    return [];
+  }
+
   const baseUrl = 'https://api.ebay.com/buy/browse/v1/item_summary/search';
   const url = new URL(baseUrl);
   url.searchParams.set('q', query);
@@ -301,71 +321,58 @@ async function searchBrowseApi(query, token, config, categoryId) {
   url.searchParams.set('sort', '-price'); // Highest price first (often sold items)
 
   // Filter: only items with price, prefer sold/ended items
-  // The Browse API supports filter by price, condition, etc.
-  // We use itemLocationCountry to get European results
   const filters = [
     'price:[1..500]',
     'priceCurrency:EUR'
   ];
   url.searchParams.set('filter', filters.join(','));
 
-  // X-EBAY-C-MARKETPLACE-ID for European markets
-  // Réduit à 2 marketplaces pour limiter les appels API (rate limit)
-  const marketplaceIds = ['EBAY_GB', 'EBAY_DE'];
+  // UN SEUL marketplace (EBAY_GB = le plus gros marché européen)
+  // Économise 50% des appels API vs 2 marketplaces
+  const marketplaceId = 'EBAY_GB';
 
-  const allItems = [];
+  _apiCallsThisScan++;
 
-  for (const marketplaceId of marketplaceIds) {
-    try {
-      const fetchOpts = {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'X-EBAY-C-MARKETPLACE-ID': marketplaceId,
-          'Accept': 'application/json'
-        },
-        signal: AbortSignal.timeout(config.requestTimeoutMs || 30000)
-      };
+  try {
+    const fetchOpts = {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'X-EBAY-C-MARKETPLACE-ID': marketplaceId,
+        'Accept': 'application/json'
+      },
+      signal: AbortSignal.timeout(config.requestTimeoutMs || 30000)
+    };
 
-      // Bypass proxy — API officielle eBay, pas besoin de proxy
-      const dispatcher = getDirectDispatcher();
-      if (dispatcher) fetchOpts.dispatcher = dispatcher;
+    // Bypass proxy — API officielle eBay, pas besoin de proxy
+    const dispatcher = getDirectDispatcher();
+    if (dispatcher) fetchOpts.dispatcher = dispatcher;
 
-      let response = await fetch(url.toString(), fetchOpts);
+    let response = await fetch(url.toString(), fetchOpts);
 
-      // Rate limit 429 → retry ONCE immediately (no 30s wait).
-      // If still rate-limited, mark quota exhausted and bail out of all calls.
+    // Rate limit 429 → retry ONCE immediately (no 30s wait).
+    // If still rate-limited, mark quota exhausted and bail out of all calls.
+    if (response.status === 429) {
+      console.log(`    eBay Browse API 429 — retry immédiat`);
+      _apiCallsThisScan++;
+      response = await fetch(url.toString(), fetchOpts);
       if (response.status === 429) {
-        console.log(`    eBay Browse API 429 sur ${marketplaceId} — retry immédiat`);
-        response = await fetch(url.toString(), fetchOpts);
-        if (response.status === 429) {
-          console.log(`    eBay Browse API quota épuisé (429 persistant) → skip définitif`);
-          markQuotaExhausted();
-          return allItems;
-        }
+        console.log(`    eBay Browse API quota épuisé (429 persistant) → skip définitif`);
+        markQuotaExhausted();
+        return [];
       }
-
-      if (!response.ok) {
-        // Non-fatal: try next marketplace
-        continue;
-      }
-
-      const data = await response.json();
-      const items = data.itemSummaries || [];
-      allItems.push(...items);
-
-      // Si le premier marketplace retourne des résultats, ne pas interroger le suivant
-      if (allItems.length > 0) break;
-
-      // Délai entre appels marketplace pour éviter rate limit
-      await new Promise(r => setTimeout(r, 500));
-    } catch (err) {
-      // Non-fatal: try next marketplace
-      console.log(`    eBay Browse API erreur ${marketplaceId}: ${err.message}`);
     }
-  }
 
-  return allItems;
+    if (!response.ok) {
+      return [];
+    }
+
+    const data = await response.json();
+    return data.itemSummaries || [];
+  } catch (err) {
+    console.log(`    eBay Browse API erreur ${marketplaceId}: ${err.message}`);
+    return [];
+  }
 }
 
 // ─── Item Normalization ─────────────────────────────────────────────────────
@@ -476,9 +483,11 @@ async function getEbaySoldListingsViaApi(title, config, search) {
   purgeExpiredCacheFiles(cacheDir, cacheTtlMs);
 
   // Builder de queries adapté au type de produit
+  // OPTIMISATION QUOTA: 1 seule variante de query (au lieu de 2)
+  // → divise les appels API par 2, et la 1ère query est la plus précise
   const queries = isNonTcg
-    ? buildNonTcgQueryVariants(title, 2)
-    : buildQueryVariants(title, 2);
+    ? buildNonTcgQueryVariants(title, 1)
+    : buildQueryVariants(title, 1);
 
   // Check cache first
   const cacheKey = crypto.createHash('sha1')
@@ -595,5 +604,7 @@ module.exports = {
   resetOAuthToken,
   getEbayQuota,
   markQuotaExhausted,
-  resetEbayQuota
+  resetEbayQuota,
+  getApiCallsThisScan,
+  getMaxCallsPerScan
 };

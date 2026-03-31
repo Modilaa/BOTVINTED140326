@@ -350,6 +350,31 @@ function normalizeComparableToken(token) {
   return t;
 }
 
+/**
+ * Extract TCG set code prefix from card titles.
+ * Yu-Gi-Oh: "YAP1-JP006" → "YAP1", "HC01-JP003" → "HC01", "RA04-FR029" → "RA04"
+ * Pokemon: "sv4pt5" → "sv4pt5", "swsh12pt5" → "swsh12pt5"
+ * One Piece: "ST01-012" → "ST01", "OP01-025" → "OP01"
+ */
+function extractTcgSetCode(title) {
+  const t = String(title || '');
+
+  // Yu-Gi-Oh set codes: 2-4 letters + 1-2 digits, followed by -XX (language) + digits
+  // Examples: YAP1-JP006, HC01-JP003, RA04-FR029, PHNI-EN001
+  const ygMatch = t.match(/\b([A-Z]{2,4}\d{1,2})-(?:JP|EN|FR|DE|IT|ES|PT|KR)\d{2,4}\b/i);
+  if (ygMatch) return ygMatch[1].toUpperCase();
+
+  // One Piece TCG: ST01-012, OP01-025, EB01-001
+  const opMatch = t.match(/\b([A-Z]{2}\d{2})-\d{3}\b/i);
+  if (opMatch) return opMatch[1].toUpperCase();
+
+  // Pokemon set codes: sv1, sv4pt5, swsh12, etc.
+  const pkMatch = t.match(/\b(sv\d+(?:pt\d+)?|swsh\d+(?:pt\d+)?|sm\d+|xy\d+|bw\d+)\b/i);
+  if (pkMatch) return pkMatch[1].toLowerCase();
+
+  return null;
+}
+
 function findCardNumberToken(rawTokens, comparableTokens, year, ignoredNumbers = []) {
   // Handle tokens like "-#113-" from eBay titles with dashes wrapping the number
   const dashWrappedToken = rawTokens.find((token) => /^-?#\d{1,4}-?$/i.test(token));
@@ -442,6 +467,8 @@ function extractCardSignature(title) {
     cardCategory = 'variant';
   }
 
+  const tcgSetCode = extractTcgSetCode(normalized);
+
   return {
     raw: normalized,
     allTokens: allComparableTokens,
@@ -460,7 +487,8 @@ function extractCardSignature(title) {
     cardCategory,
     specificTokens,
     identityTokens,
-    variantTokens
+    variantTokens,
+    tcgSetCode
   };
 }
 
@@ -536,14 +564,24 @@ function scoreSoldListing(vintedListing, soldListing) {
     (left.cardNumber && !right.allTokens.includes(left.cardNumber)) ||
     (right.cardNumber && !left.allTokens.includes(right.cardNumber));
 
-  // FLEXIBLE IDENTITY MATCHING: require at least 60% of identity tokens to match
-  // (was 100% — too strict, especially with FR→EN translations)
+  // STRICT IDENTITY MATCHING: le nom principal du produit doit être partagé
+  // On filtre les tokens génériques de catégorie (pokemon, yugioh, topps, etc.)
+  const CATEGORY_TOKENS = new Set(['pokemon', 'yugioh', 'yu-gi-oh', 'topps', 'panini', 'lego', 'funko', 'bandai', 'onepiece', 'carte', 'card', 'cards', 'cartes']);
+  const leftProductTokens = left.identityTokens.filter(t => !CATEGORY_TOKENS.has(t));
+  const leftTranslatedProductTokens = leftTranslated.identityTokens.filter(t => !CATEGORY_TOKENS.has(t));
+  const leftAllProductTokens = new Set([...leftProductTokens, ...leftTranslatedProductTokens]);
+  const rightProductTokens = right.identityTokens.filter(t => !CATEGORY_TOKENS.has(t));
+
+  // Le premier token produit de Vinted (le nom du Pokémon/personnage) doit exister côté eBay
+  const primaryProductMatch = leftAllProductTokens.size === 0 || rightProductTokens.length === 0 ||
+    [...leftAllProductTokens].some(t => rightProductTokens.includes(t));
+
   const sourceIdentityCount = left.identityTokens.length;
   const identityCoverageRatio = sourceIdentityCount === 0 ? 1 : sharedIdentityTokens.length / sourceIdentityCount;
   const identityFullCoverage = sourceIdentityCount === 0 ||
-    identityCoverageRatio >= 0.6;
-  const identityPartialOnly = sourceIdentityCount >= 2 && sharedIdentityTokens.length > 0 &&
-    identityCoverageRatio < 0.6;
+    (identityCoverageRatio >= 0.6 && primaryProductMatch);
+  const identityPartialOnly = !primaryProductMatch ||
+    (sourceIdentityCount >= 2 && sharedIdentityTokens.length > 0 && identityCoverageRatio < 0.6);
 
   // REVERSE COVERAGE: check how many eBay identity tokens are NOT in the Vinted listing
   // If eBay has many extra identity tokens (e.g. "Road To Euro Spain The Man"),
@@ -587,6 +625,11 @@ function scoreSoldListing(vintedListing, soldListing) {
     (left.serialNumber && right.cardNumber && ALPHANUM_CARD_CODE.test(right.cardNumber)) ||
     (right.serialNumber && left.cardNumber && ALPHANUM_CARD_CODE.test(left.cardNumber));
 
+  // TCG set code mismatch: if both sides have a set code and they differ → hard reject
+  const tcgSetMismatch = left.tcgSetCode && right.tcgSetCode &&
+    left.tcgSetCode !== right.tcgSetCode &&
+    leftTranslated.tcgSetCode !== right.tcgSetCode;
+
   const missingCritical =
     (left.year && right.year && left.year !== right.year) ||
     (left.cardNumber && right.cardNumber && left.cardNumber !== right.cardNumber) ||
@@ -601,7 +644,8 @@ function scoreSoldListing(vintedListing, soldListing) {
     hardCategoryConflict ||
     lotMismatch ||
     serialVsCodeConflict ||
-    variantMismatch;  // les deux côtés ont des variantes différentes (ex: Aqua vs Gold)
+    variantMismatch ||  // les deux côtés ont des variantes différentes (ex: Aqua vs Gold)
+    tcgSetMismatch;  // les deux côtés ont des codes set TCG différents (ex: YAP1 vs HC01)
 
   return {
     score,
@@ -621,7 +665,8 @@ function scoreSoldListing(vintedListing, soldListing) {
     lotMismatch,
     serialVsCodeConflict,
     variantMismatch,
-    variantAsymmetry
+    variantAsymmetry,
+    tcgSetMismatch
   };
 }
 
@@ -1100,5 +1145,7 @@ module.exports = {
   scoreSoldListing,
   translateFrToEn,
   getCategoryRejectionReasons,
-  extractLegoSetNumber
+  extractLegoSetNumber,
+  extractCondition,
+  extractTcgSetCode
 };

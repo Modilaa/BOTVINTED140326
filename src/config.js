@@ -280,40 +280,46 @@ const toppsSportGeneralSearches = parseBoolean(process.env.SEARCH_TOPPS_SPORT_GE
 // ─── Catégories multi-produits (Discovery v2) ────────────────────────────
 // Chaque catégorie est activable/désactivable via le .env
 
-const sneakersSearches = parseBoolean(process.env.SEARCH_SNEAKERS, false) ? [
+const sneakersSearches = []; // Sneakers désactivées — trop de contrefaçons sur Vinted
+
+const funkoPopSearches = parseBoolean(process.env.SEARCH_FUNKO_POP, true) ? [
   {
-    name: 'Sneakers',
+    name: 'Funko Pop',
     pricingSource: 'ebay',
     isNonTcg: true,
-    ebayCategory: null, // Pas de restriction de catégorie — la query suffit
-    minProfitEur: 15,
-    minProfitPercent: 25,
-    maxPrice: 150,
+    ebayCategory: null,
+    minProfitEur: 8,
+    minProfitPercent: 30,
+    maxPrice: 100,
     vintedQueries: [
-      'nike dunk low',
-      'nike dunk high',
-      'jordan 1 retro',
-      'jordan 4 retro',
-      'new balance 550',
-      'new balance 2002r',
-      'adidas samba',
-      'adidas gazelle',
-      'yeezy 350',
-      'nike air max 90'
+      // 8 queries ciblées (au lieu de 19) — réduit la mémoire et les appels API
+      // Les "figurine pop X" sont des doublons des "funko pop X" sur Vinted
+      'funko pop marvel',
+      'funko pop dragon ball',
+      'funko pop naruto',
+      'funko pop one piece',
+      'funko pop star wars',
+      'funko pop anime',
+      'funko pop exclusif',
+      'funko pop chase'
     ],
-    requiredAnyTokens: ['nike', 'jordan', 'new balance', 'adidas', 'dunk', 'samba', 'yeezy', 'vans', 'converse', 'reebok', 'asics'],
-    blockedTokens: ['chaussette', 'lacet', 'semelle', 'boite vide', 'poster', 'tshirt', 'maillot', 'peluche', 'figurine'],
+    requiredAnyTokens: ['funko', 'funko pop', 'figurine pop', 'pop vinyl'],
+    blockedTokens: ['poster', 'tshirt', 'maillot', 'autocollant', 'sticker', 'porte-cles', 'keychain', 'tapis', 'mug', 'coussin', 'lot vide', 'boite vide', 'empty box', 'sans boite', 'loose', 'abime', 'casse'],
     maxPricePerQuery: {
-      'nike dunk low': 100,
-      'nike dunk high': 100,
-      'jordan 1 retro': 150,
-      'jordan 4 retro': 150,
-      'new balance 550': 80,
-      'new balance 2002r': 80,
-      'adidas samba': 70,
-      'adidas gazelle': 60,
-      'yeezy 350': 120,
-      'nike air max 90': 80
+      'funko pop marvel': 80,
+      'funko pop disney': 80,
+      'funko pop dragon ball': 100,
+      'funko pop naruto': 80,
+      'funko pop one piece': 100,
+      'funko pop star wars': 80,
+      'funko pop harry potter': 60,
+      'funko pop dc comics': 60,
+      'funko pop pokemon': 100,
+      'funko pop anime': 80,
+      'funko pop exclusif': 100,
+      'funko pop chase': 100,
+      'funko pop flocked': 80,
+      'funko pop glow in the dark': 80
     }
   }
 ] : [];
@@ -355,6 +361,7 @@ const legoSearches = parseBoolean(process.env.SEARCH_LEGO, false) ? [
   }
 ] : [];
 
+// DÉSACTIVÉ — titres trop vagues, profits irréalistes (P3 fix 31 mars 2026)
 const vintageSearches = parseBoolean(process.env.SEARCH_VINTAGE, false) ? [
   {
     name: 'Vetements Vintage',
@@ -389,6 +396,7 @@ const vintageSearches = parseBoolean(process.env.SEARCH_VINTAGE, false) ? [
   }
 ] : [];
 
+// DÉSACTIVÉ — titres trop vagues, profits irréalistes (P3 fix 31 mars 2026)
 const techSearches = parseBoolean(process.env.SEARCH_TECH, false) ? [
   {
     name: 'Tech',
@@ -423,6 +431,7 @@ const techSearches = parseBoolean(process.env.SEARCH_TECH, false) ? [
   }
 ] : [];
 
+// DÉSACTIVÉ — titres trop vagues, profits irréalistes (P3 fix 31 mars 2026)
 const retroSearches = parseBoolean(process.env.SEARCH_RETRO, false) ? [
   {
     name: 'Consoles Retro',
@@ -498,6 +507,7 @@ const searches = [
   ...toppsTennisSearches,
   ...toppsSportGeneralSearches,
   ...sneakersSearches,
+  ...funkoPopSearches,
   ...legoSearches,
   ...vintageSearches,
   ...techSearches,

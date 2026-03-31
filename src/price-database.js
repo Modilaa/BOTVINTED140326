@@ -69,7 +69,7 @@ const MAX_VINTED_PRICES = 30;
 const MAX_MARKET_PRICES = 20;
 const MAX_LIQUIDITY_HISTORY = 30;
 const MAX_PRICE_HISTORY = 30;
-const MAX_AGE_DAYS_DEFAULT = 365;
+const MAX_AGE_DAYS_DEFAULT = 30; // Was 365 — 30 jours suffit pour l'arbitrage, réduit la mémoire de 80%
 const STALE_THRESHOLD_DAYS = 30;
 
 // ─── In-memory state ────────────────────────────────────────────────────────

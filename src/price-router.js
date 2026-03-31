@@ -249,12 +249,12 @@ async function routeYugioh(listing, config) {
     checkAndAlert('ygoprodeck', true, `YGOPRODeck erreur: ${err.message}`);
   }
 
-  // 2. eBay Browse API (fallback)
-  const ebayApiResult = await tryEbayBrowseApi(listing, config);
-  if (ebayApiResult) return ebayApiResult;
+  // 2. eBay Browse API (fallback — titres Vinted multilingues rarement matchés par YGOPRODeck)
+  const ebayResult = await tryEbayBrowseApi(listing, config, { pricingSource: 'ygoprodeck' });
+  if (ebayResult) return ebayResult;
 
   // 3. Apify (dernier recours)
-  const apifyResult = await tryApifyEbay(listing, config, null);
+  const apifyResult = await tryApifyEbay(listing, config, { pricingSource: 'ygoprodeck' });
   if (apifyResult) return apifyResult;
 
   return null;
@@ -278,12 +278,12 @@ async function routePokemon(listing, config) {
     checkAndAlert('pokemontcg', true, `Pokemon erreur: ${err.message}`);
   }
 
-  // 2. eBay Browse API (fallback)
-  const ebayApiResult = await tryEbayBrowseApi(listing, config);
-  if (ebayApiResult) return ebayApiResult;
+  // 2. eBay Browse API (fallback — titres Vinted multilingues rarement matchés par PokemonTCG.io)
+  const ebayResult = await tryEbayBrowseApi(listing, config, { pricingSource: 'pokemon-tcg-api' });
+  if (ebayResult) return ebayResult;
 
   // 3. Apify (dernier recours)
-  const apifyResult = await tryApifyEbay(listing, config, null);
+  const apifyResult = await tryApifyEbay(listing, config, { pricingSource: 'pokemon-tcg-api' });
   if (apifyResult) return apifyResult;
 
   return null;
@@ -445,6 +445,28 @@ async function getPrice(listing, pricingSource, config, search) {
     console.log(`  [price-db] Cache local ignoré (non fiable): "${listing.title.slice(0, 50)}" — ${dbResult.scanCount} obs marché, ${dbResult.vintedObservations || 0} obs Vinted`);
   }
   if (dbReliable) {
+    // Validation : le titre caché doit partager au moins un mot significatif avec le titre Vinted
+    const ebayTitle = dbResult.ebayListingTitle || '';
+    if (ebayTitle) {
+      const SKIP = new Set(['pokemon','carte','card','cards','holo','ex','gx','vmax','vstar','psa','promo','rare','ultra','gold','silver','topps','chrome','panini','lego','funko','bandai']);
+      const getTokens = (t) => (t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(w => w.length >= 4 && !SKIP.has(w));
+      const vTokens = getTokens(listing.title);
+      const eTokens = getTokens(ebayTitle);
+      const shared = vTokens.filter(t => eTokens.some(e => e === t || e.includes(t) || t.includes(e)));
+      if (vTokens.length > 0 && eTokens.length > 0 && shared.length === 0) {
+        console.log(`  [price-db] Cache local REJETÉ (mismatch): "${listing.title.slice(0, 40)}" ≠ "${ebayTitle.slice(0, 40)}"`);
+        // Ne pas utiliser ce résultat caché — continuer vers les APIs
+      } else {
+        // Match OK — utiliser le cache
+        return buildLocalDbResult();
+      }
+    } else {
+      return buildLocalDbResult();
+    }
+  }
+
+  // Fonction helper pour construire le résultat local-database
+  function buildLocalDbResult() {
     console.log(`  [price-db] Cache local fiable: "${listing.title.slice(0, 50)}" → ${dbResult.price}€ (${dbResult.scanCount} obs marché, ${dbResult.ageDays}j)`);
     const localSale = {
       title: dbResult.ebayListingTitle || listing.title,
@@ -477,7 +499,7 @@ async function getPrice(listing, pricingSource, config, search) {
     }
     setCachedPrice(listing, localResult);
     return localResult;
-  }
+  } // fin buildLocalDbResult
 
   let result = null;
 

@@ -10,38 +10,42 @@ Image 2 = Annonce eBay (référence de prix, photo pro ou maison).
 
 RÈGLE FONDAMENTALE : Compare L'OBJET physique, PAS l'image. Ignore complètement le fond, l'angle, l'éclairage, la mise en scène. Ils seront TOUJOURS différents entre Vinted et eBay — c'est normal.
 
-Vérifie ces 3 critères STRICTEMENT :
+Vérifie ces 3 critères :
 
 1. MÊME PRODUIT EXACT
    - Cartes TCG : même joueur/personnage + même numéro de carte + même set + même année/édition
    - LEGO : même numéro de set exact (ex: 75192 ≠ 75330)
    - Tech : même modèle exact + même capacité/coloris (iPhone 13 ≠ 13 Pro, 128Go ≠ 256Go)
    - Autre : même modèle/édition exact
-   → La moindre différence = REJET
+   → Si une différence est CLAIRE et CERTAINE = false. Si tu ne peux pas lire ou distinguer = "uncertain"
 
 2. MÊME VARIANTE
    - Cartes TCG : base ≠ holo ≠ refractor ≠ prizm ≠ gold ≠ rainbow ≠ full art ≠ alt art ≠ prismatic ≠ galaxy
    - LEGO : scellé ≠ ouvert ≠ incomplet
-   - Si tu ne peux pas CONFIRMER avec certitude la même variante → REJET
+   - Si la variante est CLAIREMENT différente = false. Si tu ne peux pas confirmer (qualité image, angle) = "uncertain"
 
 3. CONDITION COMPARABLE
-   - Mint/scellé ≠ très endommagé/incomplet = REJET
-   - Légère usure, pas de sleeve = acceptable (mark match_condition_diff)
+   - Mint/scellé ≠ très endommagé/incomplet = false
+   - Légère usure, pas de sleeve = true (acceptable pour l'arbitrage)
 
 RÈGLES CRITIQUES :
 - Le fond sera TOUJOURS différent (Vinted = maison, eBay = studio). JAMAIS une raison de rejeter.
 - Lis les textes/numéros visibles sur les objets pour confirmer (numéro de carte, numéro de set LEGO, etc.)
 - Si les descriptions sont visibles dans l'image, lis-les pour confirmer l'édition et la variante.
-- EN CAS DE DOUTE → REJETER. Mieux vaut manquer une opportunité que valider un faux positif.
+- Utilise "uncertain" quand l'image ne permet pas de trancher (flou, angle, qualité). Ne rejette PAS sur un doute d'image.
+- Rejette (false) UNIQUEMENT quand tu vois une VRAIE différence (numéro différent, couleur clairement différente, modèle différent).
 
-verdict = "match" UNIQUEMENT si les 3 critères sont vrais. Sinon "no_match".
+Les 3 verdicts possibles :
+- "match" = les 3 critères sont true. Tu es sûr que c'est le même produit.
+- "uncertain" = au moins 1 critère est "uncertain" mais AUCUN n'est false. Pourrait être le même produit.
+- "no_match" = au moins 1 critère est CLAIREMENT false. Produit différent confirmé.
 
 Réponds UNIQUEMENT avec du JSON valide, sans markdown, sans texte supplémentaire :
 {
-  "sameProduct": true or false,
-  "sameVariant": true or false,
+  "sameProduct": true or false or "uncertain",
+  "sameVariant": true or false or "uncertain",
   "conditionComparable": true or false,
-  "verdict": "match" or "no_match",
+  "verdict": "match" or "uncertain" or "no_match",
   "reason": "explication courte en une ligne",
   "report": {
     "vintedObservation": "description de ce qui est visible sur l'image Vinted (condition, variante, marquages)",
@@ -64,7 +68,11 @@ function toHdEbayUrl(url) {
   return url.replace(/s-l\d+\.(jpg|png|webp)/i, 's-l1600.$1');
 }
 
-const VISION_RETRY_DELAYS = [1000, 3000, 8000]; // backoff on 429
+const VISION_RETRY_DELAYS = [2000, 5000, 12000]; // backoff agressif on 429
+
+// ─── Throttle global : empêche d'envoyer plus d'1 requête toutes les 2s ────
+let _lastVisionCall = 0;
+const VISION_MIN_INTERVAL_MS = 2000;
 
 async function compareCardImages(vintedImageUrl, ebayImageUrl) {
   if (!vintedImageUrl || !ebayImageUrl) return null;
@@ -76,7 +84,17 @@ async function compareCardImages(vintedImageUrl, ebayImageUrl) {
     return null;
   }
 
-  const client = new OpenAI({ apiKey });
+  // Throttle : attendre si le dernier appel est trop récent
+  const now = Date.now();
+  const elapsed = now - _lastVisionCall;
+  if (elapsed < VISION_MIN_INTERVAL_MS) {
+    const wait = VISION_MIN_INTERVAL_MS - elapsed;
+    console.log(`[vision-verify] Throttle: attente ${wait}ms avant l'appel`);
+    await new Promise(r => setTimeout(r, wait));
+  }
+  _lastVisionCall = Date.now();
+
+  const client = new OpenAI({ apiKey, timeout: 30000 });
 
   for (let attempt = 0; attempt <= VISION_RETRY_DELAYS.length; attempt++) {
     try {
@@ -102,36 +120,75 @@ async function compareCardImages(vintedImageUrl, ebayImageUrl) {
         return null;
       }
 
-      const parsed = JSON.parse(match[0]);
+      // Nettoyer les caractères de contrôle que GPT insère parfois dans les strings JSON
+      const cleanJson = match[0].replace(/[\x00-\x1F\x7F]/g, (ch) => {
+        if (ch === '\n' || ch === '\r' || ch === '\t') return ' ';
+        return '';
+      });
 
-      // Product + variant match = what matters for arbitrage authenticity.
-      // Condition differences affect the price estimate but don't disqualify the opportunity.
-      // Only reject (confidence=0) if the product or variant is wrong.
-      const productVariantMatch = parsed.sameProduct === true && parsed.sameVariant === true;
-      const fullMatch = productVariantMatch && parsed.conditionComparable === true;
+      let parsed;
+      try {
+        parsed = JSON.parse(cleanJson);
+      } catch (parseErr) {
+        console.warn('[vision-verify] JSON invalide après nettoyage:', cleanJson.slice(0, 300));
+        return null;
+      }
 
-      parsed.verdict = fullMatch ? 'match' : (productVariantMatch ? 'match_condition_diff' : 'no_match');
+      // Normalize: GPT can return true, false, or "uncertain" for product/variant
+      const productTrue = parsed.sameProduct === true;
+      const productFalse = parsed.sameProduct === false;
+      const variantTrue = parsed.sameVariant === true;
+      const variantFalse = parsed.sameVariant === false;
+      const conditionOk = parsed.conditionComparable !== false;
 
-      // Compat fields — consumed by scoring.js, index.js, notifier.js, server.js
-      // sameCard=true if same product+variant (condition mismatch is not a disqualifier)
-      parsed.sameCard = productVariantMatch;
-      // 90 = full match, 60 = same product/variant but condition differs, 0 = wrong product/variant
-      parsed.confidence = fullMatch ? 90 : (productVariantMatch ? 60 : 0);
+      // Any CLEAR rejection (false) → no_match
+      const hasHardReject = productFalse || variantFalse;
+      // All confirmed → match
+      const allConfirmed = productTrue && variantTrue && conditionOk;
+      // Product+variant confirmed but condition issue
+      const productVariantMatch = productTrue && variantTrue;
+
+      if (hasHardReject) {
+        parsed.verdict = 'no_match';
+        parsed.sameCard = false;
+        parsed.confidence = 0;
+      } else if (allConfirmed) {
+        parsed.verdict = 'match';
+        parsed.sameCard = true;
+        parsed.confidence = 90;
+      } else if (productVariantMatch && !conditionOk) {
+        parsed.verdict = 'match_condition_diff';
+        parsed.sameCard = true;
+        parsed.confidence = 60;
+      } else {
+        // At least one "uncertain", no hard reject → uncertain
+        parsed.verdict = 'uncertain';
+        parsed.sameCard = 'uncertain';
+        parsed.confidence = 45;
+      }
+
       parsed.summary = parsed.reason || '';
       parsed.visionReason = (parsed.report && parsed.report.suggestion) || parsed.reason || '';
 
       return parsed;
     } catch (err) {
       const is429 = err.status === 429 || (err.message && err.message.includes('429'));
-      if (is429 && attempt < VISION_RETRY_DELAYS.length) {
+      const isTimeout = err.code === 'ETIMEDOUT' || err.code === 'ECONNABORTED' || (err.message && err.message.includes('timeout'));
+      if ((is429 || isTimeout) && attempt < VISION_RETRY_DELAYS.length) {
         const delay = VISION_RETRY_DELAYS[attempt];
-        console.warn(`[vision-verify] Rate limit 429, retry ${attempt + 1}/${VISION_RETRY_DELAYS.length} dans ${delay}ms`);
+        const reason = is429 ? 'Rate limit 429' : 'Timeout';
+        console.warn(`[vision-verify] ${reason}, retry ${attempt + 1}/${VISION_RETRY_DELAYS.length} dans ${delay}ms`);
         await new Promise(r => setTimeout(r, delay));
+        _lastVisionCall = Date.now(); // reset throttle après attente
         continue;
       }
       console.error('[vision-verify] Erreur API:', err.message);
       checkAndAlert('openai-vision', true, `GPT-4o mini erreur: ${err.message}`);
-      return null;
+      // Retourner une erreur structurée au lieu de null pour différencier "indisponible" de "pas d'images"
+      const error = new Error(is429 ? 'Rate limit OpenAI — réessaye dans 1 minute' : err.message);
+      error.isVisionError = true;
+      error.isRateLimit = is429;
+      throw error;
     }
   }
 }

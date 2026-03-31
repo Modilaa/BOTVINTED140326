@@ -229,19 +229,8 @@ async function run(previousListings = []) {
     }
   }
 
-  // ─── Filtrer catégories désactivées par feedback-analyzer ──────────────────
-  try {
-    const { getDisabledCategories } = require('../feedback-analyzer');
-    const disabled = getDisabledCategories();
-    if (disabled.length > 0) {
-      const before = config.searches.length;
-      config.searches = config.searches.filter(s => !disabled.includes(s.name));
-      const skipped = before - config.searches.length;
-      if (skipped > 0) {
-        console.log(`[Scanner] ${skipped} catégorie(s) désactivée(s) ignorée(s): ${disabled.join(', ')}`);
-      }
-    }
-  } catch { /* non-bloquant */ }
+  // ─── Feedback-analyzer : auto-disable DÉSACTIVÉ ──────────────────────────
+  // Toutes les niches restent actives (l'auto-disable donnait trop de faux négatifs)
 
   // ─── Log quota eBay Browse API avant le scan ───────────────────────────────
   if (config.ebayAppId && config.ebayClientSecret) {

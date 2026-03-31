@@ -388,17 +388,37 @@ app.get('/api/opportunities', (req, res) => {
   // Deduplicate by item ID: same Vinted item can appear on multiple country domains (fr/be/…)
   let history = deduplicateHistoryById(getOpportunitiesHistory());
 
-  // Filter by status
+  // Auto-fix: recalculer la confiance des opps où Vision a confirmé mais le score n'a pas été mis à jour
+  let needsSave = false;
+  try {
+    const { computeConfidence } = require('./scoring');
+    for (const h of history) {
+      if (h.visionVerified && h.visionSameCard === true && (h.confidence || 0) < 50) {
+        // Vision a confirmé mais le score est resté bas — recalculer
+        if (!h.visionResult) h.visionResult = { sameCard: true, sameProduct: true };
+        const oldConf = h.confidence || 0;
+        h.confidence = computeConfidence(h);
+        if (h.confidence !== oldConf) {
+          needsSave = true;
+          console.log(`[auto-fix] Confiance recalculée pour "${(h.title || '').slice(0, 50)}": ${oldConf} → ${h.confidence}`);
+        }
+      }
+    }
+    if (needsSave) saveOpportunitiesHistory(history);
+  } catch (e) { /* non-bloquant */ }
+
+  // Filter by status — aligné avec les counts (lignes 488-494)
   if (filter === 'accepted') {
     history = history.filter((h) => h.status === 'accepted');
   } else if (filter === 'dismissed') {
     history = history.filter((h) => h.status === 'dismissed' || h.status === 'rejected');
   } else if (filter === 'candidate') {
-    // Candidats en attente de vérification Vision
-    history = history.filter((h) => h.status === 'candidate');
+    // Candidats en attente de vérification Vision :
+    // status=candidate OU status=active mais sans Vision confirmée
+    history = history.filter((h) => h.status === 'candidate' || (h.status === 'active' && !h.visionVerified && !h.visionSameCard));
   } else {
-    // Default: active seulement — VALIDÉS par Vision GPT
-    history = history.filter((h) => h.status === 'active');
+    // Default: active ET validées par Vision GPT uniquement
+    history = history.filter((h) => h.status === 'active' && (h.visionVerified === true || h.visionSameCard === true));
   }
 
   const supervisorData = readJsonSafe(getAgentPath('supervisor'));
@@ -482,15 +502,16 @@ app.get('/api/opportunities', (req, res) => {
   opportunities.sort((a, b) => (b.profit || 0) - (a.profit || 0));
 
   // Count by status for the badge (use deduplicated view)
-  // "active" = validées Vision (status=active ET visionVerified/visionSameCard=true)
-  // "candidate" = en attente Vision (status=candidate OU status=active sans Vision)
+  // IMPORTANT: appliquer le même filtre profit > 0 que pour les listes affichées
+  // sinon les counts ne correspondent pas au nombre d'items visibles
   const allHistoryDeduped = deduplicateHistoryById(getOpportunitiesHistory());
+  const hasProfitOrNoFilter = (h) => (h.profit || 0) > 0;
   const counts = {
-    active: allHistoryDeduped.filter((h) => h.status === 'active' && (h.visionVerified === true || h.visionSameCard === true)).length,
-    candidate: allHistoryDeduped.filter((h) => h.status === 'candidate' || (h.status === 'active' && !h.visionVerified && !h.visionSameCard)).length,
+    active: allHistoryDeduped.filter((h) => h.status === 'active' && (h.visionVerified === true || h.visionSameCard === true) && hasProfitOrNoFilter(h)).length,
+    candidate: allHistoryDeduped.filter((h) => (h.status === 'candidate' || (h.status === 'active' && !h.visionVerified && !h.visionSameCard)) && hasProfitOrNoFilter(h)).length,
     accepted: allHistoryDeduped.filter((h) => h.status === 'accepted').length,
     dismissed: allHistoryDeduped.filter((h) => h.status === 'dismissed' || h.status === 'rejected').length,
-    total: allHistoryDeduped.filter((h) => (h.status === 'active' && (h.visionVerified === true || h.visionSameCard === true)) || h.status === 'accepted').length,
+    total: allHistoryDeduped.filter((h) => ((h.status === 'active' && (h.visionVerified === true || h.visionSameCard === true)) || h.status === 'accepted') && hasProfitOrNoFilter(h)).length,
     blacklisted: dismissedListings.getCount()
   };
 
@@ -1015,6 +1036,95 @@ app.post('/api/scan', (_req, res) => {
       error: 'Le bot n\'est pas en mode boucle. Lancez avec: npm run loop'
     });
   }
+});
+
+// ─── API: Scan ciblé par niche (1h max) ─────────────────────────────
+app.post('/api/scan/niche', (req, res) => {
+  const { niche, durationMinutes } = req.body || {};
+  if (!niche) {
+    return res.status(400).json({ error: 'Paramètre "niche" requis.' });
+  }
+
+  // Vérifier que la niche existe dans config.searches
+  const matchingSearch = config.searches.find(s => s.name === niche);
+  if (!matchingSearch) {
+    return res.status(404).json({ error: `Niche "${niche}" introuvable.`, available: config.searches.map(s => s.name) });
+  }
+
+  // Vérifier qu'un scan n'est pas déjà en cours
+  const scanData = readJsonSafe(getScanPath());
+  if (scanData && scanData.scanning) {
+    return res.status(409).json({ error: 'Un scan est déjà en cours. Attendez qu\'il finisse.' });
+  }
+
+  const duration = Math.min(Math.max(parseInt(durationMinutes) || 60, 5), 120); // 5min - 2h, défaut 1h
+
+  // Activer le mode niche ciblée
+  global._nicheOverride = {
+    niche: niche,
+    searchConfig: matchingSearch,
+    startedAt: Date.now(),
+    endsAt: Date.now() + duration * 60 * 1000,
+    durationMinutes: duration,
+    scansCompleted: 0
+  };
+
+  // Timer pour désactiver automatiquement après la durée
+  if (global._nicheOverrideTimer) clearTimeout(global._nicheOverrideTimer);
+  global._nicheOverrideTimer = setTimeout(() => {
+    if (global._nicheOverride) {
+      console.log(`[niche-scan] Fin du scan ciblé "${niche}" après ${duration}min (${global._nicheOverride.scansCompleted} scans effectués)`);
+      global._nicheOverride = null;
+    }
+  }, duration * 60 * 1000);
+
+  console.log(`[niche-scan] Scan ciblé "${niche}" activé pour ${duration} minutes`);
+
+  // Déclencher un scan immédiatement
+  if (global._triggerScan) {
+    global._triggerScan();
+  }
+
+  res.json({
+    success: true,
+    message: `Scan ciblé "${niche}" activé pour ${duration} minutes.`,
+    niche: niche,
+    durationMinutes: duration,
+    endsAt: new Date(global._nicheOverride.endsAt).toISOString()
+  });
+});
+
+// ─── API: Arrêter le scan ciblé ─────────────────────────────────────
+app.post('/api/scan/niche/stop', (_req, res) => {
+  if (!global._nicheOverride) {
+    return res.json({ success: true, message: 'Aucun scan ciblé en cours.' });
+  }
+  const niche = global._nicheOverride.niche;
+  const scans = global._nicheOverride.scansCompleted;
+  global._nicheOverride = null;
+  if (global._nicheOverrideTimer) {
+    clearTimeout(global._nicheOverrideTimer);
+    global._nicheOverrideTimer = null;
+  }
+  console.log(`[niche-scan] Scan ciblé "${niche}" arrêté manuellement (${scans} scans effectués)`);
+  res.json({ success: true, message: `Scan ciblé "${niche}" arrêté.`, scansCompleted: scans });
+});
+
+// ─── API: Status du scan ciblé ──────────────────────────────────────
+app.get('/api/scan/niche/status', (_req, res) => {
+  if (!global._nicheOverride) {
+    return res.json({ active: false });
+  }
+  const o = global._nicheOverride;
+  res.json({
+    active: true,
+    niche: o.niche,
+    startedAt: new Date(o.startedAt).toISOString(),
+    endsAt: new Date(o.endsAt).toISOString(),
+    remainingMinutes: Math.max(0, Math.round((o.endsAt - Date.now()) / 60000)),
+    scansCompleted: o.scansCompleted,
+    durationMinutes: o.durationMinutes
+  });
 });
 
 // ─── API: Latest scan data (legacy compat) ───────────────────────────
@@ -1737,11 +1847,15 @@ app.post('/api/verify-image', async (req, res) => {
       report: vision.report || null
     };
 
+    const previousStatus = opp.status;
+
     if (vision.verdict === 'no_match') {
       opp.status = 'rejected';
       opp.rejectedAt = new Date().toISOString();
       opp.rejectReason = 'gpt-vision-mismatch';
       opp.gptVerdict = vision.reason || 'Produits différents';
+      opp.visionVerified = true;
+      opp.visionSameCard = false;
 
       appendFeedbackLog({
         id: opp.id,
@@ -1755,14 +1869,21 @@ app.post('/api/verify-image', async (req, res) => {
         timestamp: new Date().toISOString()
       });
     } else {
-      // GPT confirms match → auto-accept
-      opp.status = 'accepted';
+      // GPT confirms match → promote candidate→active, or accept if already active
+      if (previousStatus === 'candidate') {
+        opp.status = 'active';
+        console.log(`[API] verify-image: candidate → active (Vision OK): "${(opp.title || '').slice(0, 50)}"`);
+      } else {
+        opp.status = 'accepted';
+      }
       opp.acceptedAt = new Date().toISOString();
+      opp.visionVerified = true;
+      opp.visionSameCard = true;
 
       appendFeedbackLog({
         id: opp.id,
         title: opp.title,
-        decision: 'accepted',
+        decision: previousStatus === 'candidate' ? 'promoted' : 'accepted',
         source: 'gpt-vision',
         reason: vision.reason || (vision.report || ''),
         vintedPrice: opp.vintedPrice,
@@ -1770,6 +1891,19 @@ app.post('/api/verify-image', async (req, res) => {
         pricingSource: opp.pricingSource,
         timestamp: new Date().toISOString()
       });
+    }
+
+    const wasPromoted = vision.verdict === 'match' && previousStatus === 'candidate';
+
+    // Recalculer le score de confiance avec le résultat Vision
+    try {
+      const { computeConfidence } = require('./scoring');
+      opp.visionResult = { sameCard: opp.visionSameCard, sameProduct: opp.visionSameCard, confidence: vision.confidence || null };
+      const newConf = computeConfidence(opp);
+      console.log(`[API] verify-image: confiance recalculée ${opp.confidence || '?'} → ${newConf} (vision=${opp.visionSameCard ? 'OK' : 'NON'})`);
+      opp.confidence = newConf;
+    } catch (e) {
+      console.log(`[API] verify-image: erreur recalcul confiance: ${e.message}`);
     }
 
     saveOpportunitiesHistory(history);
@@ -1785,13 +1919,275 @@ app.post('/api/verify-image', async (req, res) => {
       sameVariant: vision.sameVariant,
       conditionComparable: vision.conditionComparable,
       report: vision.report || null,
-      vision
+      vision: { ...vision, promoted: wasPromoted }
     });
   } catch (err) {
     console.error(`[API] verify-image erreur: ${err.message}`);
+    if (err.isVisionError) {
+      // Erreur Vision spécifique (rate limit, timeout) — pas une erreur serveur
+      const reason = err.isRateLimit
+        ? 'Rate limit OpenAI — attends 1 minute avant de réessayer'
+        : `Vision temporairement indisponible: ${err.message}`;
+      return res.json({ success: true, skipped: true, reason });
+    }
     return res.status(500).json({ error: err.message });
   }
 });
+
+// ─── API: Batch Vision — traite toutes les candidates en séquentiel ────────────
+let _batchVisionRunning = false;
+let _batchVisionProgress = null;
+
+app.post('/api/batch-vision', async (req, res) => {
+  if (_batchVisionRunning) {
+    return res.json({ success: false, error: 'Batch Vision déjà en cours', progress: _batchVisionProgress });
+  }
+  _batchVisionRunning = true;
+  _batchVisionProgress = { started: new Date().toISOString(), processed: 0, total: 0, matched: 0, rejected: 0, errors: 0 };
+
+  // Réponse immédiate — le traitement continue en arrière-plan
+  res.json({ success: true, message: 'Batch Vision lancé en arrière-plan', progress: _batchVisionProgress });
+
+  try {
+    const { compareCardImages } = require('./vision-verify');
+    const history = getOpportunitiesHistory();
+
+    // Toutes les candidates avec images dispo
+    const candidates = history.filter((h) =>
+      (h.status === 'candidate' || (h.status === 'active' && !h.visionVerified && !h.visionSameCard)) &&
+      (h.imageUrl || (h.photos && h.photos[0])) &&
+      (h.ebayMatchImageUrl || h.matchImage || h.ebayImage)
+    );
+
+    _batchVisionProgress.total = candidates.length;
+    console.log(`[batch-vision] Lancement: ${candidates.length} candidates à vérifier...`);
+
+    for (const opp of candidates) {
+      _batchVisionProgress.processed++;
+      const vintedImg = (opp.photos && opp.photos[0]) || opp.imageUrl || null;
+      const ebayImg = opp.ebayMatchImageUrl || opp.matchImage || opp.ebayImage || null;
+
+      if (!vintedImg || !ebayImg) {
+        console.log(`[batch-vision] ⏭ Skip (images manquantes): "${(opp.title || '').slice(0, 50)}"`);
+        continue;
+      }
+
+      try {
+        // Délai de 3 secondes entre chaque appel pour respecter le TPM
+        await new Promise(r => setTimeout(r, 3000));
+
+        console.log(`[batch-vision] [${_batchVisionProgress.processed}/${_batchVisionProgress.total}] "${(opp.title || '').slice(0, 50)}"...`);
+        const vision = await compareCardImages(vintedImg, ebayImg);
+
+        if (!vision) {
+          _batchVisionProgress.errors++;
+          continue;
+        }
+
+        // Sauvegarder le rapport GPT
+        opp.gptReport = {
+          checkedAt: new Date().toISOString(),
+          verdict: vision.verdict,
+          reason: vision.reason || '',
+          sameProduct: vision.sameProduct,
+          sameVariant: vision.sameVariant,
+          conditionComparable: vision.conditionComparable,
+          report: vision.report || null
+        };
+        opp.visionVerified = true;
+        opp.visionSameCard = vision.sameCard;
+        opp.visionResult = { sameCard: vision.sameCard, sameProduct: vision.sameProduct, confidence: vision.confidence || null };
+
+        if (vision.sameCard === true) {
+          opp.status = 'active';
+          _batchVisionProgress.matched++;
+          console.log(`[batch-vision] ✅ Match: "${(opp.title || '').slice(0, 50)}"`);
+        } else if (vision.sameCard === 'uncertain') {
+          opp.status = 'candidate';
+          _batchVisionProgress.matched++; // Count as potential match (needs manual review)
+          console.log(`[batch-vision] 🔶 Incertain: "${(opp.title || '').slice(0, 50)}" — ${vision.reason || ''} (reste candidate)`);
+        } else {
+          opp.status = 'rejected';
+          opp.rejectedAt = new Date().toISOString();
+          opp.rejectReason = 'gpt-vision-mismatch';
+          opp.gptVerdict = vision.reason || 'Produits différents';
+          _batchVisionProgress.rejected++;
+          console.log(`[batch-vision] ❌ Rejet: "${(opp.title || '').slice(0, 50)}" — ${vision.reason || ''}`);
+        }
+
+        // Recalculer le score de confiance avec le résultat Vision
+        try {
+          const { computeConfidence } = require('./scoring');
+          const oldConf = opp.confidence || 0;
+          opp.confidence = computeConfidence(opp);
+          console.log(`[batch-vision] Confiance recalculée: ${oldConf} → ${opp.confidence}`);
+        } catch (e) { /* non-bloquant */ }
+
+        // Sauvegarder après chaque traitement (pour ne pas perdre en cas de crash)
+        saveOpportunitiesHistory(history);
+      } catch (err) {
+        _batchVisionProgress.errors++;
+        console.log(`[batch-vision] ⚠ Erreur: "${(opp.title || '').slice(0, 40)}": ${err.message}`);
+        // Si rate limit, attendre 60 secondes avant de continuer
+        if (err.isRateLimit) {
+          console.log('[batch-vision] Rate limit — pause 60s...');
+          await new Promise(r => setTimeout(r, 60000));
+        }
+      }
+    }
+
+    broadcastSSE({ type: 'opportunities-update' });
+    _batchVisionProgress.finished = new Date().toISOString();
+    console.log(`[batch-vision] Terminé: ${_batchVisionProgress.matched} match, ${_batchVisionProgress.rejected} rejet, ${_batchVisionProgress.errors} erreur(s)`);
+  } catch (err) {
+    console.error(`[batch-vision] Erreur globale: ${err.message}`);
+    _batchVisionProgress.error = err.message;
+  } finally {
+    _batchVisionRunning = false;
+  }
+});
+
+app.get('/api/batch-vision-status', (_req, res) => {
+  res.json({ running: _batchVisionRunning, progress: _batchVisionProgress });
+});
+
+// ─── API: Nettoyage quotidien — vérifie si les annonces actives sont encore en ligne ──
+const { checkVintedAvailability } = require('./agents/supervisor');
+
+let _cleanupRunning = false;
+let _lastCleanupResult = null;
+
+app.post('/api/cleanup-expired', async (req, res) => {
+  if (_cleanupRunning) {
+    return res.json({ success: false, error: 'Nettoyage déjà en cours', lastResult: _lastCleanupResult });
+  }
+  _cleanupRunning = true;
+
+  try {
+    const history = getOpportunitiesHistory();
+    // Seulement les annonces actives validées par Vision
+    const activeOpps = history.filter((h) =>
+      (h.status === 'active' || h.status === 'candidate') &&
+      h.url && h.url.includes('vinted')
+    );
+
+    console.log(`[cleanup] Vérification de ${activeOpps.length} annonces actives sur Vinted...`);
+    let expired = 0;
+    let stillOnline = 0;
+    let errors = 0;
+    const details = [];
+
+    for (const opp of activeOpps) {
+      try {
+        // Délai entre les requêtes pour ne pas se faire bloquer par Vinted
+        await new Promise(r => setTimeout(r, 1500));
+        const result = await checkVintedAvailability(opp.url, config);
+
+        if (!result.available) {
+          opp.status = 'expired';
+          opp.expiredAt = new Date().toISOString();
+          opp.expireReason = 'vinted-listing-gone';
+          expired++;
+          details.push({ title: (opp.title || '').slice(0, 50), url: opp.url, result: 'expired' });
+          console.log(`[cleanup] ❌ Expirée: "${(opp.title || '').slice(0, 50)}"`);
+        } else {
+          stillOnline++;
+          // Mettre à jour le prix si changé
+          if (result.currentPrice && opp.vintedPrice && result.currentPrice !== opp.vintedPrice) {
+            console.log(`[cleanup] 💰 Prix changé: "${(opp.title || '').slice(0, 50)}" ${opp.vintedPrice}€ → ${result.currentPrice}€`);
+            opp.vintedPrice = result.currentPrice;
+          }
+        }
+      } catch (err) {
+        errors++;
+        console.log(`[cleanup] ⚠ Erreur: "${(opp.title || '').slice(0, 40)}": ${err.message}`);
+      }
+    }
+
+    saveOpportunitiesHistory(history);
+    if (expired > 0) broadcastSSE({ type: 'opportunities-update' });
+
+    _lastCleanupResult = {
+      timestamp: new Date().toISOString(),
+      checked: activeOpps.length,
+      expired,
+      stillOnline,
+      errors,
+      details: details.slice(0, 20)
+    };
+
+    console.log(`[cleanup] Terminé: ${expired} expirée(s), ${stillOnline} en ligne, ${errors} erreur(s)`);
+    res.json({ success: true, ..._lastCleanupResult });
+  } catch (err) {
+    console.error(`[cleanup] Erreur globale: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  } finally {
+    _cleanupRunning = false;
+  }
+});
+
+app.get('/api/cleanup-status', (_req, res) => {
+  res.json({ running: _cleanupRunning, lastResult: _lastCleanupResult });
+});
+
+// ─── Nettoyage automatique quotidien à 8h UTC ──────────────────────────
+let _lastAutoCleanupDate = null;
+
+function scheduleAutoCleanup() {
+  setInterval(async () => {
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    const hour = now.getUTCHours();
+
+    // Exécuter une fois par jour à 8h UTC (10h heure belge)
+    if (hour === 8 && _lastAutoCleanupDate !== today && !_cleanupRunning) {
+      _lastAutoCleanupDate = today;
+      console.log(`[cleanup-auto] Lancement nettoyage quotidien (${today})...`);
+
+      try {
+        const history = getOpportunitiesHistory();
+        const activeOpps = history.filter((h) =>
+          (h.status === 'active' || h.status === 'candidate') &&
+          h.url && h.url.includes('vinted')
+        );
+
+        let expired = 0;
+        for (const opp of activeOpps) {
+          try {
+            await new Promise(r => setTimeout(r, 1500));
+            const result = await checkVintedAvailability(opp.url, config);
+            if (!result.available) {
+              opp.status = 'expired';
+              opp.expiredAt = new Date().toISOString();
+              opp.expireReason = 'vinted-listing-gone';
+              expired++;
+              console.log(`[cleanup-auto] ❌ Expirée: "${(opp.title || '').slice(0, 50)}"`);
+            } else if (result.currentPrice && opp.vintedPrice && result.currentPrice !== opp.vintedPrice) {
+              opp.vintedPrice = result.currentPrice;
+            }
+          } catch { /* continue */ }
+        }
+
+        saveOpportunitiesHistory(history);
+        if (expired > 0) broadcastSSE({ type: 'opportunities-update' });
+
+        _lastCleanupResult = {
+          timestamp: new Date().toISOString(),
+          checked: activeOpps.length,
+          expired,
+          stillOnline: activeOpps.length - expired,
+          auto: true
+        };
+        console.log(`[cleanup-auto] Terminé: ${expired}/${activeOpps.length} expirée(s)`);
+      } catch (err) {
+        console.error(`[cleanup-auto] Erreur: ${err.message}`);
+      }
+    }
+  }, 5 * 60 * 1000); // Vérifier toutes les 5 minutes si c'est l'heure
+}
+
+// Lancer le scheduler au démarrage du serveur
+scheduleAutoCleanup();
 
 // ─── API: Portfolio ───────────────────────────────────────────────────
 const portfolio = require('./portfolio');

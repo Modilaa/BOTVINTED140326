@@ -300,7 +300,10 @@ async function getPokemonPriceViaTcgApi(vintedListing, config) {
       const cardNameLower = (card.name || '').toLowerCase();
       if (cardNameLower === pokemonName.toLowerCase()) score += 10;
       else if (cardNameLower.includes(pokemonName.toLowerCase())) score += 6;
-      else score += 2;
+      else {
+        // Le nom du Pokémon ne correspond pas du tout → rejeter ce candidat
+        return null;
+      }
 
       // Bonus for matching card number
       if (cardNumber && card.number === cardNumber) score += 5;
@@ -316,7 +319,7 @@ async function getPokemonPriceViaTcgApi(vintedListing, config) {
   if (candidates.length === 0) return null;
 
   // Image comparison if available
-  const minImageSimilarity = config.minImageSimilarity || 0.60;
+  const minImageSimilarity = config.minImageSimilarity || 0.75;
   let best = null;
 
   for (const candidate of candidates.slice(0, 3)) {
@@ -339,7 +342,16 @@ async function getPokemonPriceViaTcgApi(vintedListing, config) {
   }
 
   if (!best) {
-    best = candidates[0]; // Fallback to best scored if image rejected all
+    // Toutes les images ont été rejetées → ne PAS prendre un candidat au hasard
+    // Seule exception : si le meilleur candidat a un score très élevé (nom exact + numéro)
+    const topCandidate = candidates[0];
+    if (topCandidate && topCandidate.score >= 15) {
+      console.log(`    PokemonTCG.io fallback (score ${topCandidate.score}): ${topCandidate.card.name}`);
+      best = topCandidate;
+    } else {
+      console.log(`    PokemonTCG.io rejeté: images non concluantes, pas de match fiable`);
+      return null;
+    }
   }
 
   const { card, priceInfo, score } = best;

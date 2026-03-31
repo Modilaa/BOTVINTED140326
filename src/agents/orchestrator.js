@@ -791,8 +791,8 @@ async function runHealthCheck(cfg) {
           timestamp: healthCheckAt,
           pattern:   'all_rejected_good_matches',
           action:    'lower_confidence_threshold',
-          threshold: 40,
-          reason:    `${(rejectRate * 100).toFixed(0)}% rejetés malgré ${(matchRate * 100).toFixed(0)}% match rate (confiance avg ${evaluatorHealth.avgConfidence}/100) → seuil abaissé à 40`,
+          threshold: 25,
+          reason:    `${(rejectRate * 100).toFixed(0)}% rejetés malgré ${(matchRate * 100).toFixed(0)}% match rate (confiance avg ${evaluatorHealth.avgConfidence}/100) → seuil abaissé à 25`,
           active:    true,
           expiresAt: new Date(now.getTime() + 4 * 60 * 60 * 1000).toISOString()
         };

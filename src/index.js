@@ -16,7 +16,7 @@ const { enrichTitleFromDescription } = require('./description-enricher');
 const { getFacebookMarketplaceListings } = require('./marketplaces/facebook');
 const { getCardmarketListings, clearMemoryCache: clearCardmarketCache } = require('./marketplaces/cardmarket');
 const { getLeboncoinListings, clearMemoryCache: clearLeboncoinCache } = require('./marketplaces/leboncoin');
-const { purgeBlockedCache } = require('./http');
+const { purgeBlockedCache, purgeExpiredDiskCache } = require('./http');
 const { buildTelegramMessage, sendTelegramMessage, sendOpportunityAlert } = require('./notifier');
 const { detectTrends, getStats: getPriceDbStats, recordVintedPrice, getUnderPricedProducts } = require('./price-database');
 const { checkAndAlert, errorCounts: apiErrorCounts } = require('./api-monitor');
@@ -189,19 +189,25 @@ async function runScan(previousListings) {
     console.log(`[blacklist] ${blacklistCount} annonce(s) en blacklist permanente (ignorées définitivement)`);
   }
 
-  // ─── Filtrer les catégories désactivées par le feedback-analyzer ──────────
-  try {
-    const { getDisabledCategories } = require('./feedback-analyzer');
-    const disabled = getDisabledCategories();
-    if (disabled.length > 0) {
-      const before = config.searches.length;
-      config.searches = config.searches.filter(s => !disabled.includes(s.name));
-      const skipped = before - config.searches.length;
-      if (skipped > 0) {
-        console.log(`[feedback-analyzer] ${skipped} catégorie(s) désactivée(s) ignorée(s): ${disabled.join(', ')}`);
-      }
+  // ─── Feedback-analyzer : auto-disable DÉSACTIVÉ ──────────────────────────
+  // L'auto-disable des catégories a été retiré car l'analyse de feedback
+  // désactivait des niches à tort (faux négatifs vision, matching imparfait).
+  // Toutes les niches restent actives en permanence.
+  // Ancien code : getDisabledCategories() filtrait config.searches
+
+  // ─── Scan ciblé par niche (override depuis le dashboard) ────────────────
+  if (global._nicheOverride) {
+    const no = global._nicheOverride;
+    if (Date.now() < no.endsAt) {
+      const remaining = Math.round((no.endsAt - Date.now()) / 60000);
+      console.log(`[niche-scan] 🎯 Mode ciblé "${no.niche}" — ${remaining}min restantes (scan #${no.scansCompleted + 1})`);
+      config.searches = [no.searchConfig];
+      no.scansCompleted++;
+    } else {
+      console.log(`[niche-scan] ⏰ Scan ciblé "${no.niche}" terminé (durée écoulée)`);
+      global._nicheOverride = null;
     }
-  } catch { /* non-bloquant */ }
+  }
 
   // ─── Log quota eBay Browse API avant le scan ───────────────────────────────
   if (config.ebayAppId && config.ebayClientSecret) {
@@ -241,6 +247,53 @@ async function runScan(previousListings) {
   await purgeBlockedCache(ebayCacheDir);
   await purgeBlockedCache(cardmarketCacheDir);
   await purgeBlockedCache(leboncoinCacheDir);
+
+  // Purge expired disk cache files to prevent disk from filling up
+  // TTL agressifs pour éviter que le cache explose (36 Go le 31 mars 2026)
+  const httpCacheBase = path.join(config.outputDir, 'http-cache');
+  const cacheDirs = [
+    ['vinted-desc', 3 * 3600],       // 3h (était 6h)
+    ['vinted', 2 * 3600],            // 2h (était 3h)
+    ['ebay-browse-api', 6 * 3600],   // 6h (était 24h)
+    ['pokemontcg-api', 6 * 3600],    // 6h (était 24h)
+    ['image-fingerprints', 6 * 3600],// 6h (était 24h)
+    ['tcgdex-api', 6 * 3600],        // 6h (était 24h)
+    ['ebay', 4 * 3600],              // 4h — MANQUAIT
+    ['ebay-api', 6 * 3600],          // 6h — MANQUAIT
+    ['apify', 6 * 3600],             // 6h — MANQUAIT
+    ['cardmarket', 6 * 3600],        // 6h — MANQUAIT
+    ['leboncoin', 6 * 3600],         // 6h — MANQUAIT
+    ['ygoprodeck', 6 * 3600],        // 6h — MANQUAIT
+  ];
+  for (const [dir, ttl] of cacheDirs) {
+    await purgeExpiredDiskCache(path.join(httpCacheBase, dir), ttl);
+  }
+
+  // ─── Purge historique pour limiter la mémoire ────────────────────────────
+  // opportunities-history.json et evaluated-opportunities.json grossissent sans fin
+  // On garde les 500 dernières entrées max (au lieu de 36K+)
+  try {
+    const histPath = path.join(config.outputDir, 'opportunities-history.json');
+    if (fs.existsSync(histPath)) {
+      const raw = fs.readFileSync(histPath, 'utf8');
+      const hist = JSON.parse(raw);
+      if (Array.isArray(hist) && hist.length > 500) {
+        const trimmed = hist.slice(-500); // Garder les 500 plus récentes
+        fs.writeFileSync(histPath, JSON.stringify(trimmed, null, 2));
+        console.log(`[purge] opportunities-history: ${hist.length} → ${trimmed.length} entrées`);
+      }
+    }
+    const evalPath = path.join(config.outputDir, 'evaluated-opportunities.json');
+    if (fs.existsSync(evalPath)) {
+      const raw = fs.readFileSync(evalPath, 'utf8');
+      const data = JSON.parse(raw);
+      if (Array.isArray(data) && data.length > 300) {
+        const trimmed = data.slice(-300);
+        fs.writeFileSync(evalPath, JSON.stringify(trimmed, null, 2));
+        console.log(`[purge] evaluated-opportunities: ${data.length} → ${trimmed.length} entrées`);
+      }
+    }
+  } catch { /* non-bloquant */ }
 
   const platforms = config.sourcingPlatforms || ['vinted'];
 
@@ -410,11 +463,15 @@ async function runScan(previousListings) {
           sourceUrls = routerResult.sourceUrls || [];
           resultCount = routerResult.resultCount || matchedSales.length;
           console.log(`    Router [${routerResult.pricingSource}]: ${routerResult.bestMatch} -> ${routerResult.marketPrice.toFixed(2)} EUR (${routerResult.confidence})`);
+          console.log(`    [TRACE] ms=${matchedSales.length} bp=${listing.buyerPrice}`);
         } else {
           console.log(`    Router: pas de match pour "${listing.title.slice(0, 50)}"`);
         }
 
         const profit = buildProfitAnalysis(listing, matchedSales, config);
+        if (matchedSales.length > 0) {
+          console.log(`    [debug] matchedSales=${matchedSales.length}, profit=${profit ? profit.profit.toFixed(2) + '€' : 'null'}, buyerPrice=${listing.buyerPrice}`);
+        }
 
         // Langue détectée pour traçabilité
         const rowDetectedLang = extractCardLanguage(listing.title, listing.rawTitle);
@@ -456,6 +513,20 @@ async function runScan(previousListings) {
           })() : null
         };
 
+        // P5 — Condition mismatch detection: eBay "new/sealed" vs Vinted "used"
+        const conditionWarnings = [];
+        if (matchedSales.length > 0) {
+          const { extractCondition } = require('./matching');
+          const ebayCondition = extractCondition(matchedSales[0].title || '');
+          const vintedCondition = extractCondition(listing.title || '');
+          if (ebayCondition === 'new' && vintedCondition !== 'new') {
+            conditionWarnings.push('⚠️ Prix eBay basé sur du neuf/scellé, article Vinted potentiellement occasion');
+          }
+          row.ebayCondition = ebayCondition;
+          row.vintedCondition = vintedCondition;
+        }
+        row.conditionWarnings = conditionWarnings;
+
         // Seller score (données vendeur Vinted si disponibles)
         row.sellerScore = evaluateSeller(listing);
 
@@ -471,6 +542,8 @@ async function runScan(previousListings) {
               row.visionSameCard = visionResult.sameCard;
               if (visionResult.sameCard === false) {
                 console.log(`[vision-auto] ❌ REJET: "${row.title.slice(0, 50)}" — ${visionResult.summary}`);
+              } else if (visionResult.sameCard === 'uncertain') {
+                console.log(`[vision-auto] 🔶 INCERTAIN: "${row.title.slice(0, 50)}" — ${visionResult.summary} (candidate pour review)`);
               } else {
                 console.log(`[vision-auto] ✅ CONFIRMÉ: "${row.title.slice(0, 50)}" (${visionResult.confidence}%)`);
               }
@@ -514,16 +587,27 @@ async function runScan(previousListings) {
           const _minLiquidity = actualPricingSource === 'local-database' ? 25 : 40;
           const _failsLiquidity = _liquidityScore < _minLiquidity;
 
-          if (_failsProfit || _failsMargin || _failsConfidence || _failsLiquidity) {
+          const _failsHard = _failsProfit || _failsMargin; // profit/marge = critères durs
+          const _failsSoft = _failsConfidence || _failsLiquidity; // confiance/liquidité = critères souples
+
+          if (_failsHard) {
+            // Profit ou marge insuffisants → vrai rejet
             const _reasons = [];
             if (_failsProfit) _reasons.push(`profit ${profit ? profit.profit.toFixed(2) : '0.00'}€ < ${_minProfitEur}€`);
             if (_failsMargin) _reasons.push(`marge ${profit ? profit.profitPercent.toFixed(1) : '0.0'}% < ${_minProfitPct}%`);
-            if (_failsConfidence) _reasons.push(`confiance ${row.confidence}/100 < 50`);
-            if (_failsLiquidity) _reasons.push(`liquidité ${_liquidityScore}/100 < ${_minLiquidity}`);
             console.log(`  [no-opportunity] ${listing.title.slice(0, 50)}: ${_reasons.join(', ')}`);
             _seenResult = 'no-match';
+          } else if (_failsSoft) {
+            // Profit OK mais confiance/liquidité faible → CANDIDAT (visible dashboard, vérifiable manuellement)
+            row.status = 'candidate';
+            _seenResult = 'opportunity';
+            opportunities.push(row);
+            const _reasons = [];
+            if (_failsConfidence) _reasons.push(`confiance ${row.confidence}/100 < 50`);
+            if (_failsLiquidity) _reasons.push(`liquidité ${_liquidityScore}/100 < ${_minLiquidity}`);
+            console.log(`  [candidat] ${listing.title.slice(0, 50)} -> ${profit.profit.toFixed(2)} EUR (${_reasons.join(', ')})`);
           } else {
-            // Vision ran before computeConfidence — if GPT rejected, confidence = 0 → already filtered above
+            // Tous les critères passent → opportunité confirmée
             _seenResult = 'opportunity';
             opportunities.push(row);
             console.log(`  Opportunite: ${listing.title} -> ${profit.profit.toFixed(2)} EUR`);
@@ -856,13 +940,20 @@ async function runOnce() {
         ? `${global._lastEbayQuota.remaining}/${global._lastEbayQuota.limit}`
         : 'N/A';
 
+      // Compteur d'appels Browse API utilisés ce scan
+      let ebayCallsStr = '';
+      try {
+        const { getApiCallsThisScan, getMaxCallsPerScan } = require('./marketplaces/ebay-api');
+        ebayCallsStr = ` (${getApiCallsThisScan()}/${getMaxCallsPerScan()} ce scan)`;
+      } catch { /* */ }
+
       const summaryLines = [
         '📊 RÉSUMÉ SCAN',
         '',
         `🔍 Annonces scannées: ${result.scannedCount}`,
         `✅ Opportunités trouvées: ${opportunitiesFound}`,
         `📊 Base de prix: ${dbStats.totalProducts} produits`,
-        `🔋 eBay: ${ebayStr}`,
+        `🔋 eBay: ${ebayStr}${ebayCallsStr}`,
         `🔋 Apify: ${apifyStr}`
       ];
 
@@ -887,13 +978,19 @@ async function runOnce() {
   // Les alertes opportunités individuelles sont déjà envoyées via
   // sendOpportunityAlert() dans la boucle de scan ci-dessus.
 
-  // ─── Axe 5: Vérification expiration des opportunités actives ────────────
-  // Tous les 3 scans, vérifie si les opportunités actives sont encore dispo sur Vinted
+  // ─── Axe 5: Vérification expiration (actifs + candidats) ────────────────
+  // Tous les 3 scans, vérifie si les annonces Vinted (actives ET candidates) sont encore en ligne
   _scanCounter++;
   if (_scanCounter % 3 === 0) {
     try {
+      // Vérifier les opportunités actives
       const activeOpps = merged.opportunities.filter(o => !o.stale && !o.archived);
-      const toCheck = activeOpps.slice(0, 5); // Max 5 par cycle pour limiter les requêtes
+      // Vérifier aussi les candidats dans searchedListings
+      const candidateListings = merged.searchedListings.filter(l =>
+        l.status === 'candidate' && !l.stale && !l.archived && l.url
+      );
+      const allToCheck = [...activeOpps, ...candidateListings];
+      const toCheck = allToCheck.slice(0, 10); // Max 10 par cycle
       let expired = 0;
       for (const opp of toCheck) {
         try {
@@ -905,12 +1002,14 @@ async function runOnce() {
             opp.stale = true;
             opp.expiredAt = new Date().toISOString();
             expired++;
-            console.log(`[expiration] ❌ Expirée: "${opp.title.slice(0, 50)}"`);
+            console.log(`[expiration] ❌ Expirée (${opp.status || 'active'}): "${(opp.title || '').slice(0, 50)}"`);
           }
         } catch { /* continue silently */ }
       }
       if (expired > 0) {
-        console.log(`[expiration] ${expired}/${toCheck.length} opportunités expirées retirées`);
+        console.log(`[expiration] ${expired}/${toCheck.length} annonces expirées retirées`);
+      } else if (toCheck.length > 0) {
+        console.log(`[expiration] ${toCheck.length} annonce(s) vérifiée(s), toutes encore en ligne`);
       }
     } catch { /* non-bloquant */ }
   }

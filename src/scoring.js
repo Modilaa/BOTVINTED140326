@@ -113,17 +113,30 @@ function computeConfidence(opp) {
       sourceScore = 5;
   }
 
+  // P1 — Price reliability penalty: penalize when we have very few sales data points
+  if (matchedSales.length === 1) {
+    // Single sale data point — unreliable trend, apply -5 penalty
+    sourceScore = Math.max(0, sourceScore - 5);
+  }
+  if (src === 'rebrickable' && matchedSales.length <= 1) {
+    // Rebrickable without real eBay sales is just estimation — cap at 5
+    sourceScore = 5;
+  }
+
   // === TIER 3 : Vérification Vision (0-40) ===
-  // GPT-4o mini confirme = gros bonus. GPT dit non = rejet immédiat.
+  // GPT-4o mini : match = +40, uncertain = +15 (à review), reject = 0 immédiat
   let visionScore = 0;
   let visionLabel = 'non vérifié';
   if (opp.visionVerified && opp.visionResult) {
     if (opp.visionResult.sameCard === true) {
-      visionScore = 40; // GPT confirme — c'est la bonne carte
+      visionScore = 40; // GPT confirme — c'est le bon produit
       visionLabel = 'GPT confirmé ✅';
+    } else if (opp.visionResult.sameCard === 'uncertain') {
+      visionScore = 15; // GPT incertain — candidate pour review manuel
+      visionLabel = 'GPT incertain 🔶';
     } else if (opp.visionResult.sameCard === false) {
       opp.confidenceBreakdown = { textScore, sourceScore, visionScore: 0, visionLabel: 'GPT rejeté ❌', belowAvgBoost: 0, total: 0 };
-      return 0; // GPT dit carte différente — rejet immédiat
+      return 0; // GPT dit produit clairement différent — rejet immédiat
     }
   } else {
     // Pas de vision GPT — utilise le hash local comme substitut
@@ -224,8 +237,14 @@ function computeConfidence(opp) {
     }
   } catch(e) {}
 
+  // Determine price reliability for breakdown
+  const priceReliability =
+    matchedSales.length >= 3 ? 'high' :
+    matchedSales.length === 2 ? 'medium' :
+    'low';
+
   // Stocker le breakdown sur l'objet opportunité (effet de bord non-cassant)
-  opp.confidenceBreakdown = { textScore, sourceScore, visionScore, visionLabel, belowAvgBoost, trendBonus, total };
+  opp.confidenceBreakdown = { textScore, sourceScore, visionScore, visionLabel, belowAvgBoost, trendBonus, priceReliability, total };
 
   return total;
 }
@@ -412,7 +431,7 @@ function computeLiquidity(opp) {
 // Gardé pour compatibilité externe si appelé directement
 const CATEGORY_LIQUIDITY = [
   { keywords: ['pokemon'],                          score: 30 },
-  { keywords: ['sneakers'],                         score: 28 },
+  { keywords: ['funko', 'pop'],                      score: 28 },
   { keywords: ['tech'],                             score: 27 },
   { keywords: ['yu-gi-oh', 'yugioh'],               score: 25 },
   { keywords: ['topps chrome', 'chrome football'],  score: 25 },

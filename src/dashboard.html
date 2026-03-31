@@ -801,6 +801,7 @@ tr:hover td { background: rgba(108,92,231,0.04); }
     overflow-x: auto;
   }
   /* Selects et inputs de filtre */
+  #nicheFilter,
   #platformFilter,
   #routeFilter,
   #sortSelect,
@@ -910,6 +911,7 @@ tr:hover td { background: rgba(108,92,231,0.04); }
   .filter-tab { font-size: 11px; padding: 5px 8px; min-height: 34px; }
 
   /* Selects */
+  #nicheFilter,
   #platformFilter,
   #routeFilter,
   #sortSelect,
@@ -1098,6 +1100,21 @@ tr:hover td { background: rgba(108,92,231,0.04); }
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
       Scanner
     </button>
+    <button class="btn" id="cleanupBtn" onclick="triggerCleanup()" title="V&eacute;rifier quelles annonces actives sont encore en ligne sur Vinted" style="margin-left:6px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);font-size:12px;padding:5px 10px;">
+      &#128465; Nettoyer
+    </button>
+    <button class="btn" id="batchVisionBtn" onclick="triggerBatchVision()" title="Lancer GPT Vision sur TOUTES les candidates (s&eacute;quentiel, peut prendre du temps)" style="margin-left:6px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);font-size:12px;padding:5px 10px;">
+      &#129504; Batch Vision
+    </button>
+    <span style="margin-left:10px;display:inline-flex;align-items:center;gap:4px;">
+      <select id="nicheScanSelect" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;max-width:150px;">
+        <option value="">Niche...</option>
+      </select>
+      <button class="btn" id="nicheScanBtn" onclick="triggerNicheScan()" title="Scanner uniquement cette niche pendant 1h" style="background:var(--orange-bg);color:var(--orange);border:1px solid var(--orange);font-size:12px;padding:5px 10px;white-space:nowrap;">
+        &#127919; Scan cibl&eacute;
+      </button>
+      <span id="nicheScanStatus" style="display:none;font-size:11px;color:var(--orange);font-weight:600;background:var(--orange-bg);padding:2px 8px;border-radius:10px;white-space:nowrap;"></span>
+    </span>
   </div>
 </header>
 
@@ -1170,6 +1187,11 @@ tr:hover td { background: rgba(108,92,231,0.04); }
         <button class="filter-tab" data-filter="dismissed" onclick="setOppFilter('dismissed')">Ignor&eacute;es <span class="count" id="countDismissed">0</span></button>
         <span id="blacklistBadge" title="Annonces en blacklist permanente (ne reviendront plus jamais)" style="display:none;margin-left:8px;background:var(--danger,#e53e3e);color:#fff;border-radius:10px;padding:2px 7px;font-size:11px;font-weight:600;cursor:default">🚫 <span id="countBlacklisted">0</span> blacklist</span>
         <span style="margin-left:12px;border-left:1px solid var(--border);padding-left:12px">
+          <select id="nicheFilter" onchange="updateOpportunities()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer" title="Filtrer par niche">
+            <option value="all">Toutes niches</option>
+          </select>
+        </span>
+        <span style="margin-left:8px;">
           <select id="platformFilter" onchange="updateOpportunities()" style="background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer">
             <option value="all">Toutes plateformes</option>
             <option value="vinted">Vinted</option>
@@ -1652,6 +1674,18 @@ function buildPriceCellHtml(opp) {
   }
 
   var obsText = obs > 0 ? ' \u00b7 ' + obs + (obs > 1 ? ' ventes' : ' vente') : '';
+
+  // Price reliability badge (from profit.priceReliability)
+  var reliabilityBadge = '';
+  var profitData = opp.profit || {};
+  if (profitData.priceReliability === 'low' || profitData.salesCount === 1) {
+    reliabilityBadge = ' <span style="display:inline-block;padding:2px 6px;border-radius:6px;font-size:9px;font-weight:700;background:rgba(255,170,0,0.15);color:#ffa94d;border:1px solid rgba(255,170,0,0.3);" title="Prix basé sur 1 seule vente, peu fiable">⚠️ 1 vente</span>';
+  } else if (profitData.priceReliability === 'medium') {
+    reliabilityBadge = ' <span style="display:inline-block;padding:2px 6px;border-radius:6px;font-size:9px;font-weight:700;background:rgba(255,170,0,0.15);color:#ffa94d;border:1px solid rgba(255,170,0,0.3);" title="Prix basé sur 2 ventes, fiabilité moyenne">📊 2 ventes</span>';
+  } else if (profitData.priceReliability === 'high') {
+    reliabilityBadge = ' <span style="display:inline-block;padding:2px 6px;border-radius:6px;font-size:9px;font-weight:700;background:rgba(0,210,160,0.12);color:#00d2a0;border:1px solid rgba(0,210,160,0.3);" title="Prix basé sur 3+ ventes, fiable">✅ 3+ ventes</span>';
+  }
+
   var badge = '<div style="display:inline-flex;align-items:center;padding:1px 5px;border-radius:6px;font-size:9px;font-weight:700;color:' + badgeColor + ';background:' + badgeBg + ';border:1px solid ' + badgeColor + '33;margin-top:2px;cursor:help;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + esc(tooltip) + '">' + esc(srcLabel) + esc(obsText) + '</div>';
   // Trend badge (si données historiques disponibles)
   var trendHtml = '';
@@ -1662,7 +1696,7 @@ function buildPriceCellHtml(opp) {
   } else if (opp.priceTrend === 'stable') {
     trendHtml = ' <span class="trend-badge trend-stable" title="Prix stable">&#8596; stable</span>';
   }
-  return '<div style="display:flex;flex-direction:column;align-items:flex-end;">' + priceHtml + trendHtml + badge + '</div>';
+  return '<div style="display:flex;flex-direction:column;align-items:flex-end;">' + priceHtml + reliabilityBadge + trendHtml + badge + '</div>';
 }
 
 function buildLiquidityCell(opp) {
@@ -1670,27 +1704,27 @@ function buildLiquidityCell(opp) {
   var score = opp.liquidityScore;
   var summary = opp.liquiditySummary || {};
   var speedLabel = summary.speedLabel || summary.label || '';
-  var speedEmoji = summary.speedEmoji || '';
   var adjustedMargin = opp.adjustedMarginPercent;
 
-  // Couleur selon classification (flash=vert vif, rapide=vert, normal=orange, lent=rouge, très lent=gris)
-  var color;
-  if (speedLabel === 'flash')          color = '#00d2a0';
-  else if (speedLabel === 'rapide')    color = '#4cd137';
-  else if (speedLabel === 'normal')    color = '#ffa94d';
-  else if (speedLabel === 'lent')      color = '#ff6b6b';
-  else if (speedLabel === 'très lent') color = '#636e72';
-  else if (score >= 80)  color = '#00d2a0';
-  else if (score >= 60)  color = '#4cd137';
-  else if (score >= 40)  color = '#ffa94d';
-  else if (score >= 20)  color = '#ff6b6b';
-  else                   color = '#636e72';
+  // Couleur + label lisible selon le score
+  var color, label, emoji, tip;
+  if (speedLabel === 'flash' || score >= 80) {
+    color = '#00d2a0'; label = 'Tr\u00e8s facile'; emoji = '\u26a1'; tip = 'Se vend tr\u00e8s vite (forte demande)';
+  } else if (speedLabel === 'rapide' || score >= 60) {
+    color = '#4cd137'; label = 'Facile'; emoji = '\u2705'; tip = 'Bonne demande, se vend bien';
+  } else if (speedLabel === 'normal' || score >= 40) {
+    color = '#ffa94d'; label = 'Moyen'; emoji = '\u23f3'; tip = 'Demande moyenne, peut prendre du temps';
+  } else if (speedLabel === 'lent' || score >= 20) {
+    color = '#ff6b6b'; label = 'Difficile'; emoji = '\u26a0\ufe0f'; tip = 'Peu de demande, revente lente';
+  } else {
+    color = '#636e72'; label = 'Tr\u00e8s difficile'; emoji = '\u274c'; tip = 'Quasi aucune demande, risque d\'invendu';
+  }
 
-  var html = '<div style="display:flex;flex-direction:column;gap:2px;">';
+  var html = '<div style="display:flex;flex-direction:column;gap:2px;cursor:help;" title="' + esc(tip) + '">';
   html += '<span class="confidence-bar"><span class="confidence-fill" style="width:' + score + '%; background:' + color + ';"></span></span>';
-  html += '<span style="font-size:12px;color:' + color + ';font-weight:600;">' + (speedEmoji ? speedEmoji + ' ' : '') + score + '</span>';
-  if (speedLabel) html += '<span style="font-size:10px;color:' + color + ';font-weight:500;">' + esc(speedLabel) + '</span>';
-  if (adjustedMargin != null) html += '<span style="font-size:10px;color:var(--text2);">Adj: ' + adjustedMargin + '%</span>';
+  html += '<span style="font-size:12px;color:' + color + ';font-weight:600;">' + emoji + ' ' + label + '</span>';
+  html += '<span style="font-size:10px;color:var(--text3);">' + score + '/100</span>';
+  if (adjustedMargin != null) html += '<span style="font-size:10px;color:var(--text2);">Marge ajust\u00e9e: ' + adjustedMargin + '%</span>';
   html += '</div>';
   return html;
 }
@@ -1843,6 +1877,29 @@ async function updateOpportunities() {
   document.getElementById('countBlacklisted').textContent = blacklisted;
   document.getElementById('blacklistBadge').style.display = blacklisted > 0 ? 'inline-block' : 'none';
 
+  // Construire dynamiquement le dropdown des niches à partir des données
+  var nicheSelect = document.getElementById('nicheFilter');
+  if (nicheSelect) {
+    var niches = {};
+    opps.forEach(function(o) { if (o.search) niches[o.search] = (niches[o.search] || 0) + 1; });
+    var nicheKeys = Object.keys(niches).sort();
+    var currentNiche = nicheSelect.value || 'all';
+    nicheSelect.innerHTML = '<option value="all">Toutes niches (' + opps.length + ')</option>';
+    nicheKeys.forEach(function(n) {
+      var opt = document.createElement('option');
+      opt.value = n;
+      opt.textContent = n + ' (' + niches[n] + ')';
+      if (n === currentNiche) opt.selected = true;
+      nicheSelect.appendChild(opt);
+    });
+  }
+
+  // Appliquer le filtre niche
+  var nicheFilterVal = nicheSelect ? nicheSelect.value : 'all';
+  if (nicheFilterVal !== 'all') {
+    opps = opps.filter(function(o) { return o.search === nicheFilterVal; });
+  }
+
   if (opps.length === 0) {
     var emptyMsg = currentOppFilter === 'candidate'
       ? '<div class="empty-state" id="oppEmpty"><div class="empty-state-icon">&#9203;</div><div class="empty-state-title">Aucun candidat en attente</div><div class="empty-state-text">Les candidats sont les articles qui ont pass\u00e9 les seuils de profit mais attendent la validation GPT Vision (image eBay manquante, budget d\u00e9pass\u00e9, ou erreur API).</div></div>'
@@ -1915,18 +1972,9 @@ async function updateOpportunities() {
 
   // Update panel badge to reflect actually displayed count (after dedup + all filters)
   countBadge.textContent = opps.length;
-
-  // Sync stat card and tab counter with filtered count
-  if (currentOppFilter === 'active') {
-    document.getElementById('statOpps').textContent = opps.length;
-    document.getElementById('countActive').textContent = opps.length;
-  }
-  if (currentOppFilter === 'candidate') {
-    document.getElementById('countCandidate').textContent = opps.length;
-  }
-  if (currentOppFilter === 'accepted') {
-    document.getElementById('countAccepted').textContent = opps.length;
-  }
+  // Note: les tab counts (countActive, countCandidate, etc.) sont déjà mis à jour
+  // par les counts serveur (lignes ci-dessus). On ne les écrase PAS avec opps.length
+  // car les filtres client (plateforme, confiance min...) peuvent réduire l'affichage.
   // Update profit card to sum only visible/filtered items (skip during scan — data is partial)
   if (lastScanningState !== 'scanning') {
     var filteredProfit = opps.reduce(function(sum, o) { return sum + (o.profit || 0); }, 0);
@@ -1985,27 +2033,19 @@ async function updateOpportunities() {
     if (opp.confidenceScore != null) {
       var confScore = opp.confidenceScore;
       var confColor = confidenceColor(confScore);
-      var confLabel = confScore >= 70 ? 'Bon' : (confScore >= 50 ? 'Moyen' : null);
-      // Build detailed tooltip from breakdown if available
-      var confTooltip;
+      var confLabel, confEmoji;
+      if (confScore >= 70)      { confLabel = 'Fiable'; confEmoji = '\u2705'; }
+      else if (confScore >= 50) { confLabel = 'Acceptable'; confEmoji = '\u2705'; }
+      else                      { confLabel = '\u00c0 v\u00e9rifier'; confEmoji = '\u26a0\ufe0f'; }
+      var confTip = confScore >= 70 ? 'Bonne correspondance entre l\'article Vinted et le prix eBay' : confScore >= 50 ? 'Correspondance correcte mais \u00e0 v\u00e9rifier' : 'Correspondance faible \u2014 clique pour voir le d\u00e9tail';
       var bd = opp.confidenceBreakdown;
-      if (bd) {
-        confTooltip = 'D\u00e9tail score ' + confScore + '/100\n'
-          + '\u2022 Match texte : ' + bd.textScore + '/40\n'
-          + '\u2022 Fiabilit\u00e9 source : ' + bd.sourceScore + '/20\n'
-          + '\u2022 Vision IA : ' + bd.visionScore + '/40 (' + (bd.visionLabel || 'non v\u00e9rifi\u00e9') + ')'
-          + (bd.belowAvgBoost > 0 ? '\n\u2022 Prix sous moyenne Vinted : boost \u2192 ' + bd.belowAvgBoost : '');
-      } else {
-        var imgCapNote = (opp.imageSimilarityScore != null) ? ' | Sim. image: ' + opp.imageSimilarityScore + '%' : '';
-        confTooltip = 'Confiance: ' + confScore + '/100 \u2014 Match texte (0-40) + Source (0-20) + Vision IA (0-40)' + imgCapNote;
-      }
       var bdAttrs = bd
         ? 'data-total="' + confScore + '" data-text="' + bd.textScore + '" data-source="' + bd.sourceScore + '" data-vision="' + bd.visionScore + '" data-vlabel="' + esc(bd.visionLabel || '') + '"'
         : 'data-total="' + confScore + '" data-text="-1" data-source="-1" data-vision="-1" data-vlabel=""';
-      confHtml = '<div style="display:flex;flex-direction:column;gap:2px;cursor:pointer;" ' + bdAttrs + ' onclick="showConfBreakdown(this,event)" title="' + esc(confTooltip) + '">' +
+      confHtml = '<div style="display:flex;flex-direction:column;gap:2px;cursor:pointer;" ' + bdAttrs + ' onclick="showConfBreakdown(this,event)" title="' + esc(confTip) + '">' +
         '<span class="confidence-bar"><span class="confidence-fill" style="width:' + confScore + '%; background:' + confColor + ';"></span></span>' +
-        '<span style="font-size:12px;color:' + confColor + ';font-weight:600;">' + confScore + '<span style="font-size:10px;opacity:0.7;"> / 100</span></span>' +
-        (confScore < 50 ? '<span style="font-size:10px;color:var(--red);font-weight:700;background:var(--red-bg);padding:1px 5px;border-radius:4px;">\u26a0 Douteux</span>' : '<span style="font-size:10px;color:var(--text3);">' + confLabel + '</span>') +
+        '<span style="font-size:12px;color:' + confColor + ';font-weight:600;">' + confScore + '<span style="font-size:10px;opacity:0.7;">/100</span></span>' +
+        '<span style="font-size:10px;color:' + confColor + ';font-weight:600;">' + confEmoji + ' ' + confLabel + '</span>' +
         '</div>';
     }
 
@@ -2083,7 +2123,7 @@ async function updateOpportunities() {
       verifyBtnHtml = '<button class="btn-action btn-verify wrong" id="verifybtn-' + safeId + '" onclick="verifyOpportunity(\'' + safeId + '\')" title="Prix diff\u00e9rent (' + ((verif.priceCheck && verif.priceCheck.diff) || 0) + '%): ' + euro(verif.priceCheck && verif.priceCheck.newPrice) + ' via ' + esc((verif.priceCheck && verif.priceCheck.source) || '') + '">\u26A0</button>';
     }
     var actionsHtml = '<div class="opp-action-btns">';
-    if (opp.status === 'active') {
+    if (opp.status === 'active' || opp.status === 'candidate') {
       actionsHtml +=
         '<button class="btn-action btn-accept" id="abtn-' + safeId + '" onclick="acceptOpportunity(\'' + safeId + '\')" title="Accepter \u2014 opportunit\u00e9 valid\u00e9e">\u2705</button>' +
         '<button class="btn-action btn-reject" id="rbtn-' + safeId + '" onclick="rejectOpportunity(\'' + safeId + '\')" title="Rejeter \u2014 supprimer cette opportunit\u00e9">\u274C</button>' +
@@ -2125,6 +2165,11 @@ async function updateOpportunities() {
         ? '\u26A0\uFE0F <b>Images diff\u00e9rentes</b> (confiance: ' + sv.confidence + '%) \u2014 ' + esc(sv.summary || '') + (sv.differences && sv.differences.length ? ' | ' + sv.differences.map(function(d){return esc(d);}).join(', ') : '')
         : '\u2705 <b>M\u00eame carte confirm\u00e9e</b> (confiance: ' + sv.confidence + '%) \u2014 ' + esc(sv.summary || '');
       html += '<tr class="vision-banner"><td colspan="99" style="padding:4px 8px;font-size:11px;border-top:none;' + svStyle + '">' + svContent + '</td></tr>';
+    }
+    // Render condition warnings banner (condition mismatch alerts)
+    if (opp.conditionWarnings && opp.conditionWarnings.length > 0) {
+      var cwContent = opp.conditionWarnings.map(function(w) { return esc(w); }).join(' | ');
+      html += '<tr class="condition-warning-banner"><td colspan="99" style="padding:4px 8px;font-size:11px;border-top:none;background:rgba(255,170,0,0.12);color:#ffa94d;border-top:1px solid rgba(255,170,0,0.2);">' + cwContent + '</td></tr>';
     }
   }
 
@@ -2402,6 +2447,147 @@ async function triggerScan() {
     alert('Erreur : ' + e.message);
   }
   setTimeout(function() { btn.textContent = 'Scanner'; refreshAll(); }, 2000);
+}
+
+// ─── Cleanup expired listings ────────────────────────────────
+async function triggerCleanup() {
+  var btn = document.getElementById('cleanupBtn');
+  if (!btn) return;
+  btn.disabled = true;
+  var origText = btn.innerHTML;
+  btn.innerHTML = '&#9203; V\u00e9rification...';
+  try {
+    var res = await fetch(API_BASE + '/api/cleanup-expired', { method: 'POST' });
+    var data = await res.json();
+    if (data.success) {
+      var msg = data.expired + ' expir\u00e9e(s) sur ' + data.checked + ' v\u00e9rifi\u00e9e(s)';
+      if (data.errors > 0) msg += ' (' + data.errors + ' erreur(s))';
+      showVerifyToast('\u2705 <b>Nettoyage termin\u00e9</b> \u2014 ' + msg, 'toast-ok');
+      if (data.expired > 0) setTimeout(function() { fetchOpportunities(); }, 500);
+    } else {
+      showVerifyToast('\u26A0\uFE0F ' + (data.error || 'Erreur nettoyage'), 'toast-warn');
+    }
+  } catch (e) {
+    showVerifyToast('\u26A0\uFE0F Erreur: ' + e.message, 'toast-warn');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = origText;
+  }
+}
+
+// ─── Batch Vision ────────────────────────────────────────────
+var batchVisionPolling = null;
+// ─── Scan ciblé par niche ─────────────────────────────────────────────
+function populateNicheScanSelect() {
+  var sel = document.getElementById('nicheScanSelect');
+  if (!sel) return;
+  fetch('/api/config').then(function(r) { return r.json(); }).then(function(cfg) {
+    if (!cfg.searches) return;
+    sel.innerHTML = '<option value="">Niche...</option>';
+    cfg.searches.forEach(function(s) {
+      var opt = document.createElement('option');
+      opt.value = s.name;
+      opt.textContent = s.name;
+      sel.appendChild(opt);
+    });
+  }).catch(function() {});
+}
+populateNicheScanSelect();
+
+function updateNicheScanStatus() {
+  fetch('/api/scan/niche/status').then(function(r) { return r.json(); }).then(function(data) {
+    var el = document.getElementById('nicheScanStatus');
+    var btn = document.getElementById('nicheScanBtn');
+    if (!el) return;
+    if (data.active) {
+      el.style.display = 'inline';
+      el.innerHTML = '&#127919; ' + data.niche + ' — ' + data.remainingMinutes + 'min restantes (' + data.scansCompleted + ' scans) <span onclick="stopNicheScan()" style="cursor:pointer;margin-left:4px;color:var(--red);" title="Arr&ecirc;ter">&#10060;</span>';
+      if (btn) { btn.innerHTML = '&#9209; Arr&ecirc;ter'; btn.onclick = stopNicheScan; }
+    } else {
+      el.style.display = 'none';
+      if (btn) { btn.innerHTML = '&#127919; Scan cibl&eacute;'; btn.onclick = triggerNicheScan; }
+    }
+  }).catch(function() {});
+}
+setInterval(updateNicheScanStatus, 10000);
+updateNicheScanStatus();
+
+async function triggerNicheScan() {
+  var sel = document.getElementById('nicheScanSelect');
+  var niche = sel ? sel.value : '';
+  if (!niche) { alert('S\u00e9lectionnez une niche d\'abord.'); return; }
+  var btn = document.getElementById('nicheScanBtn');
+  if (btn) btn.disabled = true;
+  try {
+    var r = await fetch('/api/scan/niche', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ niche: niche, durationMinutes: 60 })
+    });
+    var data = await r.json();
+    if (data.error) { alert(data.error); return; }
+    showToast('Scan cibl\u00e9 "' + niche + '" lanc\u00e9 pour 60 minutes !', 'success');
+    updateNicheScanStatus();
+  } catch (e) {
+    alert('Erreur : ' + e.message);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function stopNicheScan() {
+  try {
+    var r = await fetch('/api/scan/niche/stop', { method: 'POST' });
+    var data = await r.json();
+    showToast(data.message || 'Scan cibl\u00e9 arr\u00eat\u00e9.', 'info');
+    updateNicheScanStatus();
+  } catch (e) {
+    alert('Erreur : ' + e.message);
+  }
+}
+
+async function triggerBatchVision() {
+  var btn = document.getElementById('batchVisionBtn');
+  if (!btn) return;
+  btn.disabled = true;
+  var origText = btn.innerHTML;
+  btn.innerHTML = '&#9203; Lancement...';
+  try {
+    var res = await fetch(API_BASE + '/api/batch-vision', { method: 'POST' });
+    var data = await res.json();
+    if (data.success) {
+      showVerifyToast('\u2705 <b>Batch Vision lanc\u00e9</b> \u2014 traitement en arri\u00e8re-plan', 'toast-ok');
+      btn.innerHTML = '&#129504; En cours...';
+      // Polling toutes les 10s pour mettre à jour le bouton
+      batchVisionPolling = setInterval(async function() {
+        try {
+          var sr = await fetch(API_BASE + '/api/batch-vision-status');
+          var sd = await sr.json();
+          if (sd.progress) {
+            btn.innerHTML = '&#129504; ' + sd.progress.processed + '/' + sd.progress.total + ' (\u2705' + sd.progress.matched + ' \u274C' + sd.progress.rejected + ')';
+          }
+          if (!sd.running) {
+            clearInterval(batchVisionPolling);
+            batchVisionPolling = null;
+            btn.disabled = false;
+            btn.innerHTML = origText;
+            fetchOpportunities();
+            if (sd.progress) {
+              showVerifyToast('\u2705 <b>Batch termin\u00e9</b> \u2014 ' + sd.progress.matched + ' valid\u00e9e(s), ' + sd.progress.rejected + ' rejet\u00e9e(s), ' + sd.progress.errors + ' erreur(s)', 'toast-ok');
+            }
+          }
+        } catch(e) {}
+      }, 10000);
+    } else {
+      showVerifyToast('\u26A0\uFE0F ' + (data.error || 'D\u00e9j\u00e0 en cours'), 'toast-warn');
+      btn.disabled = false;
+      btn.innerHTML = origText;
+    }
+  } catch (e) {
+    showVerifyToast('\u26A0\uFE0F Erreur: ' + e.message, 'toast-warn');
+    btn.disabled = false;
+    btn.innerHTML = origText;
+  }
 }
 
 // ─── Portfolio ─────────────────────────────────────────────
@@ -3155,16 +3341,24 @@ function connectSSE() {
 }
 
 // ─── Immediate count & profit update (called on every user action) ───
-function adjustCounts(deltaActive, deltaAccepted, deltaProfit) {
+// deltaActive: change in active count, deltaCandidate: change in candidate count
+// deltaAccepted: change in accepted count, deltaProfit: change in profit total
+function adjustCounts(deltaActive, deltaAccepted, deltaProfit, deltaCandidate) {
   var statOppsEl = document.getElementById('statOpps');
   var countActiveEl = document.getElementById('countActive');
+  var countCandidateEl = document.getElementById('countCandidate');
   var countAcceptedEl = document.getElementById('countAccepted');
+  var countDismissedEl = document.getElementById('countDismissed');
   var oppCountEl = document.getElementById('oppCount');
   var statOppsSubEl = document.getElementById('statOppsSub');
   if (deltaActive !== 0) {
     if (statOppsEl) statOppsEl.textContent = Math.max(0, (parseInt(statOppsEl.textContent) || 0) + deltaActive);
     if (countActiveEl) countActiveEl.textContent = Math.max(0, (parseInt(countActiveEl.textContent) || 0) + deltaActive);
-    if (oppCountEl) oppCountEl.textContent = Math.max(0, (parseInt(oppCountEl.textContent) || 0) + deltaActive);
+    if (oppCountEl && currentOppFilter === 'active') oppCountEl.textContent = Math.max(0, (parseInt(oppCountEl.textContent) || 0) + deltaActive);
+  }
+  if (deltaCandidate && deltaCandidate !== 0 && countCandidateEl) {
+    countCandidateEl.textContent = Math.max(0, (parseInt(countCandidateEl.textContent) || 0) + deltaCandidate);
+    if (oppCountEl && currentOppFilter === 'candidate') oppCountEl.textContent = Math.max(0, (parseInt(oppCountEl.textContent) || 0) + deltaCandidate);
   }
   if (deltaAccepted !== 0 && countAcceptedEl) {
     countAcceptedEl.textContent = Math.max(0, (parseInt(countAcceptedEl.textContent) || 0) + deltaAccepted);
@@ -3200,7 +3394,11 @@ async function acceptOpportunity(id) {
         setTimeout(function() { if (banner.parentNode) banner.parentNode.removeChild(banner); }, 320);
       }
     }
-    adjustCounts(-1, 1, 0);
+    if (currentOppFilter === 'candidate') {
+      adjustCounts(0, 1, 0, -1);
+    } else {
+      adjustCounts(-1, 1, 0);
+    }
     showVerifyToast('\u2705 Opportunit\u00e9 accept\u00e9e', 'toast-ok');
   } catch (e) {
     if (btn) btn.disabled = false;
@@ -3234,7 +3432,11 @@ async function rejectOpportunity(id) {
         setTimeout(function() { if (banner.parentNode) banner.parentNode.removeChild(banner); }, 320);
       }
     }
-    adjustCounts(-1, 0, profit > 0 ? -profit : 0);
+    if (currentOppFilter === 'candidate') {
+      adjustCounts(0, 0, 0, -1);
+    } else {
+      adjustCounts(-1, 0, profit > 0 ? -profit : 0);
+    }
     showVerifyToast('\u274C Opportunit\u00e9 rejet\u00e9e', 'toast-warn');
   } catch (e) {
     if (btn) btn.disabled = false;
@@ -3294,17 +3496,25 @@ async function verifyImage(id) {
       }
       var profit2 = currentOppsProfit[id] || 0;
       delete currentOppsProfit[id];
-      adjustCounts(-1, 0, profit2 > 0 ? -profit2 : 0);
+      if (currentOppFilter === 'candidate') {
+        adjustCounts(0, 0, 0, -1);
+      } else {
+        adjustCounts(-1, 0, profit2 > 0 ? -profit2 : 0);
+      }
       showVerifyToast('\u274C <b>Rejet\u00e9 par GPT</b> \u2014 ' + esc(data.reason || 'Produits diff\u00e9rents'), 'toast-warn');
     } else {
-      // GPT accepte → auto-accepted, déplacer vers Acceptées
+      // GPT accepte → candidate promue en active, ou active acceptée
       var row2 = document.querySelector('tr[data-opp-id="' + id + '"]');
       if (row2) {
         row2.style.transition = 'opacity 0.4s';
         row2.style.opacity = '0';
         setTimeout(function() { if (row2.parentNode) row2.parentNode.removeChild(row2); }, 400);
       }
-      adjustCounts(-1, 1, 0);
+      if (currentOppFilter === 'candidate') {
+        adjustCounts(1, 0, 0, -1); // candidate→active : +1 active, -1 candidate
+      } else {
+        adjustCounts(-1, 1, 0); // active→accepted
+      }
       if (btn) {
         btn.classList.remove('verifying');
         btn.classList.add('confirmed');
@@ -3312,7 +3522,10 @@ async function verifyImage(id) {
         btn.disabled = false;
         btn.title = 'Accept\u00e9e par GPT (' + confidence + '%)';
       }
-      showVerifyToast('\u2705 <b>Accept\u00e9e par GPT</b> (' + confidence + '%) \u2014 ' + esc(data.reason || ''), 'toast-ok');
+      // Rafraîchir les données pour voir l'item dans le bon onglet
+      setTimeout(function() { fetchOpportunities(); }, 600);
+      var toastLabel = (data.vision && data.vision.promoted) ? 'Candidate \u2192 Active' : 'Accept\u00e9e par GPT';
+      showVerifyToast('\u2705 <b>' + toastLabel + '</b> (' + confidence + '%) \u2014 ' + esc(data.reason || ''), 'toast-ok');
     }
   } catch (e) {
     btn = getVerifyBtn(id);
@@ -3444,6 +3657,16 @@ async function verifyOpportunity(id) {
 var currentFeedbackId = null;
 
 // ─── Score breakdown popup ─────────────────────────────────
+function confBarMini(value, max, color) {
+  var pct = Math.max(0, Math.min(100, (value / max) * 100));
+  return '<div style="width:100%;height:6px;background:var(--bg2);border-radius:3px;overflow:hidden;"><div style="width:' + pct + '%;height:100%;background:' + color + ';border-radius:3px;"></div></div>';
+}
+function confScoreColor(value, max) {
+  var pct = max > 0 ? (value / max) * 100 : 0;
+  if (pct >= 75) return 'var(--green)';
+  if (pct >= 40) return 'var(--orange)';
+  return 'var(--red)';
+}
 function showConfBreakdown(el, evt) {
   evt && evt.stopPropagation();
   var existing = document.getElementById('confBreakdownPopup');
@@ -3455,18 +3678,70 @@ function showConfBreakdown(el, evt) {
   var vLabel  = el.dataset.vlabel || '';
   var popup = document.createElement('div');
   popup.id = 'confBreakdownPopup';
-  popup.style.cssText = 'position:fixed;z-index:9999;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 18px;box-shadow:0 8px 32px rgba(0,0,0,0.45);min-width:220px;font-size:13px;color:var(--text);';
+  popup.style.cssText = 'position:fixed;z-index:9999;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px 20px;box-shadow:0 8px 32px rgba(0,0,0,0.45);min-width:260px;max-width:320px;font-size:13px;color:var(--text);';
+
+  // Header avec score global et couleur
+  var globalColor = total >= 70 ? 'var(--green)' : total >= 50 ? 'var(--orange)' : 'var(--red)';
+  var globalLabel = total >= 70 ? 'Fiable' : total >= 50 ? 'Acceptable' : 'Douteux';
+  var header = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border);">'
+    + '<span style="font-weight:700;font-size:15px;">Score de confiance</span>'
+    + '<span style="font-weight:800;font-size:18px;color:' + globalColor + ';">' + total + '<span style="font-size:12px;opacity:0.6;">/100</span> <span style="font-size:11px;font-weight:600;background:' + globalColor + '22;color:' + globalColor + ';padding:2px 8px;border-radius:6px;">' + globalLabel + '</span></span>'
+    + '</div>';
+
   var rows = '';
-  if (!isNaN(text))   rows += '<div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:6px;"><span>Match texte</span><span style="font-weight:700;color:var(--accent2)">' + text + ' / 40</span></div>';
-  if (!isNaN(source)) rows += '<div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:6px;"><span>Fiabilité source</span><span style="font-weight:700;color:var(--accent2)">' + source + ' / 20</span></div>';
-  if (!isNaN(vision)) rows += '<div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:6px;"><span>Vision IA</span><span style="font-weight:700;color:' + (vision >= 40 ? 'var(--green)' : vision >= 20 ? 'var(--orange)' : 'var(--red)') + '">' + vision + ' / 40' + (vLabel ? ' <span style="font-size:10px;opacity:0.7">(' + vLabel + ')</span>' : '') + '</span></div>';
-  popup.innerHTML = '<div style="font-weight:700;font-size:14px;margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:8px;">Détail confiance — ' + total + '/100</div>' + rows;
+  var hasBreakdown = text >= 0 || source >= 0 || vision >= 0;
+
+  if (hasBreakdown) {
+    // Ligne Match titre
+    if (text >= 0) {
+      var tc = confScoreColor(text, 40);
+      var textExpl = text >= 30 ? 'Titres proches' : text >= 15 ? 'Titres partiellement similaires' : 'Titres peu similaires';
+      rows += '<div style="margin-bottom:10px;">'
+        + '<div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span>Correspondance titre</span><span style="font-weight:700;color:' + tc + ';">' + text + '/40</span></div>'
+        + confBarMini(text, 40, tc)
+        + '<div style="font-size:10px;color:var(--text3);margin-top:2px;">' + textExpl + '</div>'
+        + '</div>';
+    }
+    // Ligne Source prix
+    if (source >= 0) {
+      var sc = confScoreColor(source, 20);
+      var srcExpl = source >= 15 ? 'Source fiable (API officielle)' : source >= 8 ? 'Source correcte' : 'Source peu fiable (estimation)';
+      rows += '<div style="margin-bottom:10px;">'
+        + '<div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span>Fiabilit\u00e9 du prix</span><span style="font-weight:700;color:' + sc + ';">' + source + '/20</span></div>'
+        + confBarMini(source, 20, sc)
+        + '<div style="font-size:10px;color:var(--text3);margin-top:2px;">' + srcExpl + '</div>'
+        + '</div>';
+    }
+    // Ligne Vision IA
+    if (vision >= 0) {
+      var vc = confScoreColor(vision, 40);
+      var visExpl = vision >= 40 ? 'GPT confirme : m\u00eame produit' : vision >= 20 ? 'GPT incertain' : vision === 0 ? 'GPT rejette ou pas encore v\u00e9rifi\u00e9' : 'V\u00e9rification partielle';
+      if (vLabel === 'confirmed' || vLabel === 'match') visExpl = 'GPT confirme : m\u00eame produit';
+      else if (vLabel === 'rejected' || vLabel === 'mismatch') visExpl = 'GPT a rejet\u00e9 : produits diff\u00e9rents';
+      else if (vLabel === 'non v\u00e9rifi\u00e9' || vLabel === '') visExpl = 'Pas encore v\u00e9rifi\u00e9 par GPT Vision';
+      rows += '<div style="margin-bottom:4px;">'
+        + '<div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span>V\u00e9rification IA</span><span style="font-weight:700;color:' + vc + ';">' + vision + '/40</span></div>'
+        + confBarMini(vision, 40, vc)
+        + '<div style="font-size:10px;color:var(--text3);margin-top:2px;">' + visExpl + '</div>'
+        + '</div>';
+    }
+  } else {
+    // Pas de breakdown dispo
+    rows = '<div style="color:var(--text3);font-size:12px;text-align:center;padding:8px 0;">D\u00e9tail non disponible pour cette opportunit\u00e9.<br>Lance un scan ou une v\u00e9rification Vision pour obtenir le d\u00e9tail.</div>';
+  }
+
+  // Explication finale
+  var footer = '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);font-size:10px;color:var(--text3);line-height:1.4;">'
+    + 'Un score &ge; 50 est requis. La v\u00e9rification IA (Vision) est le facteur le plus important.'
+    + '</div>';
+
+  popup.innerHTML = header + rows + footer;
   document.body.appendChild(popup);
   var rect = el.getBoundingClientRect();
   var top = rect.bottom + 6;
   var left = rect.left;
-  if (left + 240 > window.innerWidth) left = window.innerWidth - 248;
-  if (top + 160 > window.innerHeight) top = rect.top - 166;
+  if (left + 320 > window.innerWidth) left = window.innerWidth - 328;
+  if (top + 280 > window.innerHeight) top = rect.top - 290;
   popup.style.top = top + 'px';
   popup.style.left = left + 'px';
   setTimeout(function() { document.addEventListener('click', function h() { var p = document.getElementById('confBreakdownPopup'); if (p) p.remove(); document.removeEventListener('click', h); }); }, 0);
@@ -3546,7 +3821,11 @@ async function submitFeedbackModal() {
     if (tr) tr.remove();
   }
   // Update all counts and profit total immediately
-  adjustCounts(-1, 0, profit > 0 ? -profit : 0);
+  if (currentOppFilter === 'candidate') {
+    adjustCounts(0, 0, 0, -1);
+  } else {
+    adjustCounts(-1, 0, profit > 0 ? -profit : 0);
+  }
 }
 
 // ─── Portfolio ────────────────────────────────────────────
@@ -3567,7 +3846,11 @@ async function addToPortfolio(id) {
       delete currentOppsProfit[id];
       var tr = btn ? btn.closest('tr') : null;
       if (tr) tr.remove();
-      adjustCounts(-1, 0, profit > 0 ? -profit : 0);
+      if (currentOppFilter === 'candidate') {
+        adjustCounts(0, 0, 0, -1);
+      } else {
+        adjustCounts(-1, 0, profit > 0 ? -profit : 0);
+      }
       loadPortfolio();
     } else {
       alert('Erreur: ' + (data.error || 'Inconnu'));

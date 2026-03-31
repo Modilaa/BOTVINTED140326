@@ -11,6 +11,8 @@ const { updateState: updateOppState } = require('./opportunity-state');
 let _lastUpdateId = 0;
 let _pollingTimeout = null;
 let _token = null;
+let _consecutiveErrors = 0;
+const MAX_POLL_INTERVAL = 60000; // 1 minute max entre les polls en cas d'erreurs
 
 // ─── HTTP helpers ──────────────────────────────────────────────────────────
 
@@ -166,7 +168,7 @@ async function poll() {
   try {
     const response = await telegramGet('getUpdates', {
       offset: _lastUpdateId + 1,
-      timeout: 0,
+      timeout: 30, // Long polling (30s) — plus efficace que short polling
       allowed_updates: JSON.stringify(['callback_query'])
     });
 
@@ -175,16 +177,27 @@ async function poll() {
         _lastUpdateId = Math.max(_lastUpdateId, update.update_id);
         if (update.callback_query) {
           handleCallback(update.callback_query).catch((err) => {
-            console.error('[TG-Handler] handleCallback error:', err.message);
+            console.error('[TG-Handler] handleCallback error:', err && err.message || err);
           });
         }
       }
     }
+
+    // Succès → reset le compteur d'erreurs
+    _consecutiveErrors = 0;
   } catch (err) {
-    console.error('[TG-Handler] poll error:', err.message);
+    _consecutiveErrors++;
+    // Log uniquement toutes les 10 erreurs pour ne pas spammer
+    if (_consecutiveErrors <= 3 || _consecutiveErrors % 10 === 0) {
+      console.error(`[TG-Handler] poll error (x${_consecutiveErrors}):`, err && err.message || String(err) || 'unknown');
+    }
   }
 
-  _pollingTimeout = setTimeout(poll, 5000);
+  // Backoff exponentiel en cas d'erreurs consécutives : 5s, 10s, 20s, 40s, max 60s
+  const delay = _consecutiveErrors > 0
+    ? Math.min(5000 * Math.pow(2, _consecutiveErrors - 1), MAX_POLL_INTERVAL)
+    : 1000; // 1s entre les polls normaux (le long polling fait déjà le gros du délai)
+  _pollingTimeout = setTimeout(poll, delay);
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────

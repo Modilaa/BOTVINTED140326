@@ -165,7 +165,7 @@ function evaluateCriteria(row, sprintContract, minConfidence, minProfEur, minPro
   const itemMargin       = row.profit ? row.profit.profitPercent : 0;
   const priceObs         = (row.priceDetails && row.priceDetails.observations) ||
                            (row.matchedSales ? row.matchedSales.length : 0);
-  const isPriceFromApi   = ['pokemon-tcg', 'ygoprodeck', 'rebrickable', 'pokemon-tcg-api'].includes(row.pricingSource);
+  const isPriceFromApi   = ['pokemon-tcg', 'ygoprodeck', 'rebrickable', 'pokemon-tcg-api', 'ebay-browse-api', 'local-database', 'discogs'].includes(row.pricingSource);
   const liqScore         = (row.liquidity && typeof row.liquidity === 'object') ? row.liquidity.score : 0;
 
   const checks = [
@@ -306,7 +306,7 @@ async function processInBatches(items, fn, concurrency) {
  * @returns {{ visionErrors, visionRuns, visionBudgetSkips }}
  */
 async function runVisionPass(candidates, budget, visionDisabledByOrch, outputDir, dailyBudget) {
-  const VISION_CONCURRENCY = 3;
+  const VISION_CONCURRENCY = 2; // Réduit de 3 à 2 pour respecter le TPM OpenAI (200k tokens/min)
   let visionErrors      = 0;
   let visionRuns        = 0;
   let visionBudgetSkips = 0;
@@ -423,8 +423,8 @@ async function run(candidates = null) {
   const activeDecisions      = getActiveDecisions(outputDir);
   const visionDisabledByOrch = activeDecisions.some(d => d.action === 'disable_vision');
   const confidenceOverride   = activeDecisions.find(d => d.action === 'lower_confidence_threshold');
-  const minConfidenceDefault = 50;
-  const minConfidence        = confidenceOverride ? (confidenceOverride.threshold || 40) : minConfidenceDefault;
+  const minConfidenceDefault = 30;
+  const minConfidence        = confidenceOverride ? (confidenceOverride.threshold || 25) : minConfidenceDefault;
 
   console.log(`\n[Evaluator] Évaluation de ${candidates.length} candidat(s)...`);
   console.log(`[Evaluator] Budget Vision: ${budget.estimatedCostCents}/${dailyBudget} cents (${budget.callsToday} appels aujourd'hui)`);
@@ -461,7 +461,7 @@ async function run(candidates = null) {
       const minProfEur = Math.max(5,  search && search.minProfitEur     != null ? search.minProfitEur     : config.minProfitEur);
       const minProfPct = Math.max(20, search && search.minProfitPercent != null ? search.minProfitPercent : config.minProfitPercent);
       const src        = row.pricingSource || 'unknown';
-      const minLiq     = src === 'local-database' ? 25 : 40;
+      const minLiq     = src === 'local-database' ? 20 : 30;
 
       // ─── Pattern 5 : Seuils durs par critère ─────────────────────────────
       const { checks, failedCriteria, passed } = evaluateCriteria(

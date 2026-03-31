@@ -20,6 +20,11 @@ function buildProfitAnalysis(vintedListing, soldListings, config) {
   const profit = estimatedNetSale - totalCost;
   const profitPercent = totalCost > 0 ? (profit / totalCost) * 100 : 0;
 
+  // P1 — Price reliability tagging based on number of sales data points
+  let priceReliability = 'low';
+  if (soldListings.length >= 3) priceReliability = 'high';
+  else if (soldListings.length === 2) priceReliability = 'medium';
+
   return {
     averageSoldPrice,
     averageBuyerPaid: averageSoldPrice, // Keep field for dashboard compat, but use card price only
@@ -28,7 +33,9 @@ function buildProfitAnalysis(vintedListing, soldListings, config) {
     totalCost,
     estimatedNetSale,
     profit,
-    profitPercent
+    profitPercent,
+    priceReliability,
+    salesCount: soldListings.length
   };
 }
 

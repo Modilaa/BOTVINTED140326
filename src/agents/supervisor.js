@@ -175,7 +175,12 @@ async function checkVintedAvailability(vintedUrl, config) {
     };
   } catch (error) {
     console.log(`  [Superviseur] Erreur check Vinted: ${error.message}`);
-    // En cas d'erreur réseau, on considère l'annonce comme potentiellement dispo
+    // HTTP 404/410 = annonce supprimée ou vendue → indisponible
+    if (error.message && (error.message.includes('404') || error.message.includes('410'))) {
+      console.log(`  [Superviseur] → 404/410 détecté = annonce expirée`);
+      return { available: false, currentPrice: null };
+    }
+    // Vraie erreur réseau (timeout, DNS, etc.) → on ne touche pas à l'annonce
     return { available: true, currentPrice: null };
   }
 }

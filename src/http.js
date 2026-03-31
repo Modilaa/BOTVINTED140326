@@ -340,9 +340,46 @@ async function purgeBlockedCache(cacheDir) {
   } catch { return 0; }
 }
 
+/**
+ * Purge expired cache files from a directory based on file modification time.
+ * Unlike readFromCache (which checks TTL per-read), this actually DELETES old files
+ * to reclaim disk space. Critical for VPS with limited storage.
+ *
+ * @param {string} cacheDir - Path to cache directory
+ * @param {number} maxAgeSeconds - Delete files older than this (default: 6h)
+ * @returns {number} Number of files deleted
+ */
+async function purgeExpiredDiskCache(cacheDir, maxAgeSeconds = 6 * 3600) {
+  if (!cacheDir) return 0;
+  try {
+    const entries = await fs.promises.readdir(cacheDir, { withFileTypes: true });
+    const now = Date.now();
+    const maxAgeMs = maxAgeSeconds * 1000;
+    let purged = 0;
+
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
+      try {
+        const filePath = path.join(cacheDir, entry.name);
+        const stat = await fs.promises.stat(filePath);
+        if (now - stat.mtimeMs > maxAgeMs) {
+          await fs.promises.unlink(filePath);
+          purged++;
+        }
+      } catch { /* skip individual file errors */ }
+    }
+
+    if (purged > 0) {
+      console.log(`[cache-purge] ${path.basename(cacheDir)}: ${purged} fichier(s) expire(s) supprime(s)`);
+    }
+    return purged;
+  } catch { return 0; }
+}
+
 module.exports = {
   fetchText,
   fetchViaScrapingApi,
   resetScrapingApiCounter,
-  purgeBlockedCache
+  purgeBlockedCache,
+  purgeExpiredDiskCache
 };

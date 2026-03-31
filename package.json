@@ -1,0 +1,44 @@
+{
+  "name": "botvintedcodex",
+  "version": "1.0.0",
+  "description": "Scanner Vinted -> eBay sold -> Telegram for trading card arbitrage",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "loop": "node src/index.js --loop",
+    "check": "node --check src/index.js",
+    "debug:ebay": "node src/debug-ebay.js",
+    "dashboard": "node src/server.js",
+    "agents": "node src/run-agents.js",
+    "agents:supervisor": "node src/run-agents.js --supervisor-only",
+    "agents:discovery": "node src/run-agents.js --discovery-only",
+    "agents:diagnostic": "node src/run-agents.js --diagnostic-only",
+    "agents:explore": "node src/run-agents.js --explore-only",
+    "agents:strategy": "node src/run-agents.js --strategy-only",
+    "agents:liquidity": "node src/run-agents.js --liquidity-only",
+    "scheduler": "node src/scheduler.js",
+    "ecosystem": "pm2 start ecosystem.config.js",
+    "ecosystem:stop": "pm2 stop ecosystem.config.js",
+    "ecosystem:restart": "pm2 restart ecosystem.config.js",
+    "ecosystem:status": "pm2 list",
+    "ecosystem:logs": "pm2 logs --lines 50",
+    "deploy": "bash deploy.sh"
+  },
+  "keywords": [
+    "vinted",
+    "ebay",
+    "telegram",
+    "arbitrage"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "cheerio": "^1.1.2",
+    "express": "^5.2.1",
+    "jimp": "^1.6.0",
+    "openai": "^6.32.0",
+    "sharp": "^0.34.5",
+    "sneaks-api": "^1.2.3",
+    "tesseract.js": "^7.0.0",
+    "undici": "^6.21.1"
+  }
+}
