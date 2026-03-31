@@ -62,7 +62,7 @@ function computeConfidence(opp) {
 
   // === TIER 1 : Qualité du matching texte (0-40) ===
   // Bonus si la source est eBay réel (ventes confirmées, pas estimation)
-  const isEbaySource = ['ebay-browse-api', 'ebay-html', 'apify-ebay', 'ebay'].includes(src);
+  const isEbaySource = ['ebay-browse-api', 'ebay-html', 'ebay'].includes(src);
 
   let textScore = 0;
   if (matchedSales.length > 0) {
@@ -103,9 +103,6 @@ function computeConfidence(opp) {
     case 'ebay':
       sourceScore = matchedSales.length >= 3 ? 15 : 8; // scraping eBay — légèrement moins fiable
       break;
-    case 'apify-ebay':
-      sourceScore = matchedSales.length >= 3 ? 15 : 10;
-      break;
     case 'rebrickable':
       sourceScore = 10; // API produit dédiée LEGO — données structurées fiables
       break;
@@ -113,15 +110,20 @@ function computeConfidence(opp) {
       sourceScore = 5;
   }
 
-  // P1 — Price reliability penalty: penalize when we have very few sales data points
+  // P1 — Price reliability penalty: pénalise fortement les prix basés sur 1 seule observation
   if (matchedSales.length === 1) {
-    // Single sale data point — unreliable trend, apply -5 penalty
-    sourceScore = Math.max(0, sourceScore - 5);
+    // 1 seule vente = très peu fiable → pénalité lourde (-10)
+    sourceScore = Math.max(0, sourceScore - 10);
   }
   if (src === 'rebrickable' && matchedSales.length <= 1) {
-    // Rebrickable without real eBay sales is just estimation — cap at 5
-    sourceScore = 5;
+    // Rebrickable sans vente eBay réelle = estimation pure → cap à 3
+    sourceScore = 3;
   }
+
+  // P1b — Hard gate : 1 seule observation non-niche → plafond confiance à 45 (sous le seuil de 50)
+  // Les APIs niche (pokemon-tcg-api, ygoprodeck) sont exemptées car leurs prix sont fiables même avec 1 obs
+  const isNicheApi = ['pokemon-tcg-api', 'ygoprodeck', 'pokemontcg-api'].includes(src);
+  const singleObsHardGate = matchedSales.length < 2 && !isNicheApi;
 
   // === TIER 3 : Vérification Vision (0-40) ===
   // GPT-4o mini : match = +40, uncertain = +15 (à review), reject = 0 immédiat
@@ -152,6 +154,21 @@ function computeConfidence(opp) {
       visionLabel = 'base locale (bénéfice du doute)';
     }
     // Pas d'image du tout + pas local-db → visionScore = 0
+  }
+
+  // === PÉNALITÉ CONDITION : occasion Vinted vs neuf eBay ===
+  // Si GPT Vision détecte un mismatch de condition (conditionComparable: false),
+  // on divise le visionScore par 2 et on log l'avertissement.
+  // De plus, si le titre eBay contient explicitement "NEW", "Sealed", "NEUF" → pénalité extra
+  if (opp.visionVerified && opp.visionResult && opp.visionResult.conditionComparable === false) {
+    visionScore = Math.floor(visionScore / 2);
+    visionLabel += ' (condition ≠)';
+    // Vérifier si le comparable eBay est explicitement neuf/scellé
+    const bestEbayTitle = (matchedSales.length > 0 ? (matchedSales[0].title || '') : '').toLowerCase();
+    if (/\b(new|sealed|neuf|scell[eé]|factory)\b/i.test(bestEbayTitle)) {
+      // Occasion Vinted vs Neuf eBay = profit surestimé de 30-50%, pénalité forte
+      sourceScore = Math.max(0, sourceScore - 10);
+    }
   }
 
   // === CHEMIN B : Prix très en dessous de la moyenne Vinted en base ===
@@ -208,6 +225,12 @@ function computeConfidence(opp) {
   const sellerScore = opp.sellerScore;
   if (sellerScore && typeof sellerScore === 'object' && sellerScore.score < 20) {
     total = Math.min(total, belowAvgBoost >= 90 ? 60 : 40);
+  }
+
+  // Hard gate : 1 seule observation (non-niche) → plafond à 45 (ne peut jamais devenir opportunité active)
+  // Même GPT Vision ne peut pas compenser le manque de données de prix
+  if (singleObsHardGate) {
+    total = Math.min(total, 45);
   }
 
   // Hard gate assoupli : sans GPT Vision ET sans signal Chemin B fort, on plafonne à 59

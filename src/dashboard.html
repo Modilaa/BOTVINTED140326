@@ -1629,7 +1629,6 @@ function buildPriceCellHtml(opp) {
   var srcLabels = {
     'ebay-browse-api': 'eBay API',
     'ebay-html': 'eBay scraping',
-    'apify-ebay': 'Apify eBay',
     'local-database': 'Base locale',
     'pokemon-tcg-api': 'Pok\u00e9TCG.io',
     'pokemontcg-api': 'Pok\u00e9TCG.io',
@@ -1678,12 +1677,21 @@ function buildPriceCellHtml(opp) {
   // Price reliability badge (from profit.priceReliability)
   var reliabilityBadge = '';
   var profitData = opp.profit || {};
-  if (profitData.priceReliability === 'low' || profitData.salesCount === 1) {
-    reliabilityBadge = ' <span style="display:inline-block;padding:2px 6px;border-radius:6px;font-size:9px;font-weight:700;background:rgba(255,170,0,0.15);color:#ffa94d;border:1px solid rgba(255,170,0,0.3);" title="Prix basé sur 1 seule vente, peu fiable">⚠️ 1 vente</span>';
+
+  // Badge spécial pour Rebrickable (estimation, pas des ventes réelles)
+  if (src === 'rebrickable') {
+    reliabilityBadge = ' <span style="display:inline-block;padding:2px 6px;border-radius:6px;font-size:9px;font-weight:700;background:rgba(255,107,107,0.15);color:#ff6b6b;border:1px solid rgba(255,107,107,0.3);animation:pulse-badge 2s infinite;" title="Prix ESTIMATION Rebrickable (calcul th\u00e9orique par pi\u00e8ce, PAS une vente r\u00e9elle)">~ ESTIMATION</span>';
+  } else if (profitData.priceReliability === 'low' || profitData.salesCount === 1) {
+    reliabilityBadge = ' <span style="display:inline-block;padding:2px 6px;border-radius:6px;font-size:9px;font-weight:700;background:rgba(255,170,0,0.15);color:#ffa94d;border:1px solid rgba(255,170,0,0.3);" title="Prix bas\u00e9 sur 1 seule vente, peu fiable">\u26a0\ufe0f 1 vente</span>';
   } else if (profitData.priceReliability === 'medium') {
-    reliabilityBadge = ' <span style="display:inline-block;padding:2px 6px;border-radius:6px;font-size:9px;font-weight:700;background:rgba(255,170,0,0.15);color:#ffa94d;border:1px solid rgba(255,170,0,0.3);" title="Prix basé sur 2 ventes, fiabilité moyenne">📊 2 ventes</span>';
+    reliabilityBadge = ' <span style="display:inline-block;padding:2px 6px;border-radius:6px;font-size:9px;font-weight:700;background:rgba(255,170,0,0.15);color:#ffa94d;border:1px solid rgba(255,170,0,0.3);" title="Prix bas\u00e9 sur 2 ventes, fiabilit\u00e9 moyenne">\ud83d\udcca 2 ventes</span>';
   } else if (profitData.priceReliability === 'high') {
-    reliabilityBadge = ' <span style="display:inline-block;padding:2px 6px;border-radius:6px;font-size:9px;font-weight:700;background:rgba(0,210,160,0.12);color:#00d2a0;border:1px solid rgba(0,210,160,0.3);" title="Prix basé sur 3+ ventes, fiable">✅ 3+ ventes</span>';
+    reliabilityBadge = ' <span style="display:inline-block;padding:2px 6px;border-radius:6px;font-size:9px;font-weight:700;background:rgba(0,210,160,0.12);color:#00d2a0;border:1px solid rgba(0,210,160,0.3);" title="Prix bas\u00e9 sur 3+ ventes, fiable">\u2705 3+ ventes</span>';
+  }
+
+  // Badge condition mismatch (GPT Vision a détecté condition différente)
+  if (opp.visionResult && opp.visionResult.conditionComparable === false) {
+    reliabilityBadge += ' <span style="display:inline-block;padding:2px 6px;border-radius:6px;font-size:9px;font-weight:700;background:rgba(255,107,107,0.15);color:#ff6b6b;border:1px solid rgba(255,107,107,0.3);" title="Condition Vinted diff\u00e9rente de eBay (occasion vs neuf par ex.)">\u26a0 Condition \u2260</span>';
   }
 
   var badge = '<div style="display:inline-flex;align-items:center;padding:1px 5px;border-radius:6px;font-size:9px;font-weight:700;color:' + badgeColor + ';background:' + badgeBg + ';border:1px solid ' + badgeColor + '33;margin-top:2px;cursor:help;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + esc(tooltip) + '">' + esc(srcLabel) + esc(obsText) + '</div>';

@@ -4,11 +4,11 @@
  * Détermine automatiquement quelle API utiliser selon le type de carte,
  * avec cascade de fallbacks. Transparent pour le reste du pipeline.
  *
- * Chaîne de priorité (corrigée 2026-03-21):
- *   Pokémon  : PokemonTCG.io → TCGdex → eBay Browse API → Apify
- *   Yu-Gi-Oh : YGOPRODeck → eBay Browse API → Apify
- *   LEGO     : Rebrickable + eBay Browse API → Apify
- *   Autres   : eBay Browse API → Apify
+ * Chaîne de priorité (mise à jour 2026-03-31):
+ *   Pokémon  : PokemonTCG.io → TCGdex → eBay Browse API → eBay HTML
+ *   Yu-Gi-Oh : YGOPRODeck → eBay Browse API → eBay HTML
+ *   LEGO     : Rebrickable + eBay Browse API → eBay HTML → estimation Rebrickable
+ *   Autres   : eBay Browse API → eBay HTML
  *
  * Format de sortie unifié: { matchedSales, pricingSource, bestMatch, marketPrice, confidence }
  */
@@ -19,7 +19,7 @@ const { getYugiohMarketPrice } = require('./marketplaces/ygoprodeck');
 const { getMarketPrice: getPokemonMarketPriceUnified } = require('./marketplaces/pokemon-unified');
 const { getEbaySoldListingsViaApi } = require('./marketplaces/ebay-api');
 const { getEbaySoldListings } = require('./marketplaces/ebay');
-const { getApifyEbaySoldPrices } = require('./marketplaces/apify-ebay');
+// Apify supprimé — compte fermé, le bot fonctionne sans
 const { getCardmarketMarketPrice } = require('./marketplaces/cardmarket');
 const { getDiscogsMarketPrice } = require('./marketplaces/discogs-api');
 const { getSneakersMarketPrice } = require('./marketplaces/sneaks-api');
@@ -137,27 +137,8 @@ async function tryEbayBrowseApi(listing, config, search) {
   return null;
 }
 
-// ─── PRIORITÉ 2b: Apify eBay Sold Listings (fallback Browse API) ─────────────
-
-/**
- * Tente Apify eBay Sold Listings scraper comme fallback.
- * Utilisé quand Browse API retourne 0 résultat ou erreur.
- */
-async function tryApifyEbay(listing, config, search) {
-  if (!process.env.APIFY_API_TOKEN) return null;
-
-  const query = listing.enrichedTitle || listing.title;
-  try {
-    const apifyResult = await getApifyEbaySoldPrices(query, config);
-    if (!apifyResult || apifyResult.soldListings.length === 0) return null;
-
-    // Convertir au format attendu par buildEbayResult
-    return buildEbayResult(apifyResult.soldListings, listing, config, 'apify-ebay', search);
-  } catch (err) {
-    console.log(`    [APIFY] Erreur dans tryApifyEbay: ${err.message}`);
-  }
-  return null;
-}
+// ─── Apify supprimé (compte fermé) ──────────────────────────────────────────
+// tryApifyEbay() retiré — fallback désormais eBay HTML scraping uniquement
 
 // ─── PRIORITÉ 3: Cardmarket (souvent bloqué sur VPS) ────────────────────────
 
@@ -253,11 +234,8 @@ async function routeYugioh(listing, config) {
   const ebayResult = await tryEbayBrowseApi(listing, config, { pricingSource: 'ygoprodeck' });
   if (ebayResult) return ebayResult;
 
-  // 3. Apify (dernier recours)
-  const apifyResult = await tryApifyEbay(listing, config, { pricingSource: 'ygoprodeck' });
-  if (apifyResult) return apifyResult;
-
-  return null;
+  // 3. eBay HTML scraping (dernier recours)
+  return tryEbayHtmlScraping(listing, config, { pricingSource: 'ygoprodeck' });
 }
 
 /**
@@ -282,11 +260,8 @@ async function routePokemon(listing, config) {
   const ebayResult = await tryEbayBrowseApi(listing, config, { pricingSource: 'pokemon-tcg-api' });
   if (ebayResult) return ebayResult;
 
-  // 3. Apify (dernier recours)
-  const apifyResult = await tryApifyEbay(listing, config, { pricingSource: 'pokemon-tcg-api' });
-  if (apifyResult) return apifyResult;
-
-  return null;
+  // 3. eBay HTML scraping (dernier recours)
+  return tryEbayHtmlScraping(listing, config, { pricingSource: 'pokemon-tcg-api' });
 }
 
 /**
@@ -301,11 +276,8 @@ async function routeEbay(listing, config, search) {
   const ebayApiResult = await tryEbayBrowseApi(listing, config, search);
   if (ebayApiResult) return ebayApiResult;
 
-  // 2. Apify eBay Sold Listings (fallback)
-  const apifyResult = await tryApifyEbay(listing, config, search);
-  if (apifyResult) return apifyResult;
-
-  return null;
+  // 2. eBay HTML scraping (fallback)
+  return tryEbayHtmlScraping(listing, config, search);
 }
 
 // ─── Route: Discogs (Vinyles) ────────────────────────────────────────────────
@@ -390,9 +362,9 @@ async function routeLego(listing, config, search) {
   const ebayResult = await tryEbayBrowseApi(enrichedListing, config, search);
   if (ebayResult) return ebayResult;
 
-  // 3. Apify (fallback)
-  const apifyResult = await tryApifyEbay(enrichedListing, config, search);
-  if (apifyResult) return apifyResult;
+  // 3. eBay HTML scraping (fallback)
+  const htmlResult = await tryEbayHtmlScraping(enrichedListing, config, search);
+  if (htmlResult) return htmlResult;
 
   // 4. Estimation Rebrickable comme ultime fallback (confidence: low)
   if (legoFallback && legoFallback.marketPrice > 0) {

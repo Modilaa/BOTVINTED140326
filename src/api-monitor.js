@@ -3,15 +3,12 @@
  *
  * Envoie des alertes Telegram quand :
  *   - Le quota eBay Browse API est bas (< 500) ou épuisé (0)
- *   - Le budget Apify journalier atteint 80% ou 100%
- *   - Le quota mensuel Apify est dépassé (403)
  *   - PokemonTCG.io échoue 3 fois de suite
  *   - YGOPRODeck échoue 3 fois de suite
  *   - Vinted retourne 0 annonces 3 fois de suite (blocage potentiel)
  *   - OpenAI Vision échoue (clé invalide, quota dépassé)
  *
  * Anti-spam : cooldowns FICHIER (résistent aux redémarrages PM2).
- *   - apify-daily-limit / apify-daily-80pct / apify-monthly-limit : 24h
  *   - Tout le reste : 1h
  */
 
@@ -48,9 +45,6 @@ const errorCounts = {};
 const thresholds = {
   'ebay-quota-low':      1, // immédiat
   'ebay-quota-zero':     1, // immédiat
-  'apify-daily-80pct':   1, // immédiat
-  'apify-daily-limit':   1, // immédiat
-  'apify-monthly-limit': 1, // immédiat
   'pokemontcg':          3, // 3 erreurs consécutives
   'ygoprodeck':          3,
   'vinted-empty':        3, // 3 scans consécutifs sans annonces
@@ -60,9 +54,6 @@ const thresholds = {
 // ─── Cooldowns (en ms) ───────────────────────────────────────────────────────
 
 const spamCooldown = {
-  'apify-daily-limit':   86400000, // 24h — résiste aux restarts PM2 via fichier
-  'apify-daily-80pct':   86400000, // 24h
-  'apify-monthly-limit': 86400000, // 24h
   default:               3600000   // 1h pour tout le reste
 };
 
