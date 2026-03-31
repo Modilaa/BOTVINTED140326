@@ -572,9 +572,6 @@ async function runScan(previousListings) {
         } else if (routerResult.isKeywordEstimate) {
           _seenResult = 'no-match'; // Estimation ignorée, pas fiable
           console.log(`  Estimation mots-clés ignorée (pas assez fiable): ${listing.title.slice(0, 50)}`);
-        } else if (actualPricingSource === 'rebrickable' && routerResult.confidence === 'low') {
-          _seenResult = 'no-match'; // Estimation Rebrickable 0.12€/pièce = prix inventé, pas de vente eBay confirmée
-          console.log(`  Estimation Rebrickable ignorée (aucune vente eBay): ${listing.title.slice(0, 50)}`);
         } else {
           // ── Seuils d'opportunité stricts ──────────────────────────────────
           const _minProfitEur = Math.max(5, (search && search.minProfitEur != null) ? search.minProfitEur : config.minProfitEur);
@@ -978,19 +975,36 @@ async function runOnce() {
   // Les alertes opportunités individuelles sont déjà envoyées via
   // sendOpportunityAlert() dans la boucle de scan ci-dessus.
 
-  // ─── Axe 5: Vérification expiration (actifs + candidats) ────────────────
-  // Tous les 3 scans, vérifie si les annonces Vinted (actives ET candidates) sont encore en ligne
+  // ─── Axe 5: Vérification expiration (actifs + candidats + historique) ──────
+  // Tous les 3 scans, vérifie si les annonces Vinted sont encore en ligne
+  // Inclut AUSSI les opportunités de l'historique (pas seulement le scan en cours)
   _scanCounter++;
   if (_scanCounter % 3 === 0) {
     try {
-      // Vérifier les opportunités actives
+      // 1. Opportunités du scan en cours
       const activeOpps = merged.opportunities.filter(o => !o.stale && !o.archived);
-      // Vérifier aussi les candidats dans searchedListings
       const candidateListings = merged.searchedListings.filter(l =>
         l.status === 'candidate' && !l.stale && !l.archived && l.url
       );
-      const allToCheck = [...activeOpps, ...candidateListings];
-      const toCheck = allToCheck.slice(0, 10); // Max 10 par cycle
+
+      // 2. Opportunités de l'historique (actives non-stale)
+      let historyOpps = [];
+      try {
+        const historyPath = path.join(process.cwd(), 'output', 'opportunities-history.json');
+        if (fs.existsSync(historyPath)) {
+          const allHistory = JSON.parse(fs.readFileSync(historyPath, 'utf8'));
+          historyOpps = allHistory.filter(h =>
+            h.url && h.status === 'active' && !h.stale && !h.archived
+          );
+        }
+      } catch { /* non-bloquant */ }
+
+      // Dédupliquer par URL (priorité au scan courant)
+      const seenUrls = new Set([...activeOpps, ...candidateListings].map(o => o.url).filter(Boolean));
+      const uniqueHistoryOpps = historyOpps.filter(h => !seenUrls.has(h.url));
+
+      const allToCheck = [...activeOpps, ...candidateListings, ...uniqueHistoryOpps];
+      const toCheck = allToCheck.slice(0, 15); // Max 15 par cycle (augmenté de 10)
       let expired = 0;
       for (const opp of toCheck) {
         try {
@@ -1000,14 +1014,36 @@ async function runOnce() {
           const isSold = /item-sold|sold-overlay|"is_closed"\s*:\s*true|"status"\s*:\s*"(sold|hidden)"|réservé|reserved|vendu/i.test(html);
           if (isSold) {
             opp.stale = true;
+            opp.status = 'expired';
             opp.expiredAt = new Date().toISOString();
             expired++;
-            console.log(`[expiration] ❌ Expirée (${opp.status || 'active'}): "${(opp.title || '').slice(0, 50)}"`);
+            console.log(`[expiration] ❌ Expirée: "${(opp.title || '').slice(0, 50)}"`);
           }
         } catch { /* continue silently */ }
       }
+
+      // Sauvegarder les changements dans l'historique si des annonces ont expiré
       if (expired > 0) {
         console.log(`[expiration] ${expired}/${toCheck.length} annonces expirées retirées`);
+        try {
+          const historyPath = path.join(process.cwd(), 'output', 'opportunities-history.json');
+          if (fs.existsSync(historyPath)) {
+            const allHistory = JSON.parse(fs.readFileSync(historyPath, 'utf8'));
+            const expiredUrls = new Set(toCheck.filter(o => o.stale).map(o => o.url));
+            let changed = false;
+            for (const h of allHistory) {
+              if (h.url && expiredUrls.has(h.url) && h.status === 'active') {
+                h.status = 'expired';
+                h.stale = true;
+                h.expiredAt = new Date().toISOString();
+                changed = true;
+              }
+            }
+            if (changed) {
+              fs.writeFileSync(historyPath, JSON.stringify(allHistory, null, 2));
+            }
+          }
+        } catch { /* non-bloquant */ }
       } else if (toCheck.length > 0) {
         console.log(`[expiration] ${toCheck.length} annonce(s) vérifiée(s), toutes encore en ligne`);
       }
@@ -1021,7 +1057,7 @@ async function runOnce() {
       const toEnrich = getUnderPricedProducts(5);
       if (toEnrich.length > 0) {
         console.log(`[enrichment] Enrichissement proactif de ${toEnrich.length} produit(s)...`);
-        const ENRICHMENT_PRICING_MAP = { pokemon: 'pokemon-tcg-api', yugioh: 'ygoprodeck', lego: 'rebrickable' };
+        const ENRICHMENT_PRICING_MAP = { pokemon: 'pokemon-tcg-api', yugioh: 'ygoprodeck' };
         for (const product of toEnrich) {
           try {
             const pricingSrc = ENRICHMENT_PRICING_MAP[product.category] || 'ebay';

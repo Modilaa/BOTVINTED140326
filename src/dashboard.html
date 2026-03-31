@@ -1634,7 +1634,7 @@ function buildPriceCellHtml(opp) {
     'pokemontcg-api': 'Pok\u00e9TCG.io',
     'ygoprodeck': 'YGOPRODeck',
     'ygoprodeck-set': 'YGOPRODeck',
-    'rebrickable': 'Rebrickable',
+    // rebrickable supprimé
     'cardmarket': 'Cardmarket',
     'discogs': 'Discogs',
     'sneaks-api': 'StockX/GOAT'
@@ -1678,10 +1678,8 @@ function buildPriceCellHtml(opp) {
   var reliabilityBadge = '';
   var profitData = opp.profit || {};
 
-  // Badge spécial pour Rebrickable (estimation, pas des ventes réelles)
-  if (src === 'rebrickable') {
-    reliabilityBadge = ' <span style="display:inline-block;padding:2px 6px;border-radius:6px;font-size:9px;font-weight:700;background:rgba(255,107,107,0.15);color:#ff6b6b;border:1px solid rgba(255,107,107,0.3);animation:pulse-badge 2s infinite;" title="Prix ESTIMATION Rebrickable (calcul th\u00e9orique par pi\u00e8ce, PAS une vente r\u00e9elle)">~ ESTIMATION</span>';
-  } else if (profitData.priceReliability === 'low' || profitData.salesCount === 1) {
+  // Rebrickable supprimé
+  if (profitData.priceReliability === 'low' || profitData.salesCount === 1) {
     reliabilityBadge = ' <span style="display:inline-block;padding:2px 6px;border-radius:6px;font-size:9px;font-weight:700;background:rgba(255,170,0,0.15);color:#ffa94d;border:1px solid rgba(255,170,0,0.3);" title="Prix bas\u00e9 sur 1 seule vente, peu fiable">\u26a0\ufe0f 1 vente</span>';
   } else if (profitData.priceReliability === 'medium') {
     reliabilityBadge = ' <span style="display:inline-block;padding:2px 6px;border-radius:6px;font-size:9px;font-weight:700;background:rgba(255,170,0,0.15);color:#ffa94d;border:1px solid rgba(255,170,0,0.3);" title="Prix bas\u00e9 sur 2 ventes, fiabilit\u00e9 moyenne">\ud83d\udcca 2 ventes</span>';

@@ -324,42 +324,7 @@ const funkoPopSearches = parseBoolean(process.env.SEARCH_FUNKO_POP, true) ? [
   }
 ] : [];
 
-const legoSearches = parseBoolean(process.env.SEARCH_LEGO, false) ? [
-  {
-    name: 'LEGO',
-    pricingSource: 'rebrickable',
-    isNonTcg: true,
-    ebayCategory: null,
-    minProfitEur: 10,
-    minProfitPercent: 20,
-    maxPrice: 120,
-    vintedQueries: [
-      'lego star wars boite',
-      'lego technic complet',
-      'lego harry potter',
-      'lego creator complet',
-      'lego city complet',
-      'lego ideas',
-      'lego architecture',
-      'lego ninjago complet',
-      'lego marvel complet',
-      'lego speed champions',
-      'lego disney complet',
-      'lego star wars neuf'
-    ],
-    requiredAllTokens: ['lego'],
-    blockedTokens: ['duplo', 'mega bloks', 'playmobil', 'notice seule', 'sticker seul', 'autocollant seul', 'piece seule', 'lot pieces'],
-    maxPricePerQuery: {
-      'lego star wars boite': 120,
-      'lego technic complet': 80,
-      'lego harry potter': 80,
-      'lego creator complet': 60,
-      'lego city complet': 50,
-      'lego ideas': 100,
-      'lego architecture': 80
-    }
-  }
-] : [];
+// LEGO supprimé (catégorie retirée par Justin — pas d'achat LEGO)
 
 // DÉSACTIVÉ — titres trop vagues, profits irréalistes (P3 fix 31 mars 2026)
 const vintageSearches = parseBoolean(process.env.SEARCH_VINTAGE, false) ? [
@@ -508,7 +473,7 @@ const searches = [
   ...toppsSportGeneralSearches,
   ...sneakersSearches,
   ...funkoPopSearches,
-  ...legoSearches,
+  // legoSearches supprimé
   ...vintageSearches,
   ...techSearches,
   ...retroSearches,

@@ -103,9 +103,7 @@ function computeConfidence(opp) {
     case 'ebay':
       sourceScore = matchedSales.length >= 3 ? 15 : 8; // scraping eBay — légèrement moins fiable
       break;
-    case 'rebrickable':
-      sourceScore = 10; // API produit dédiée LEGO — données structurées fiables
-      break;
+    // rebrickable supprimé
     default:
       sourceScore = 5;
   }
@@ -115,10 +113,7 @@ function computeConfidence(opp) {
     // 1 seule vente = très peu fiable → pénalité lourde (-10)
     sourceScore = Math.max(0, sourceScore - 10);
   }
-  if (src === 'rebrickable' && matchedSales.length <= 1) {
-    // Rebrickable sans vente eBay réelle = estimation pure → cap à 3
-    sourceScore = 3;
-  }
+  // rebrickable supprimé
 
   // P1b — Hard gate : 1 seule observation non-niche → plafond confiance à 45 (sous le seuil de 50)
   // Les APIs niche (pokemon-tcg-api, ygoprodeck) sont exemptées car leurs prix sont fiables même avec 1 obs

@@ -7,7 +7,6 @@
  * Chaîne de priorité (mise à jour 2026-03-31):
  *   Pokémon  : PokemonTCG.io → TCGdex → eBay Browse API → eBay HTML
  *   Yu-Gi-Oh : YGOPRODeck → eBay Browse API → eBay HTML
- *   LEGO     : Rebrickable + eBay Browse API → eBay HTML → estimation Rebrickable
  *   Autres   : eBay Browse API → eBay HTML
  *
  * Format de sortie unifié: { matchedSales, pricingSource, bestMatch, marketPrice, confidence }
@@ -23,8 +22,8 @@ const { getEbaySoldListings } = require('./marketplaces/ebay');
 const { getCardmarketMarketPrice } = require('./marketplaces/cardmarket');
 const { getDiscogsMarketPrice } = require('./marketplaces/discogs-api');
 const { getSneakersMarketPrice } = require('./marketplaces/sneaks-api');
-const { getLegoMarketPrice } = require('./marketplaces/lego-api');
-const { chooseBestSoldListings, extractLegoSetNumber } = require('./matching');
+// lego-api / Rebrickable supprimé (catégorie LEGO retirée)
+const { chooseBestSoldListings } = require('./matching');
 const { attachImageSignals } = require('./image-match');
 
 // ─── In-Memory Result Cache ─────────────────────────────────────────────────
@@ -184,7 +183,7 @@ async function tryEbayHtmlScraping(listing, config, search) {
 // ─── Local DB reliability check ─────────────────────────────────────────────
 
 const VERIFIED_API_SOURCES = new Set([
-  'ebay-browse-api', 'pokemontcg-api', 'rebrickable', 'ygoprodeck'
+  'ebay-browse-api', 'pokemontcg-api', 'ygoprodeck'
 ]);
 
 /**
@@ -326,54 +325,7 @@ async function routeSneaks(listing, config, search) {
   return tryEbayHtmlScraping(listing, config, search);
 }
 
-// ─── Route: Rebrickable (LEGO) ───────────────────────────────────────────────
-
-/**
- * Price route for LEGO sets.
- * Rebrickable (identifie le set → enrichit la query) → eBay Browse API → eBay HTML → estimation
- */
-async function routeLego(listing, config, search) {
-  // 0. Extraction immédiate du numéro de set depuis le titre Vinted (ex: "LEGO 76386 Harry Potter" → "LEGO 76386")
-  const setNumber = extractLegoSetNumber(listing.title);
-  let enrichedListing = setNumber
-    ? { ...listing, enrichedTitle: `LEGO ${setNumber}` }
-    : listing;
-  if (setNumber) {
-    console.log(`    [LEGO] Numéro de set extrait du titre: ${setNumber} → query "LEGO ${setNumber}"`);
-  }
-
-  let legoFallback = null;
-
-  // 1. Rebrickable : identifier le set + construire une query eBay précise (enrichit davantage si trouvé)
-  try {
-    const legoResult = await getLegoMarketPrice(listing, config);
-    if (legoResult) {
-      legoFallback = legoResult; // garde l'estimation comme fallback de dernier recours
-      if (legoResult.enrichedQuery) {
-        enrichedListing = { ...listing, enrichedTitle: legoResult.enrichedQuery };
-        console.log(`    [LEGO] Query enrichie Rebrickable: "${legoResult.enrichedQuery}"`);
-      }
-    }
-  } catch (err) {
-    console.log(`    [LEGO] Rebrickable erreur: ${err.message}`);
-  }
-
-  // 2. eBay Browse API avec le titre enrichi (numéro de set officiel)
-  const ebayResult = await tryEbayBrowseApi(enrichedListing, config, search);
-  if (ebayResult) return ebayResult;
-
-  // 3. eBay HTML scraping (fallback)
-  const htmlResult = await tryEbayHtmlScraping(enrichedListing, config, search);
-  if (htmlResult) return htmlResult;
-
-  // 4. Estimation Rebrickable comme ultime fallback (confidence: low)
-  if (legoFallback && legoFallback.marketPrice > 0) {
-    console.log('    [LEGO] Fallback: estimation Rebrickable (prix approximatif)');
-    return legoFallback;
-  }
-
-  return null;
-}
+// Route LEGO / Rebrickable supprimée (catégorie retirée)
 
 // ─── Main Router ────────────────────────────────────────────────────────────
 
@@ -394,7 +346,7 @@ function dbCategory(pricingSource) {
   switch (pricingSource) {
     case 'pokemon-tcg-api': return 'pokemon';
     case 'ygoprodeck':      return 'yugioh';
-    case 'rebrickable':     return 'lego';
+    // rebrickable supprimé
     case 'discogs':         return 'discogs';
     case 'sneaks-api':      return 'sneakers';
     default:                return pricingSource || 'misc';
@@ -492,9 +444,7 @@ async function getPrice(listing, pricingSource, config, search) {
       result = await routeSneaks(listing, config, search);
       break;
 
-    case 'rebrickable':
-      result = await routeLego(listing, config, search);
-      break;
+    // rebrickable / LEGO supprimé
 
     case 'ebay':
     default:

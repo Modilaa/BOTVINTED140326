@@ -837,11 +837,15 @@ app.get('/api/performance-history', (_req, res) => {
     const history = deduplicateHistoryById(getOpportunitiesHistory());
     const scansHistory = readJsonSafe(getScansHistoryPath()) || [];
 
-    // ── Profit history: group Vision-verified opportunities by date ──
+    // ── Profit history: uniquement les opportunités actives + Vision-verified ──
+    // Même filtre que la liste d'opportunités du dashboard (status=active + vision OK)
     const profitByDate = new Map();
     for (const h of history) {
       if (!h.lastSeenAt) continue;
-      // Graphique honnête : uniquement les opportunités validées par GPT Vision
+      // Filtre identique à GET /api/opportunities (filter=active) :
+      // - status doit être 'active'
+      // - visionVerified ou visionSameCard doit être true
+      if (h.status !== 'active') continue;
       if (!h.visionVerified && !h.visionSameCard) continue;
       const date = h.lastSeenAt.slice(0, 10);
       if (!profitByDate.has(date)) {
@@ -856,10 +860,11 @@ app.get('/api/performance-history', (_req, res) => {
       .sort((a, b) => a.date.localeCompare(b.date))
       .slice(-30);
 
-    // ── Category breakdown: Vision-verified only ──
+    // ── Category breakdown: actives + Vision-verified only ──
     const catMap = new Map();
     for (const h of history) {
-      // Uniquement les opportunités validées par GPT Vision
+      // Même filtre que le profit journalier (status=active + vision OK)
+      if (h.status !== 'active') continue;
       if (!h.visionVerified && !h.visionSameCard) continue;
       const cat = h.search || 'Autre';
       if (!catMap.has(cat)) {

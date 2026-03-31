@@ -41,7 +41,7 @@ function normalizeCategory(cat) {
 // Categories that are pricing sources, not product categories
 const SOURCE_CATEGORIES = new Set([
   'ebay', 'ebay-browse-api', 'local-database',
-  'local-database-stale', 'pokemontcg-api', 'ygoprodeck', 'rebrickable',
+  'local-database-stale', 'pokemontcg-api', 'ygoprodeck',
 ]);
 
 /**
