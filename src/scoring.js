@@ -82,21 +82,51 @@ function computeConfidence(opp) {
   } else if (src === 'pokemon-tcg-api' || src === 'ygoprodeck') {
     // API niche — matching texte déjà fait lors de l'indexation
     textScore = 30;
+  } else if (matchedSales.length === 0 && opp.ebayMatchTitle && opp.title) {
+    // Fallback : matchedSales perdu (historique), mais on a les titres Vinted et eBay.
+    // Calcul simplifié basé sur Jaccard + bonus numéros partagés (sets LEGO, Funko #, etc.)
+    const titleA = (opp.title || '').toLowerCase();
+    const titleB = (opp.ebayMatchTitle || '').toLowerCase();
+    const tokenize = (s) => s.replace(/[^a-z0-9\u00C0-\u017E]/g, ' ').split(/\s+/).filter(w => w.length >= 2);
+    const tokensA = tokenize(titleA);
+    const tokensB = new Set(tokenize(titleB));
+    const shared = tokensA.filter(t => tokensB.has(t));
+    const union = new Set([...tokensA, ...tokensB]);
+    const jaccard = union.size > 0 ? shared.length / union.size : 0;
+    // Bonus fort si un numéro identifiant (set LEGO, Funko #, numéro de carte) est partagé
+    const numbersA = tokensA.filter(t => /^\d{3,6}$/.test(t));
+    const sharedNumbers = numbersA.filter(n => tokensB.has(n));
+    const hasSharedId = sharedNumbers.length > 0;
+
+    if (hasSharedId && jaccard >= 0.3)          textScore = 40; // Numéro identique + mots communs
+    else if (hasSharedId)                       textScore = 30; // Numéro identique seul
+    else if (jaccard >= 0.5)                    textScore = 30; // Forte similarité textuelle
+    else if (jaccard >= 0.3)                    textScore = 20; // Similarité correcte
+    else if (jaccard >= 0.15)                   textScore = 10; // Similarité faible
+    // else textScore = 0
   }
 
   // === TIER 2 : Fiabilité de la source (0-20) ===
   let sourceScore = 0;
+  const obsCount = matchedSales.length || (opp.matchedSalesCount || 0) || (opp.priceDetails && opp.priceDetails.observations) || 0;
   switch (src) {
     case 'pokemon-tcg-api':
     case 'ygoprodeck':
       sourceScore = 20; // APIs dédiées — très fiables
       break;
     case 'ebay-browse-api':
-      sourceScore = matchedSales.length >= 3 ? 20 : 10; // 3+ ventes = source fiable
+      sourceScore = obsCount >= 3 ? 20 : 10; // 3+ ventes = source fiable
       break;
     case 'ebay-html':
     case 'ebay':
-      sourceScore = matchedSales.length >= 3 ? 15 : 8; // scraping eBay — légèrement moins fiable
+      sourceScore = obsCount >= 3 ? 15 : 8; // scraping eBay — légèrement moins fiable
+      break;
+    case 'local-database':
+      // Cache de prix eBay/API précédents — fiabilité selon le nombre d'observations originales
+      sourceScore = obsCount >= 3 ? 15 : obsCount >= 2 ? 10 : 5;
+      break;
+    case 'local-database-stale':
+      sourceScore = 3; // Données périmées
       break;
     // rebrickable supprimé
     default:
@@ -104,7 +134,7 @@ function computeConfidence(opp) {
   }
 
   // P1 — Price reliability penalty: pénalise fortement les prix basés sur 1 seule observation
-  if (matchedSales.length === 1) {
+  if (obsCount === 1) {
     // 1 seule vente = très peu fiable → pénalité lourde (-10)
     sourceScore = Math.max(0, sourceScore - 10);
   }
@@ -113,7 +143,7 @@ function computeConfidence(opp) {
   // P1b — Hard gate : 1 seule observation non-niche → plafond confiance à 45 (sous le seuil de 50)
   // Les APIs niche (pokemon-tcg-api, ygoprodeck) sont exemptées car leurs prix sont fiables même avec 1 obs
   const isNicheApi = ['pokemon-tcg-api', 'ygoprodeck', 'pokemontcg-api'].includes(src);
-  const singleObsHardGate = matchedSales.length < 2 && !isNicheApi;
+  const singleObsHardGate = obsCount < 2 && !isNicheApi;
 
   // === TIER 3 : Vérification Vision (0-50) ===
   // GPT-4o mini retourne un confidenceScore granulaire (0-100), mappé sur 0-50 pts

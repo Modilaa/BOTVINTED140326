@@ -1,6 +1,6 @@
 # CLAUDE.md — BOTVINTEDCODEX
 
-## Derniere mise a jour : 2026-03-23
+## Derniere mise a jour : 2026-04-02
 
 ---
 
@@ -52,7 +52,7 @@ src/
   profit.js           — Calcul profit (fees eBay 13%, shipping)
   http.js             — HTTP avec proxy (Decodo, ScraperAPI, PROXY_URL)
   price-database.js   — Base de prix persistante (output/price-database.json)
-  price-router.js     — Multi-source prix (APIs niche -> eBay -> Apify)
+  price-router.js     — Multi-source prix (APIs niche -> eBay Browse API -> eBay HTML)
   seen-listings.js    — Cache annonces vues (24h TTL)
   seller-score.js     — Score vendeur Vinted
   api-monitor.js      — Monitoring erreurs API
@@ -67,7 +67,7 @@ src/
     ebay-api.js       — eBay Browse API officielle
     cardmarket.js     — Scraper Cardmarket
     leboncoin.js      — Scraper Leboncoin
-    lego-api.js       — Rebrickable API (LEGO)
+    lego-api.js       — Rebrickable API (DESACTIVE)
 
   agents/
     supervisor.js     — Verification disponibilite Vinted
@@ -85,20 +85,23 @@ src/
 
 ---
 
-## CATEGORIES ACTIVES (9)
+## CATEGORIES ACTIVES (8)
 
-Pokemon, Yu-Gi-Oh, LEGO, Topps F1, One Piece, Topps Football, Topps UFC, Topps Tennis, Topps Sport General
+Pokemon, Yu-Gi-Oh, Topps F1, One Piece, Topps Football, Topps UFC, Topps Tennis, Topps Sport General
+
+**Desactivees** : LEGO (retire par Justin), Vetements Vintage, Tech (titres trop vagues)
 
 ---
 
 ## SCORING (scoring.js)
 
 **Confiance (0-100)** — 3 tiers :
-- Tier 1 : Matching texte (0-40 pts)
-- Tier 2 : Fiabilite source (0-20 pts)
-- Tier 3 : Vision GPT-4o mini (0-40 pts) — le facteur decisif
-- GPT confirme = +40. GPT rejette = score 0 immediat.
+- Tier 1 : Matching texte (0-40 pts) — comparaison titres Vinted/eBay (Jaccard + numeros identifiants)
+- Tier 2 : Fiabilite source (0-20 pts) — avec gestion local-database (cache de prix anterieurs)
+- Tier 3 : Vision GPT-4o mini (0-50 pts) — score granulaire GPT
+- GPT confirme = 25-50 pts. GPT rejette = score 0 immediat.
 - Seuil d'opportunite : confidence >= 50
+- Fallback textScore : quand matchedSales est vide (historique), calcule Jaccard sur titres + bonus numeros partages
 
 **Liquidite (0-100)** — 4 facteurs :
 - Volume ventes (35%), Vitesse (30%), Stabilite prix (20%), Turnover (15%)
@@ -110,19 +113,19 @@ Pokemon, Yu-Gi-Oh, LEGO, Topps F1, One Piece, Topps Football, Topps UFC, Topps T
 - Modele : gpt-4o-mini
 - Verifie 3 criteres : sameProduct, sameVariant, conditionComparable
 - Champs compat : sameCard (bool), confidence (number), summary (string)
-- Auto-verification pendant le scan (index.js ligne ~363)
+- Auto-verification pendant le scan (evaluator.js) + Batch Vision auto apres chaque scan (index.js)
 - Verification manuelle via dashboard (POST /api/verify-image)
 - Titre override : si GPT dit variant different mais titres partagent le meme mot-cle de variante -> force match
+- Batch Vision auto : a la fin de chaque scan, appelle POST /api/batch-vision pour verifier toutes les candidates restantes
 
 ---
 
 ## PIPELINE DE PRIX (price-router.js)
 
 1. Cache local (price-database.json, 2h TTL)
-2. APIs niche (PokemonTCG, YGOPRODeck, Rebrickable)
+2. APIs niche (PokemonTCG, YGOPRODeck)
 3. eBay Browse API officielle
-4. eBay scraping (multi-domaines UK/DE/FR/IT/ES)
-5. Apify (fallback payant, budget 100 req/scan)
+4. eBay HTML scraping via Decodo (si active)
 
 ---
 
@@ -138,7 +141,6 @@ Pokemon, Yu-Gi-Oh, LEGO, Topps F1, One Piece, Topps Football, Topps UFC, Topps T
 
 ## PORTFOLIO
 
-- Premier achat : LEGO Star Wars 9676, 16.45 EUR investi, valeur marche ~64 EUR
 - Fichier : output/portfolio-items.json
 - Dashboard : section portfolio avec bouton "Vendu"
 

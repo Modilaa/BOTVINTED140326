@@ -959,6 +959,37 @@ async function runOnce() {
   // Les alertes opportunités individuelles sont déjà envoyées via
   // sendOpportunityAlert() dans la boucle de scan ci-dessus.
 
+  // ─── Batch Vision automatique (post-scan) ─────────────────────────────────
+  // Lance GPT Vision sur toutes les candidates/actives non vérifiées de l'historique.
+  // Même logique que le bouton "Batch Vision" du dashboard (POST /api/batch-vision).
+  // Remplace la tâche planifiée Claude qui devait cliquer le bouton manuellement.
+  try {
+    console.log('[post-scan] Lancement Batch Vision automatique...');
+    const batchRes = await fetch('http://localhost:3000/api/batch-vision', { method: 'POST' });
+    const batchData = await batchRes.json();
+    if (batchData.success) {
+      console.log(`[post-scan] Batch Vision lancé (${batchData.progress?.total || '?'} candidates)`);
+      // Attendre la fin du batch (polling toutes les 10s, max 10 min)
+      const batchTimeout = Date.now() + 10 * 60 * 1000;
+      while (Date.now() < batchTimeout) {
+        await new Promise(r => setTimeout(r, 10000));
+        try {
+          const statusRes = await fetch('http://localhost:3000/api/batch-vision-status');
+          const statusData = await statusRes.json();
+          if (!statusData.running) {
+            const p = statusData.progress || {};
+            console.log(`[post-scan] Batch Vision terminé: ${p.matched || 0} match, ${p.rejected || 0} rejet, ${p.errors || 0} erreur(s)`);
+            break;
+          }
+        } catch { /* continue polling */ }
+      }
+    } else {
+      console.log(`[post-scan] Batch Vision skip: ${batchData.error || 'déjà en cours'}`);
+    }
+  } catch (err) {
+    console.log(`[post-scan] Batch Vision erreur (non-bloquant): ${err.message}`);
+  }
+
   // ─── Axe 5: Vérification expiration (actifs + candidats + historique) ──────
   // Tous les 3 scans, vérifie si les annonces Vinted sont encore en ligne
   // Inclut AUSSI les opportunités de l'historique (pas seulement le scan en cours)
